@@ -1,0 +1,237 @@
+// src/routes/api/sji/+server.ts
+// Fase 1 (Rencana-Implementasi-SJ-Internal-v2-manual.md): pintu masuk lapangan untuk
+// Surat Jalan Internal. Identitas pemohon di-resolve SERVER-SIDE dari Firebase (Q2) —
+// TIDAK PERNAH percaya karyawan_id dari body klien.
+//
+// GET  ?meta=1  -> gudang pilot + setelan inventory.sji.* untuk mengisi form.
+// GET  (default) -> daftar SJI milik pemohon yang login.
+// POST -> ajukan SJI baru, boleh multi-item campur ambil_pakai + pinjam (Q3),
+//         ditulis sebagai satu sji_header + baris anak di pengeluaran_barang/peminjaman_internal.
+
+import { error, json } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { requireUser } from '$lib/server/firebaseAuth';
+import { resolveKaryawanByEmail } from '$lib/server/ess/karyawan';
+import { getKaryawanByFirebaseUid } from '$lib/server/approvalSubmit';
+import { directusServerJson } from '$lib/server/directus';
+import { allocateSjiNomor } from '$lib/server/sjiNumber';
+import { createApprovalRequest } from '$lib/server/approvalSubmit';
+
+async function resolveKaryawan(user: { localId: string; email: string }) {
+	const byUid = await getKaryawanByFirebaseUid(user.localId).catch(() => null);
+	if (byUid) return byUid;
+	return resolveKaryawanByEmail(user.email);
+}
+
+async function getSjiSettings() {
+	const res = await directusServerJson<{ data: any[] }>(
+		`/items/system_settings?filter[setting_key][_starts_with]=inventory.sji.&limit=-1`
+	);
+	const defaults: Record<string, any> = {
+		'inventory.sji.enabled': false,
+		'inventory.sji.tipe_options': ['ambil_pakai', 'pinjam'],
+		'inventory.sji.urgency_options': ['normal', 'urgent'],
+		'inventory.sji.default_deadline_hari': 7,
+		'inventory.sji.auto_approve_max_nilai': 0,
+		'inventory.sji.auto_approve_kategori': []
+	};
+	const settings = { ...defaults };
+	for (const row of res?.data || []) {
+		if (!(row.setting_key in settings)) continue;
+		try {
+			settings[row.setting_key] = JSON.parse(row.setting_value);
+		} catch {
+			settings[row.setting_key] = row.setting_value;
+		}
+	}
+	return settings;
+}
+
+async function getPilotGudang() {
+	const settingRes = await directusServerJson<{ data: any[] }>(
+		`/items/system_settings?filter[setting_key][_eq]=inventory.pilot.gudang_ids&limit=1`
+	);
+	let ids: number[] = [];
+	try {
+		ids = JSON.parse(settingRes?.data?.[0]?.setting_value || '[]');
+	} catch {
+		ids = [];
+	}
+	if (!Array.isArray(ids) || ids.length === 0) {
+		// Belum ada pilot ditentukan -> tampilkan semua gudang aktif supaya form tidak buntu.
+		const all = await directusServerJson<{ data: any[] }>(
+			`/items/gudang?filter[is_active][_eq]=true&fields=id,kode_gudang,nama_gudang,jenis&sort=nama_gudang&limit=-1`
+		);
+		return all?.data || [];
+	}
+	const filter = encodeURIComponent(JSON.stringify({ id: { _in: ids } }));
+	const res = await directusServerJson<{ data: any[] }>(
+		`/items/gudang?filter=${filter}&fields=id,kode_gudang,nama_gudang,jenis&sort=nama_gudang&limit=-1`
+	);
+	return res?.data || [];
+}
+
+export const GET: RequestHandler = async (event) => {
+	const user = await requireUser(event);
+
+	if (event.url.searchParams.get('meta') === '1') {
+		const [settings, gudang] = await Promise.all([getSjiSettings(), getPilotGudang()]);
+		return json({ settings, gudang });
+	}
+
+	const searchQ = event.url.searchParams.get('search');
+	if (searchQ != null) {
+		const q = searchQ.trim();
+		if (q.length < 2) return json({ data: [] });
+		const filter = encodeURIComponent(JSON.stringify({ nama_barang_lengkap: { _icontains: q } }));
+		const res = await directusServerJson<{ data: any[] }>(
+			`/items/identitas_barang?filter=${filter}&fields=id,nama_barang_lengkap,satuan,stok_tersedia,is_borrowable,consumable&limit=20`
+		);
+		return json({ data: res?.data || [] });
+	}
+
+	const karyawan = await resolveKaryawan(user);
+	if (!karyawan) throw error(403, 'Akun ini belum tertaut ke data karyawan. Hubungi HRD.');
+
+	const filter = encodeURIComponent(JSON.stringify({ karyawan_id: { _eq: karyawan.id } }));
+	const headersRes = await directusServerJson<{ data: any[] }>(
+		`/items/sji_header?filter=${filter}&fields=id,reference_no,status,urgency,keperluan,gudang_id.nama_gudang,date_created&sort=-date_created&limit=-1`
+	);
+	const headers = headersRes?.data || [];
+
+	// Hitung jumlah item per header (2 sumber: pengeluaran_barang + peminjaman_internal).
+	const ids = headers.map((h) => h.id);
+	let itemCounts: Record<number, number> = {};
+	if (ids.length > 0) {
+		const idsFilter = encodeURIComponent(JSON.stringify({ sji_header_id: { _in: ids } }));
+		const [pbRes, piRes] = await Promise.all([
+			directusServerJson<{ data: any[] }>(`/items/pengeluaran_barang?filter=${idsFilter}&fields=sji_header_id&limit=-1`),
+			directusServerJson<{ data: any[] }>(`/items/peminjaman_internal?filter=${idsFilter}&fields=sji_header_id&limit=-1`)
+		]);
+		for (const row of [...(pbRes?.data || []), ...(piRes?.data || [])]) {
+			const hid = typeof row.sji_header_id === 'object' ? row.sji_header_id?.id : row.sji_header_id;
+			if (hid == null) continue;
+			itemCounts[hid] = (itemCounts[hid] || 0) + 1;
+		}
+	}
+
+	return json({
+		data: headers.map((h) => ({ ...h, item_count: itemCounts[h.id] || 0 }))
+	});
+};
+
+interface SjiItemInput {
+	itemId: number;
+	quantity: number;
+	tipe: 'ambil_pakai' | 'pinjam';
+	ukuran?: string;
+	lokasiPekerjaan?: string;
+	tanggalJatuhTempo?: string;
+}
+
+export const POST: RequestHandler = async (event) => {
+	const user = await requireUser(event);
+	const karyawan = await resolveKaryawan(user);
+	if (!karyawan) throw error(403, 'Akun ini belum tertaut ke data karyawan. Hubungi HRD.');
+
+	const settings = await getSjiSettings();
+	if (!settings['inventory.sji.enabled']) {
+		throw error(403, 'Fitur Surat Jalan Internal belum diaktifkan. Hubungi admin.');
+	}
+
+	const body = await event.request.json().catch(() => null);
+	const gudangId = Number(body?.gudangId);
+	const urgency: string = body?.urgency === 'urgent' ? 'urgent' : 'normal';
+	const keperluan: string = (body?.keperluan || '').trim();
+	const items: SjiItemInput[] = Array.isArray(body?.items) ? body.items : [];
+
+	if (!Number.isFinite(gudangId)) throw error(400, 'Gudang wajib dipilih.');
+	if (items.length === 0) throw error(400, 'Minimal satu item harus diajukan.');
+	for (const it of items) {
+		if (!Number.isFinite(Number(it.itemId))) throw error(400, 'Item tidak valid.');
+		if (!(Number(it.quantity) > 0)) throw error(400, 'Kuantitas harus lebih dari 0.');
+		if (it.tipe !== 'ambil_pakai' && it.tipe !== 'pinjam') throw error(400, 'Tipe item tidak valid.');
+	}
+
+	const { nomor } = await allocateSjiNomor();
+
+	const headerRes = await directusServerJson<{ data: any }>('/items/sji_header', {
+		method: 'POST',
+		body: JSON.stringify({
+			reference_no: nomor,
+			karyawan_id: karyawan.id,
+			gudang_id: gudangId,
+			urgency,
+			keperluan: keperluan || null,
+			status: 'diajukan',
+			sumber: 'field'
+		})
+	});
+	const header = headerRes.data;
+
+	const defaultDeadlineHari = Number(settings['inventory.sji.default_deadline_hari']) || 7;
+	const createdItems: any[] = [];
+
+	for (let i = 0; i < items.length; i++) {
+		const it = items[i];
+		const lineRef = `${nomor}-${i + 1}`;
+
+		// Cek stok (Q8: tidak diblokir, hanya peringatan tercatat di catatan).
+		let stockNote = '';
+		try {
+			const itemRes = await directusServerJson<{ data: any }>(
+				`/items/identitas_barang/${it.itemId}?fields=id,stok_tersedia`
+			);
+			const stok = parseFloat(itemRes?.data?.stok_tersedia) || 0;
+			if (Number(it.quantity) > stok) {
+				stockNote = `PERINGATAN: stok tersedia saat pengajuan ${stok}, diminta ${it.quantity}.`;
+			}
+		} catch {
+			/* non-fatal, lanjut tanpa catatan stok */
+		}
+
+		if (it.tipe === 'ambil_pakai') {
+			const res = await directusServerJson<{ data: any }>('/items/pengeluaran_barang', {
+				method: 'POST',
+				body: JSON.stringify({
+					reference_no: lineRef,
+					karyawan_id: karyawan.id,
+					item_id: it.itemId,
+					quantity: it.quantity,
+					ukuran: it.ukuran || null,
+					keperluan: keperluan || null,
+					status: 'diajukan',
+					sji_header_id: header.id,
+					gudang_id: gudangId,
+					sumber: 'field',
+					catatan: stockNote || null
+				})
+			});
+			createdItems.push({ tipe: 'ambil_pakai', ...res.data });
+		} else {
+			const jatuhTempo =
+				it.tanggalJatuhTempo ||
+				new Date(Date.now() + defaultDeadlineHari * 86400000).toISOString().split('T')[0];
+			const res = await directusServerJson<{ data: any }>('/items/peminjaman_internal', {
+				method: 'POST',
+				body: JSON.stringify({
+					reference_no: lineRef,
+					peminjam_id: karyawan.id,
+					item_id: it.itemId,
+					quantity: it.quantity,
+					keperluan: keperluan || null,
+					lokasi_pekerjaan: it.lokasiPekerjaan || null,
+					tanggal_jatuh_tempo: jatuhTempo,
+					status: 'diajukan',
+					sji_header_id: header.id,
+					gudang_id: gudangId,
+					sumber: 'field',
+					catatan: stockNote || null
+				})
+			});
+			createdItems.push({ tipe: 'pinjam', ...res.data });
+		}
+	}
+
+	return json({ success: true, id: header.id, reference_no: nomor, items: createdItems });
+};

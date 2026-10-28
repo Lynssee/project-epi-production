@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+		<meta name="text-scale" content="scale" />
+		<meta name="theme-color" id="theme-color-meta" content="#1F6592" />
+
+		<!-- Font disediakan @fontsource-variable/plus-jakarta-sans via layout.css -->
+		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
+
+		%sveltekit.head%
+		<script nonce="%sveltekit.nonce%" data-cfasync="false">
+			try {
+				var m = localStorage.getItem('app_theme_mode');
+				var isDark = m === 'dark';
+				document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+				if (isDark) {
+					document.documentElement.classList.add('dark');
+				} else {
+					document.documentElement.classList.remove('dark');
+				}
+				var metaTag = document.getElementById('theme-color-meta');
+				if (metaTag) metaTag.setAttribute('content', isDark ? '#121A22' : '#1F6592');
+				var d = localStorage.getItem('app_density');
+				if (d === 'compact') document.documentElement.setAttribute('data-density', 'compact');
+			} catch (e) {}
+		</script>
+		<style nonce="%sveltekit.nonce%">
+			/* SSR dimatikan (lihat +layout.ts) — layar putih total sampai bundle JS
+			   selesai dimuat & dieksekusi. Kentara sekali saat cold-load dari QR
+			   fisik (buka Safari baru lewat kamera HP, tanpa cache), terlihat
+			   seperti "aplikasi rusak" padahal cuma sedang boot. Loader statis di
+			   sini murni HTML/CSS supaya tampil instan sebelum JS jalan sama sekali;
+			   dibuang oleh +layout.svelte begitu Svelte selesai mount. */
+			#app-boot-loader {
+				position: fixed;
+				inset: 0;
+				z-index: 9999;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				gap: 12px;
+				background: #ffffff;
+			}
+			:root[data-theme='dark'] #app-boot-loader {
+				background: #121a22;
+			}
+			#app-boot-loader .spinner {
+				width: 32px;
+				height: 32px;
+				border-radius: 50%;
+				border: 3px solid rgba(31, 101, 146, 0.18);
+				border-top-color: #1f6592;
+				animation: app-boot-spin 0.8s linear infinite;
+			}
+			#app-boot-loader .boot-slow-hint {
+				display: none;
+				flex-direction: column;
+				align-items: center;
+				gap: 8px;
+				margin-top: 10px;
+				text-align: center;
+				padding: 0 16px;
+				font-family: system-ui, -apple-system, sans-serif;
+			}
+			#app-boot-loader .boot-slow-hint p {
+				margin: 0;
+				font-size: 13px;
+				color: #64748b;
+			}
+			:root[data-theme='dark'] #app-boot-loader .boot-slow-hint p {
+				color: #94a3b8;
+			}
+			#app-boot-loader .boot-reload-btn {
+				padding: 6px 14px;
+				font-size: 12px;
+				font-weight: 600;
+				border-radius: 8px;
+				border: 1px solid #cbd5e1;
+				background: #f8fafc;
+				color: #1e293b;
+				cursor: pointer;
+			}
+			@keyframes app-boot-spin {
+				to {
+					transform: rotate(360deg);
+				}
+			}
+		</style>
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div id="app-boot-loader">
+			<div class="spinner"></div>
+			<div class="boot-slow-hint" id="boot-slow-hint">
+				<p>Memuat memakan waktu lebih lama dari biasanya...</p>
+				<button type="button" class="boot-reload-btn" onclick="window.location.reload()">Muat Ulang</button>
+			</div>
+		</div>
+		<script nonce="%sveltekit.nonce%" data-cfasync="false">
+			setTimeout(function() {
+				var hint = document.getElementById('boot-slow-hint');
+				if (hint) hint.style.display = 'flex';
+			}, 7000);
+		</script>
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

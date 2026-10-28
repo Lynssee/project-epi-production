@@ -1,0 +1,1914 @@
+%PDF-1.3
+%ºß¬à
+3 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 4 0 R
+>>
+endobj
+4 0 obj
+<<
+/Length 2583
+>>
+stream
+0.5670000000000001 w
+0 G
+0.06 0.09 0.16 rg
+0. 841.8899999999999864 42.5196850393700814 -841.8899999999999864 re
+f
+0.15 0.39 0.92 rg
+42.5196850393700814 841.8899999999999864 8.5039370078740166 -841.8899999999999864 re
+f
+BT
+/F2 24 Tf
+27.5999999999999979 TL
+0.059 0.09 0.165 rg
+79.3700787401574814 685.9844881889763428 Td
+(DOKUMEN RENCANA) Tj
+ET
+BT
+/F2 24 Tf
+27.5999999999999979 TL
+0.059 0.09 0.165 rg
+79.3700787401574814 657.6380314960629221 Td
+(IMPLEMENTASI) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.145 0.388 0.922 rg
+79.3700787401574814 615.1183464566928478 Td
+(Sistem Bonus Karyawan & Komisi Sales Representative) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.145 0.388 0.922 rg
+79.3700787401574814 595.2758267716535556 Td
+(Konteks: Kontraktor, Manufaktur, & Rental Alat Berat) Tj
+ET
+0.89 0.91 0.94 RG
+1.4173228346456694 w
+79.3700787401574814 552.7561417322833677 m
+538.5870866141731312 552.7561417322833677 l
+S
+BT
+/F1 10.5 Tf
+12.0749999999999993 TL
+0.2 0.255 0.333 rg
+79.3700787401574814 518.7403937007873083 Td
+(Dokumen ini menyajikan rencana implementasi teknis untuk sistem insentif, bonus tahunan) Tj
+ET
+BT
+/F1 10.5 Tf
+12.0749999999999993 TL
+0.2 0.255 0.333 rg
+79.3700787401574814 503.1498425196849666 Td
+(karyawan \(kombinasi performa & kehadiran\), dan komisi sales representative berdasarkan profit) Tj
+ET
+BT
+/F1 10.5 Tf
+12.0749999999999993 TL
+0.2 0.255 0.333 rg
+79.3700787401574814 487.559291338582625 Td
+(margin. Dokumen ini disiapkan untuk review awal sebelum eksekusi kode dilakukan.) Tj
+ET
+0.97 0.98 0.99 rg
+79.3700787401574814 226.7716535433071101 459.2170078740156782 -141.7322834645669332 re
+f
+BT
+/F2 9.5 Tf
+10.9249999999999989 TL
+0.059 0.09 0.165 rg
+93.5433070866141776 204.0944881889763565 Td
+(INFORMASI DOKUMEN:) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.2 0.255 0.333 rg
+93.5433070866141776 181.4173228346456881 Td
+(Aplikasi Lapangan : project-epi \(c:\\SynologyDrive\\...\\project-epi\)) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.2 0.255 0.333 rg
+93.5433070866141776 164.4094488188976584 Td
+(Aplikasi Admin     : erp-epi/maintenance \(c:\\SynologyDrive\\...\\erp-epi-1\)) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.2 0.255 0.333 rg
+93.5433070866141776 147.4015748031496287 Td
+(Target Koneksi     : Directus CMS & n8n Automation Engine) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.2 0.255 0.333 rg
+93.5433070866141776 130.393700787401599 Td
+(Keamanan Akses     : Hanya mviondanovrian@gmail.com & natasya@gmail.com) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.2 0.255 0.333 rg
+93.5433070866141776 113.3858267716535693 Td
+(Tanggal Pembuatan : 10 Juli 2026) Tj
+ET
+endstream
+endobj
+5 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 6 0 R
+>>
+endobj
+6 0 obj
+<<
+/Length 4778
+>>
+stream
+1.4173228346456694 w
+0.89 0.91 0.94 RG
+0.89 0.91 0.94 RG
+0.8503937007874016 w
+56.6929133858267775 799.3703149606299121 m
+538.5870866141731312 799.3703149606299121 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 810.7088976377953031 Td
+(RENCANA IMPLEMENTASI: SISTEM BONUS KARYAWAN & KOMISI SALES) Tj
+ET
+56.6929133858267775 42.5196850393700814 m
+538.5870866141731312 42.5196850393700814 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 28.3464566929134207 Td
+(DOKUMEN RENCANA KERJA - CONFIDENTIAL) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+496.067401574803057 28.3464566929134207 Td
+(Halaman 2) Tj
+ET
+0.15 0.39 0.92 rg
+45.354330708661422 779.5277952755905062 7.0866141732283472 -45.354330708661422 re
+f
+BT
+/F2 14 Tf
+16.0999999999999979 TL
+0.059 0.09 0.165 rg
+56.6929133858267775 754.0159842519684616 Td
+(1. Ringkasan Eksekutif & Analisis Konteks Bisnis) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 717.4490551181102092 Td
+(Implementasi sistem bonus dan komisi ini disesuaikan dengan karakteristik tiga lini bisnis yang dijalankan:) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 701.8585039370078675 Td
+(Kontraktor, Manufaktur, dan Rental Alat Berat. Sistem dirancang untuk menyelaraskan motivasi karyawan) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 686.2679527559055259 Td
+(dengan profitabilitas perusahaan, menjaga efisiensi anggaran, serta meningkatkan transparansi pembagian) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 670.6774015748030706 Td
+(keuntungan.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 643.748267716535338 Td
+(Pemetaan Lini Bisnis ke Sistem Komisi & Bonus:) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 615.8270078740157487 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 615.8270078740157487 Td
+(Kontraktor \(Project-Based\): Komisi dihitung dari profit bersih proyek \(Nilai SPK/Sales Order dikurangi) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 600.2364566929134071 Td
+(pengeluaran aktual material, upah borongan manpower, dan pengeluaran lapangan\). Kami) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 584.6459055118109518 Td
+(merekomendasikan pembagian komisi untuk Project Leader yang berhasil menyelesaikan proyek di) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 569.0553543307086102 Td
+(bawah anggaran RAB.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 544.9608661417322537 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 544.9608661417322537 Td
+(Manufaktur \(Production-Based\): Komisi sales dihitung dari selisih harga jual produk dengan Cost of) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 529.3703149606299121 Td
+(Goods Manufactured \(COGM\) atau total biaya bahan baku/RAB produksi.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 505.2758267716534988 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 505.2758267716534988 Td
+(Rental Alat Berat \(Fleet-Based\): Komisi sales dihitung dari rental revenue bersih setelah dikurangi) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 489.6852755905511572 Td
+(pengeluaran langsung fleet \(biaya BBM, sopir, pengeluaran trip dari fleet_trip_log, dan perbaikan armada) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 474.0947244094487587 Td
+(rental\).) Tj
+ET
+1. 0.95 0.78 rg
+56.6929133858267775 450.0002362204724022 481.8941732283464034 -100.6299212598425328 re
+f
+0.96 0.62 0.04 RG
+2.8346456692913389 w
+56.6929133858267775 450.0002362204724022 m
+56.6929133858267775 349.3703149606298552 l
+S
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.471 0.208 0.016 rg
+68.031496062992133 430.1577165354329964 Td
+(KEBIJAKAN HAK AKSES AMAN \(ATURAN GLOBAL\):) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.471 0.208 0.016 rg
+68.031496062992133 414.5671653543306547 Td
+(Seluruh data nominal keuangan karyawan \(gaji pokok, bonus tahunan, komisi sales, dan detail insentif\)) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.471 0.208 0.016 rg
+68.031496062992133 398.9766141732283131 Td
+(wajib diproteksi secara ketat. Sesuai aturan global, hanya akun email mviondanovrian@gmail.com dan) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.471 0.208 0.016 rg
+68.031496062992133 383.3860629921259147 Td
+(natasya@gmail.com yang berhak membaca, mengubah, atau menyetujui data di modul ini. Akun lain) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.471 0.208 0.016 rg
+68.031496062992133 367.795511811023573 Td
+(akan dibatasi di tingkat API backend dan konfigurasi Directus Role.) Tj
+ET
+endstream
+endobj
+7 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 8 0 R
+>>
+endobj
+8 0 obj
+<<
+/Length 6553
+>>
+stream
+2.8346456692913389 w
+0.96 0.62 0.04 RG
+0.89 0.91 0.94 RG
+0.8503937007874016 w
+56.6929133858267775 799.3703149606299121 m
+538.5870866141731312 799.3703149606299121 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 810.7088976377953031 Td
+(RENCANA IMPLEMENTASI: SISTEM BONUS KARYAWAN & KOMISI SALES) Tj
+ET
+56.6929133858267775 42.5196850393700814 m
+538.5870866141731312 42.5196850393700814 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 28.3464566929134207 Td
+(DOKUMEN RENCANA KERJA - CONFIDENTIAL) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+496.067401574803057 28.3464566929134207 Td
+(Halaman 3) Tj
+ET
+0.15 0.39 0.92 rg
+45.354330708661422 779.5277952755905062 7.0866141732283472 -45.354330708661422 re
+f
+BT
+/F2 14 Tf
+16.0999999999999979 TL
+0.059 0.09 0.165 rg
+56.6929133858267775 754.0159842519684616 Td
+(2. Desain Skema Database \(Directus\)) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 717.4490551181102092 Td
+(Untuk menampung hasil perhitungan bonus dan komisi secara berkelanjutan, kita akan menambahkan tiga) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 701.8585039370078675 Td
+(collection baru di Directus yang saling berelasi dengan tabel projects, karyawan, dan so_customer.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 674.9293700787401349 Td
+(A. Collection: sales_commissions) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 647.0081102362204319 Td
+(Digunakan untuk merekam komisi sales per transaksi/proyek. Field-field penting meliputi:) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 626.2443307086614368 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 626.2443307086614368 Td
+(sales_name \(Varchar\) & karyawan_id \(Integer\) — Menghubungkan ke sales rep.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 602.1498425196849666 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 602.1498425196849666 Td
+(project_id \(Integer\) & so_customer_id \(Integer\) — Relasi ke proyek dan Sales Order.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 578.0553543307086102 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 578.0553543307086102 Td
+(revenue, expenses, profit \(Float\) — Snapshot nilai keuangan saat proyek diselesaikan.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 553.9608661417322537 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 553.9608661417322537 Td
+(commission_percentage \(Float\) & commission_amount \(Float\) — Aturan persentase dan nilai nominal) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 538.3703149606299121 Td
+(komisi.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 514.2758267716535556 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 514.2758267716535556 Td
+(status \(Varchar: draft, approved, paid\) & tahun \(Integer\) — Pengelompokan periode.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 490.1813385826770855 Td
+(B. Collection: bonus_karyawan_tahunan) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 462.2600787401573825 Td
+(Menyimpan rincian formula bonus tahunan karyawan. Field-field penting meliputi:) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 441.4962992125983874 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 441.4962992125983874 Td
+(karyawan_id \(Integer\) — Relasi ke tabel karyawan.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 417.4018110236219741 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 417.4018110236219741 Td
+(tahun \(Integer\) & gaji_pokok_snapshot \(Integer\) — Dasar perhitungan bonus.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 393.3073228346456176 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 393.3073228346456176 Td
+(kpi_score \(Float\) & kpi_multiplier \(Float\) — Data performa karyawan.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 369.2128346456692043 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 369.2128346456692043 Td
+(attendance_rate \(Float\) & attendance_multiplier \(Float\) — Data persentase absensi setahun \(diambil dari) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 353.6222834645668627 Td
+(absensi_karyawan\).) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 329.5277952755905062 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 329.5277952755905062 Td
+(company_target_multiplier \(Float\) — Pengali pencapaian target sales perusahaan.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 305.4333070866141497 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 305.4333070866141497 Td
+(final_bonus_amount \(Integer\) — Hasil akhir perhitungan bonus.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 281.3388188976376796 Td
+(C. Collection: project_commissions \(Insentif Efisiensi Proyek\)) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 253.4175590551180903 Td
+(Merekam insentif profit proyek untuk Project Leader & Mekanik lapangan:) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 232.6537795275589815 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 232.6537795275589815 Td
+(project_id & leader_id — Mengaitkan dengan proyek dan pimpinan lapangan.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 208.559291338582625 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 208.559291338582625 Td
+(cost_saving \(Float\) — Selisih planned RAB vs actual expense.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 184.4648031496062686 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 184.4648031496062686 Td
+(incentive_pool \(Float\) — Porsi cost saving yang dibagikan \(misalnya 15%\).) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 160.3703149606299121 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 160.3703149606299121 Td
+(leader_share \(Float\) & team_share \(Float\) — Pembagian porsi insentif.) Tj
+ET
+endstream
+endobj
+9 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 10 0 R
+>>
+endobj
+10 0 obj
+<<
+/Length 1782
+>>
+stream
+0.8503937007874016 w
+0.89 0.91 0.94 RG
+0.89 0.91 0.94 RG
+0.8503937007874016 w
+56.6929133858267775 799.3703149606299121 m
+538.5870866141731312 799.3703149606299121 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 810.7088976377953031 Td
+(RENCANA IMPLEMENTASI: SISTEM BONUS KARYAWAN & KOMISI SALES) Tj
+ET
+56.6929133858267775 42.5196850393700814 m
+538.5870866141731312 42.5196850393700814 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 28.3464566929134207 Td
+(DOKUMEN RENCANA KERJA - CONFIDENTIAL) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+496.067401574803057 28.3464566929134207 Td
+(Halaman 4) Tj
+ET
+0.94 0.96 1. rg
+56.6929133858267775 771.0238582677164914 481.8941732283464034 -100.6299212598425328 re
+f
+0.23 0.51 0.96 RG
+2.8346456692913389 w
+56.6929133858267775 771.0238582677164914 m
+56.6929133858267775 670.3939370078740012 l
+S
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.118 0.227 0.541 rg
+68.031496062992133 751.1813385826771992 Td
+(PANDUAN QUERY RELASI DIRECTUS:) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.118 0.227 0.541 rg
+68.031496062992133 735.5907874015747439 Td
+(Untuk mencegah error 403 dan menjaga kinerja aplikasi, fetching data relasi \(seperti mengambil data) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.118 0.227 0.541 rg
+68.031496062992133 720.0002362204724022 Td
+(projects, project_expenses, dan absensi_karyawan\) tidak boleh digabung dalam satu request) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.118 0.227 0.541 rg
+68.031496062992133 704.4096850393700606 Td
+(bersarang. Sistem SvelteKit akan melakukan pemanggilan terpisah secara asinkron untuk) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.118 0.227 0.541 rg
+68.031496062992133 688.819133858267719 Td
+(masing-masing relasi.) Tj
+ET
+endstream
+endobj
+11 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 12 0 R
+>>
+endobj
+12 0 obj
+<<
+/Length 5659
+>>
+stream
+2.8346456692913389 w
+0.23 0.51 0.96 RG
+0.89 0.91 0.94 RG
+0.8503937007874016 w
+56.6929133858267775 799.3703149606299121 m
+538.5870866141731312 799.3703149606299121 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 810.7088976377953031 Td
+(RENCANA IMPLEMENTASI: SISTEM BONUS KARYAWAN & KOMISI SALES) Tj
+ET
+56.6929133858267775 42.5196850393700814 m
+538.5870866141731312 42.5196850393700814 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 28.3464566929134207 Td
+(DOKUMEN RENCANA KERJA - CONFIDENTIAL) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+496.067401574803057 28.3464566929134207 Td
+(Halaman 5) Tj
+ET
+0.15 0.39 0.92 rg
+45.354330708661422 779.5277952755905062 7.0866141732283472 -45.354330708661422 re
+f
+BT
+/F2 14 Tf
+16.0999999999999979 TL
+0.059 0.09 0.165 rg
+56.6929133858267775 754.0159842519684616 Td
+(3. Rencana Perubahan: Dashboard Admin \(erp-epi-1\)) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 717.4490551181102092 Td
+(Dashboard Admin pusat akan dilengkapi dengan halaman khusus manajemen bonus & komisi yang hanya) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 701.8585039370078675 Td
+(dapat diakses oleh Direksi / Finance.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 674.9293700787401349 Td
+(A. Pembuatan Halaman Baru: /finance/bonus-komisi) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 647.0081102362204319 Td
+(Halaman ini akan memiliki visualisasi premium, transisi halus, dan terdiri dari empat tab utama:) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 623.4096850393700606 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 623.4096850393700606 Td
+(Tab Komisi Sales: Berisi tabel performa sales, detail target penjualan tahunan \(sales_target\), persentase) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 607.8191338582676053 Td
+(margin proyek yang ditangani, dan perhitungan komisi berdasarkan profit aktual.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 583.7246456692912489 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 583.7246456692912489 Td
+(Tab Komisi Proyek: Menampilkan efisiensi biaya proyek selesai. Jika proyek menghemat anggaran tanpa) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 568.1340944881889072 Td
+(mengurangi kualitas, sistem menampilkan usulan insentif.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 544.0396062992125508 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 544.0396062992125508 Td
+(Tab Bonus Karyawan: Menampilkan daftar seluruh staf, gaji pokok, kehadiran \(dari absensi_karyawan\),) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 528.4490551181102092 Td
+(skor KPI, dan usulan bonus tahunan.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 504.3545669291337958 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 504.3545669291337958 Td
+(Tab Aturan Parameter: Pengaturan batas minimal margin, formula pengali bonus, dan persentase komisi.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 480.2600787401574394 Td
+(B. API Perhitungan Server-Side) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 452.3388188976377364 Td
+(Endpoint '/api/finance/bonus-komisi/calculate' akan memproses data setahun sekali:) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 428.7403937007873651 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 428.7403937007873651 Td
+(Langkah 1: Menghitung profit SO/proyek \(Revenue SO minus Total Expenses\).) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 404.6459055118109518 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 404.6459055118109518 Td
+(Langkah 2: Menghitung rasio absensi karyawan dari absensi_karyawan \(Jumlah hadir dibagi total hari) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 389.0553543307086102 Td
+(kerja\).) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 364.9608661417321969 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 364.9608661417321969 Td
+(Langkah 3: Mengambil data skor KPI akhir tahun.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 340.8663779527558404 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 340.8663779527558404 Td
+(Langkah 4: Melakukan kalkulasi formula bonus & komisi dan menyimpannya sebagai draft di Directus.) Tj
+ET
+1. 0.95 0.95 rg
+56.6929133858267775 316.7718897637794271 481.8941732283464034 -85.0393700787401627 re
+f
+0.94 0.27 0.27 RG
+2.8346456692913389 w
+56.6929133858267775 316.7718897637794271 m
+56.6929133858267775 231.7325196850392786 l
+S
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.6 0.106 0.106 rg
+68.031496062992133 296.9293700787401349 Td
+(VALIDASI EMAIL KETAT:) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.6 0.106 0.106 rg
+68.031496062992133 281.3388188976376796 Td
+(Setiap request ke API perhitungan dan halaman visualisasi akan divalidasi di server-side. Jika email) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.6 0.106 0.106 rg
+68.031496062992133 265.748267716535338 Td
+(user yang terautentikasi Firebase bukan mviondanovrian@gmail.com atau natasya@gmail.com, server) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.6 0.106 0.106 rg
+68.031496062992133 250.1577165354329964 Td
+(langsung mengembalikan respons 403 Forbidden.) Tj
+ET
+endstream
+endobj
+13 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 14 0 R
+>>
+endobj
+14 0 obj
+<<
+/Length 4349
+>>
+stream
+2.8346456692913389 w
+0.94 0.27 0.27 RG
+0.89 0.91 0.94 RG
+0.8503937007874016 w
+56.6929133858267775 799.3703149606299121 m
+538.5870866141731312 799.3703149606299121 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 810.7088976377953031 Td
+(RENCANA IMPLEMENTASI: SISTEM BONUS KARYAWAN & KOMISI SALES) Tj
+ET
+56.6929133858267775 42.5196850393700814 m
+538.5870866141731312 42.5196850393700814 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 28.3464566929134207 Td
+(DOKUMEN RENCANA KERJA - CONFIDENTIAL) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+496.067401574803057 28.3464566929134207 Td
+(Halaman 6) Tj
+ET
+0.15 0.39 0.92 rg
+45.354330708661422 779.5277952755905062 7.0866141732283472 -45.354330708661422 re
+f
+BT
+/F2 14 Tf
+16.0999999999999979 TL
+0.059 0.09 0.165 rg
+56.6929133858267775 754.0159842519684616 Td
+(4. Rencana Perubahan: Dashboard Lapangan \(project-epi\)) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 717.4490551181102092 Td
+(Dashboard Lapangan digunakan oleh Project Leader dan Staf Umum. Perubahan difokuskan pada) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 701.8585039370078675 Td
+(transparansi insentif individu tanpa mengekspos data karyawan lain.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 674.9293700787401349 Td
+(A. Fitur ESS \(Employee Self Service\) - Laporan Insentif) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 647.0081102362204319 Td
+(Menambahkan modul visual pada halaman profil karyawan \('profil/+page.svelte'\):) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 623.4096850393700606 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 623.4096850393700606 Td
+(Untuk Staf Umum: Menampilkan ringkasan bonus tahunan yang akan diterima beserta penjelasannya) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 607.8191338582676053 Td
+(\(Rasio Kehadiran, Nilai Performa, dan Pengali Perusahaan\).) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 583.7246456692912489 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 583.7246456692912489 Td
+(Untuk Project Leader & Sales: Menampilkan rincian komisi proyek yang berhasil diselesaikan, nominal) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 568.1340944881889072 Td
+(profit proyek, serta status pembayarannya.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 544.0396062992125508 Td
+(B. Mekanisme Privasi \(Toggle Eye Icon\)) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 516.1183464566928478 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 516.1183464566928478 Td
+(Demi kenyamanan bersama di area kerja lapangan/site, semua nominal angka rupiah pada laporan) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 500.5277952755905062 Td
+(pendapatan di halaman profil akan di-sensor \(ditutupi asterisk/bullet\) secara default.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 476.4333070866140929 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 476.4333070866140929 Td
+(Pengguna dapat mengklik tombol berbentuk ikon mata \(eye icon\) untuk memunculkan/menyembunyikan) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 460.8427559055117513 Td
+(kembali nominal tersebut.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 436.748267716535338 Td
+(C. API Endpoint Terproteksi) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 408.8270078740156919 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 408.8270078740156919 Td
+(Endpoint '/api/ess/bonus-komisi' di project-epi akan mendeteksi email user yang sedang login.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 384.7325196850392786 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 384.7325196850392786 Td
+(Sistem hanya mengembalikan baris data bonus/komisi yang memiliki karyawan_id milik user tersebut.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 369.1419685039369369 Td
+(Mencegah kebocoran data antar karyawan.) Tj
+ET
+endstream
+endobj
+15 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 16 0 R
+>>
+endobj
+16 0 obj
+<<
+/Length 4238
+>>
+stream
+0.8503937007874016 w
+0.89 0.91 0.94 RG
+0.89 0.91 0.94 RG
+0.8503937007874016 w
+56.6929133858267775 799.3703149606299121 m
+538.5870866141731312 799.3703149606299121 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 810.7088976377953031 Td
+(RENCANA IMPLEMENTASI: SISTEM BONUS KARYAWAN & KOMISI SALES) Tj
+ET
+56.6929133858267775 42.5196850393700814 m
+538.5870866141731312 42.5196850393700814 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 28.3464566929134207 Td
+(DOKUMEN RENCANA KERJA - CONFIDENTIAL) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+496.067401574803057 28.3464566929134207 Td
+(Halaman 7) Tj
+ET
+0.15 0.39 0.92 rg
+45.354330708661422 779.5277952755905062 7.0866141732283472 -45.354330708661422 re
+f
+BT
+/F2 14 Tf
+16.0999999999999979 TL
+0.059 0.09 0.165 rg
+56.6929133858267775 754.0159842519684616 Td
+(5. Alur Integrasi n8n & Notifikasi Otomatis) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 717.4490551181102092 Td
+(Otomatisasi n8n akan menghubungkan Directus ke WhatsApp Gateway \(Fonnte API\) untuk mempercepat) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 701.8585039370078675 Td
+(pelaporan slip bonus/komisi.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 674.9293700787401349 Td
+(A. Pemicu Webhook \(Directus Triggers\)) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 647.0081102362204319 Td
+(Saat Direksi/Finance mengubah status bonus atau komisi menjadi 'paid' di Admin Dashboard:) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 623.4096850393700606 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 623.4096850393700606 Td
+(Directus memicu webhook ke n8n berisi payload data karyawan, nomor HP, dan rincian nominal.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 599.3151968503937042 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 599.3151968503937042 Td
+(n8n memproses data dan membuat format pesan slip gaji/bonus yang dipersonalisasi.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 575.2207086614173477 Td
+(B. Pengiriman Slip melalui WhatsApp \(Fonnte API\)) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.2 0.255 0.333 rg
+56.6929133858267775 547.2994488188976447 Td
+(n8n memicu API Fonnte untuk mengirimkan pesan WhatsApp ke nomor HP karyawan:) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 523.7010236220471597 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 523.7010236220471597 Td
+(Format Pesan Sales: Informasi total komisi tahunan, daftar proyek/SO yang menyumbang komisi, profit) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 508.1104724409448181 Td
+(aktual, dan tanggal transfer.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 484.0159842519684616 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 484.0159842519684616 Td
+(Format Pesan Staf: Informasi total bonus tahunan, breakdown penilaian KPI, persentase kehadiran, dan) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 468.4254330708660632 Td
+(tanggal transfer.) Tj
+ET
+0.94 0.96 1. rg
+56.6929133858267775 444.3309448818897067 481.8941732283464034 -85.0393700787401627 re
+f
+0.23 0.51 0.96 RG
+2.8346456692913389 w
+56.6929133858267775 444.3309448818897067 m
+56.6929133858267775 359.2915748031495582 l
+S
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.118 0.227 0.541 rg
+68.031496062992133 424.4884251968503577 Td
+(CONTOH TEMPLATE PESAN WHATSAPP:) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.118 0.227 0.541 rg
+68.031496062992133 408.8978740157479592 Td
+('Halo [Nama Karyawan], berikut adalah rincian bonus tahunan Anda untuk periode [Tahun]. Bonus) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.118 0.227 0.541 rg
+68.031496062992133 393.3073228346456176 Td
+(Dasar: Rp[Base], Pengali KPI: [KPI]x, Kehadiran: [Absen]%. Total Bonus: Rp[Total]. Bonus akan) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.118 0.227 0.541 rg
+68.031496062992133 377.7167716535432191 Td
+(ditransfer pada [Tanggal]. Terima kasih atas dedikasi Anda!') Tj
+ET
+endstream
+endobj
+17 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 18 0 R
+>>
+endobj
+18 0 obj
+<<
+/Length 4491
+>>
+stream
+2.8346456692913389 w
+0.23 0.51 0.96 RG
+0.89 0.91 0.94 RG
+0.8503937007874016 w
+56.6929133858267775 799.3703149606299121 m
+538.5870866141731312 799.3703149606299121 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 810.7088976377953031 Td
+(RENCANA IMPLEMENTASI: SISTEM BONUS KARYAWAN & KOMISI SALES) Tj
+ET
+56.6929133858267775 42.5196850393700814 m
+538.5870866141731312 42.5196850393700814 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+56.6929133858267775 28.3464566929134207 Td
+(DOKUMEN RENCANA KERJA - CONFIDENTIAL) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.58 0.639 0.722 rg
+496.067401574803057 28.3464566929134207 Td
+(Halaman 8) Tj
+ET
+0.15 0.39 0.92 rg
+45.354330708661422 779.5277952755905062 7.0866141732283472 -45.354330708661422 re
+f
+BT
+/F2 14 Tf
+16.0999999999999979 TL
+0.059 0.09 0.165 rg
+56.6929133858267775 754.0159842519684616 Td
+(6. Rekomendasi Terbaik & Pertanyaan Klarifikasi) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 717.4490551181102092 Td
+(Rekomendasi Terbaik \(Unrestricted Recommendations\):) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 689.5277952755905062 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 689.5277952755905062 Td
+(Skema Komisi Proyek \(Project Team Bonus\): Project Leader & mekanik seringkali menentukan efisiensi) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 673.9372440944881646 Td
+(material di lapangan. Rekomendasi kami, berikan 10-15% dari cost saving \(penghematan RAB vs Aktual\)) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 658.346692913385823 Td
+(kepada tim proyek sebagai insentif penjagaan profit.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 634.2522047244094665 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 634.2522047244094665 Td
+(Integrasi Trip Fleet untuk Rental: Untuk armada rental alat berat, hubungkan fleet_trip_log secara) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 618.6616535433070112 Td
+(langsung dengan project_expenses untuk melacak konsumsi BBM dan ongkos driver secara presisi) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 603.0711023622046696 Td
+(sebelum menghitung profit rental.) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 578.9766141732283131 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 578.9766141732283131 Td
+(Visualisasi Tren KPI vs Bonus: Tambahkan grafik tren di Admin Dashboard untuk membandingkan) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 563.3860629921259715 Td
+(produktivitas karyawan \(KPI\) dengan anggaran bonus yang dikeluarkan guna melihat ROI dari pemberian) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 547.7955118110235162 Td
+(bonus.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 523.7010236220471597 Td
+(Pertanyaan Klarifikasi untuk Anda:) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 495.7797637795275136 Td
+(Mohon tanggapannya untuk menyempurnakan rancangan ini:) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 471.6852755905511572 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 471.6852755905511572 Td
+(Apakah pengeluaran rental alat berat \(seperti BBM, sewa operator, mobilisasi alat\) sudah terekam di) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 456.0947244094487587 Td
+(project_expenses, atau perlu diambil dari fleet_trip_log?) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 432.0002362204724022 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 432.0002362204724022 Td
+(Berapakah target persentase profit margin minimum yang aman bagi perusahaan sebelum sales) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 416.4096850393700606 Td
+(representative berhak mendapatkan komisi?) Tj
+ET
+BT
+/F2 10 Tf
+11.5 TL
+0.145 0.388 0.922 rg
+56.6929133858267775 392.3151968503936473 Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 392.3151968503936473 Td
+(Apakah formula pengali kehadiran \(absensi\) ingin dibuat linier \(hadir 90% = pengali 0.9\) atau) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+70.8661417322834666 376.7246456692913057 Td
+(menggunakan sistem penalti \(misal terlambat > 5 kali potong bonus 20%\)?) Tj
+ET
+endstream
+endobj
+1 0 obj
+<</Type /Pages
+/Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 15 0 R 17 0 R ]
+/Count 8
+>>
+endobj
+19 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+20 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+21 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+22 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+23 0 obj
+<<
+/Type /Font
+/BaseFont /Courier
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+24 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+25 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+26 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+27 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Roman
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+28 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+29 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Italic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+30 0 obj
+<<
+/Type /Font
+/BaseFont /Times-BoldItalic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+31 0 obj
+<<
+/Type /Font
+/BaseFont /ZapfDingbats
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+32 0 obj
+<<
+/Type /Font
+/BaseFont /Symbol
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+2 0 obj
+<<
+/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]
+/Font <<
+/F1 19 0 R
+/F2 20 0 R
+/F3 21 0 R
+/F4 22 0 R
+/F5 23 0 R
+/F6 24 0 R
+/F7 25 0 R
+/F8 26 0 R
+/F9 27 0 R
+/F10 28 0 R
+/F11 29 0 R
+/F12 30 0 R
+/F13 31 0 R
+/F14 32 0 R
+>>
+/XObject <<
+>>
+>>
+endobj
+33 0 obj
+<<
+/Producer (jsPDF 4.2.1)
+/CreationDate (D:20260710215515+07'00')
+>>
+endobj
+34 0 obj
+<<
+/Type /Catalog
+/Pages 1 0 R
+/OpenAction [3 0 R /FitH null]
+/PageLayout /OneColumn
+>>
+endobj
+xref
+0 35
+0000000000 65535 f 
+0000035974 00000 n 
+0000037842 00000 n 
+0000000015 00000 n 
+0000000152 00000 n 
+0000002787 00000 n 
+0000002924 00000 n 
+0000007754 00000 n 
+0000007891 00000 n 
+0000014496 00000 n 
+0000014634 00000 n 
+0000016469 00000 n 
+0000016608 00000 n 
+0000022320 00000 n 
+0000022459 00000 n 
+0000026861 00000 n 
+0000027000 00000 n 
+0000031291 00000 n 
+0000031430 00000 n 
+0000036077 00000 n 
+0000036203 00000 n 
+0000036334 00000 n 
+0000036468 00000 n 
+0000036606 00000 n 
+0000036730 00000 n 
+0000036859 00000 n 
+0000036991 00000 n 
+0000037127 00000 n 
+0000037255 00000 n 
+0000037382 00000 n 
+0000037511 00000 n 
+0000037644 00000 n 
+0000037746 00000 n 
+0000038095 00000 n 
+0000038181 00000 n 
+trailer
+<<
+/Size 35
+/Root 34 0 R
+/Info 33 0 R
+/ID [ <6AADDDB682F2240882DE2F7498E020C5> <6AADDDB682F2240882DE2F7498E020C5> ]
+>>
+startxref
+38285
+%%EOF

@@ -1,0 +1,6 @@
+- Database menggunakan directus dengan menggunakan beare token (ada di .env file)
+- Frontend menggunakan sveltekit
+- Login dengan firebase email dan password (sudah terhubung di file .env)
+- Tampilan difokuskan untuk pengisian yang mudah
+- tidak terlalu lebar atau memakan tempat untuk ui/ux jika bisa maxi height 1 view page (sesuaikan untuk desktop dan mobile)
+- UI/UX dibuat simple dan mudah digunakan (lihat di file final_daily_report_app.html sebagai referensi ui/ux nya, sesuaikan dengan kebutuhan yang sudah ada di database)

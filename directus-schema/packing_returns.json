@@ -1,0 +1,144 @@
+{
+  "collections": [
+    {
+      "collection": "packing_returns",
+      "meta": {
+        "collection": "packing_returns",
+        "icon": "undo",
+        "note": "Data pengembalian barang dari proyek ke gudang oleh Leader. Dicek kondisinya oleh tim Inventory.",
+        "singleton": false
+      },
+      "schema": {
+        "name": "packing_returns"
+      }
+    }
+  ],
+  "fields": [
+    {
+      "collection": "packing_returns",
+      "field": "id",
+      "type": "integer",
+      "schema": { "is_primary_key": true, "has_auto_increment": true },
+      "meta": { "hidden": true, "readonly": true }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "project_id",
+      "type": "integer",
+      "schema": { "is_nullable": false },
+      "meta": {
+        "required": true,
+        "note": "ID proyek asal barang"
+      }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "material_name",
+      "type": "string",
+      "schema": { "is_nullable": false, "max_length": 255 },
+      "meta": { "required": true, "note": "Nama material yang dikembalikan" }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "material_color",
+      "type": "string",
+      "schema": { "is_nullable": true, "max_length": 255 },
+      "meta": { "note": "Warna atau kode material (opsional)" }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "qty_returned",
+      "type": "decimal",
+      "schema": { "is_nullable": false, "numeric_precision": 10, "numeric_scale": 2 },
+      "meta": { "required": true, "note": "Jumlah yang dikembalikan" }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "unit",
+      "type": "string",
+      "schema": { "is_nullable": false, "max_length": 50 },
+      "meta": { "required": true, "note": "Satuan (Kg, Liter, Pcs, dll)" }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "leader_notes",
+      "type": "text",
+      "schema": { "is_nullable": true },
+      "meta": { "note": "Catatan kondisi dari Leader saat pengajuan return" }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "return_status",
+      "type": "string",
+      "schema": { "is_nullable": false, "default_value": "return_requested", "max_length": 50 },
+      "meta": {
+        "interface": "select-dropdown",
+        "options": {
+          "choices": [
+            { "text": "Diajukan", "value": "return_requested" },
+            { "text": "Sudah Dicek", "value": "return_checked" }
+          ]
+        },
+        "note": "Status pengembalian. Diisi sistem secara otomatis."
+      }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "submitted_by",
+      "type": "string",
+      "schema": { "is_nullable": true, "max_length": 255 },
+      "meta": { "note": "Nama Leader yang mengajukan return (diisi otomatis)" }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "date_created",
+      "type": "timestamp",
+      "schema": { "is_nullable": true },
+      "meta": {
+        "special": ["date-created"],
+        "readonly": true,
+        "note": "Tanggal pengajuan (otomatis)"
+      }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "condition",
+      "type": "string",
+      "schema": { "is_nullable": true, "max_length": 50 },
+      "meta": {
+        "interface": "select-dropdown",
+        "options": {
+          "choices": [
+            { "text": "Baik", "value": "good" },
+            { "text": "Rusak Ringan", "value": "minor_damage" },
+            { "text": "Rusak Berat", "value": "major_damage" },
+            { "text": "Hilang", "value": "lost" }
+          ]
+        },
+        "note": "Kondisi barang — diisi oleh tim Inventory saat pengecekan"
+      }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "condition_notes",
+      "type": "text",
+      "schema": { "is_nullable": true },
+      "meta": { "note": "Catatan kondisi dari tim Inventory" }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "checked_by",
+      "type": "string",
+      "schema": { "is_nullable": true, "max_length": 255 },
+      "meta": { "note": "Nama petugas Inventory yang melakukan pengecekan" }
+    },
+    {
+      "collection": "packing_returns",
+      "field": "checked_at",
+      "type": "timestamp",
+      "schema": { "is_nullable": true },
+      "meta": { "note": "Tanggal pengecekan oleh Inventory" }
+    }
+  ],
+  "relations": []
+}

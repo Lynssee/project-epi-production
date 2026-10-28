@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run chec:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(dir:*)",
+      "Bash(wc:*)",
+      "Bash(python3:*)",
+      "Bash(node -e:*)",
+      "mcp__cfe068d1-3959-4b21-83ce-afd0be9dab15__schema",
+      "Bash(npm run *)",
+      "Bash(grep -i \"manpowerAbsensi\\\\|laporan\\\\\\\\\\\\\\\\\\\\[project_id\\\\]\\\\|ProjectPayrollRecap\")",
+      "Bash(netstat -ano)",
+      "Bash(grep -i \"ProjectPayrollRecap\\\\|proyek\\\\\\\\\\\\\\\\\\\\[project_id\\\\]\")",
+      "mcp__cfe068d1-3959-4b21-83ce-afd0be9dab15__items",
+      "mcp__cfe068d1-3959-4b21-83ce-afd0be9dab15__flows",
+      "Bash(node -e \"const m = require\\('@tabler/icons-svelte'\\); console.log\\(['IconClockDollar','IconLock','IconCash','IconCheck','IconX'].map\\(n => n+': '+\\(n in m\\)\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(python3 -)",
+      "Bash(node -e ' *)",
+      "Bash(git log *)",
+      "mcp__cfe068d1-3959-4b21-83ce-afd0be9dab15__fields",
+      "Bash(git stash *)",
+      "Bash(git status *)",
+      "Bash(git show *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:5174/api/directus/items/karyawan?limit=1\")",
+      "mcp__6706969f-c7ba-4c35-8347-eb48fdafead8__fields",
+      "Bash(npx svelte-check *)",
+      "Bash(tee svelte-check-out.txt)",
+      "Bash(node scripts/move-packing-request-to-return.mjs --dry-run)",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Documents-GitHub-project-epi\\\\aef38730-c15d-41f3-b23d-aa5b6330e49b\\\\scratchpad\\\\inspect.mjs\")",
+      "Bash(node scripts/move-packing-request-to-return.mjs)",
+      "Bash(cd \"C:\\\\Users\\\\user\\\\Documents\\\\GitHub\\\\erp-epi\" && find . -path ./node_modules -prune -o -iname \"*dashboard*\" -print 2>/dev/null | head -50)"
+    ]
+  }
+}
