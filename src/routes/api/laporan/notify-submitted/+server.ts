@@ -9,7 +9,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireUser } from '$lib/server/firebaseAuth';
 import { getKaryawanByFirebaseUid } from '$lib/server/approvalSubmit';
-import { notifyProjectReportSubmitted, notifyProjectReportVendorProgress, notifyProjectManpowerDeficit, notifyProjectClientInstructionVo } from '$lib/server/projectNotify';
+import { notifyProjectReportSubmitted, notifyProjectReportVendorProgress, notifyProjectManpowerDeficit, notifyProjectClientInstructionVo, notifyProjectQcDefectAlert } from '$lib/server/projectNotify';
 import { createMasterPengajuanEntry } from '$lib/server/masterPengajuanSubmit';
 import { createUrgentPackingFromReport } from '$lib/server/reportUrgentPacking';
 import { resolveFieldOverrideAllowed } from '$lib/server/gates/plFieldOverride';
@@ -55,6 +55,15 @@ export const POST: RequestHandler = async (event) => {
 	if (clientInstructionVoPengawas && reportId) {
 		notifyProjectClientInstructionVo(reportId, projectId, projectName, clientInstructionVoPengawas).catch((e) =>
 			console.warn('[laporan/notify-submitted] notifyProjectClientInstructionVo gagal (diabaikan):', e?.message)
+		);
+	}
+
+	// Fase 5 Penajaman Laporan Harian (Epoxy/Coating QC) — Alert cacat mutu kritis & anomali ambient
+	const defectItems = Array.isArray(body?.defectItems) ? body.defectItems : [];
+	const ambientAlertText = typeof body?.ambientAlertText === 'string' ? body.ambientAlertText : null;
+	if (reportId && (defectItems.length > 0 || ambientAlertText)) {
+		notifyProjectQcDefectAlert(reportId, projectId, projectName, defectItems, ambientAlertText).catch((e) =>
+			console.warn('[laporan/notify-submitted] notifyProjectQcDefectAlert gagal (diabaikan):', e?.message)
 		);
 	}
 

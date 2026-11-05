@@ -5,6 +5,9 @@
 //                                    EPI:PJM:<id>:<token> — rental_order, Peminjaman External (F3, Bab 6.1)
 //                                    EPI:SJI:<id>:<token> — sji_header, Surat Jalan Internal v2 Fase 2
 //   EPI:SOP:<id> — sop_documents, QR di SOP cetak -> buka pembaca digital (R3, roadmap AI Training & SOP)
+//   EPI:FLOW:<flow_key>[:<node_id>] — stiker QR SOP/Instruksi Kerja pada mesin & area kerja (R-L3, Peta Alur Bisnis Grand). Dicetak admin erp-epi
+//                 (/settings/process-guidance → 📱 Label QR SOP). Scan → /panduan/alur?alur=<flow_key>&fokus=<node_id>. Tanpa token: panduan
+//                 baca-saja di balik login biasa. flow_key/node_id huruf kecil/angka/_ (sama dengan validator alur).
 //   EPI:SO:<id> — so_customer, QR ditampilkan admin di /sales/po-verify (erp-epi-1) -> buka
 //                 halaman unggah PO lapangan langsung ke SO yang tepat (R10, Sales B2B PO/RAP v2 §6)
 //   EPI:COMP:<id> — component_unit (CLM v2), id integer > 0. Label dicetak admin erp-epi-1
@@ -37,6 +40,8 @@ export type EpiQrType =
 	// Payload EPI:RTN:<id>:<token>, id integer > 0.
 	| 'RTN'
 	| 'SOP'
+	// R-L3 — stiker QR alur/langkah SOP: EPI:FLOW:<flow_key>[:<node_id>] (id = flow_key STRING, node = id langkah opsional).
+	| 'FLOW'
 	| 'EQUIPMENT'
 	| 'SO'
 	| 'COMP'
@@ -62,9 +67,11 @@ export interface ParsedEpiQr {
 	type: EpiQrType;
 	id: number | string;
 	token?: string; // Hanya ada untuk tipe berparameter (SJ, PJM, SJI, CIK-SJK, BLJ-SJK, WSTN, BADGE, SWA)
+	/** Hanya tipe FLOW: id langkah yang difokuskan (opsional). */
+	node?: string;
 }
 
-const VALID_TYPES: EpiQrType[] = ['ITEM', 'LOC', 'BATCH', 'SJ', 'PJM', 'SJI', 'RTN', 'SOP', 'EQUIPMENT', 'SO', 'COMP', 'CIK-SJK', 'BLJ-SJK', 'CIK-SJK-V2', 'BLJ-SJK-V2', 'WSTN', 'BADGE', 'SPK', 'SWA'];
+const VALID_TYPES: EpiQrType[] = ['ITEM', 'LOC', 'BATCH', 'SJ', 'PJM', 'SJI', 'RTN', 'SOP', 'FLOW', 'EQUIPMENT', 'SO', 'COMP', 'CIK-SJK', 'BLJ-SJK', 'CIK-SJK-V2', 'BLJ-SJK-V2', 'WSTN', 'BADGE', 'SPK', 'SWA'];
 // Tipe yang memakai format 4 segmen EPI:<TYPE>:<id>:<token>, id integer
 const PARAMETERIZED_TYPES: EpiQrType[] = ['SJ', 'PJM', 'SJI', 'RTN', 'CIK-SJK', 'BLJ-SJK', 'CIK-SJK-V2', 'BLJ-SJK-V2', 'WSTN', 'SPK', 'SWA'];
 // Tipe yang memakai format 4 segmen EPI:<TYPE>:<id>:<token>, id STRING (no_badge bukan selalu numerik)
@@ -99,6 +106,16 @@ export function parseEpiQr(raw: string): ParsedEpiQr | null {
 		const token = parts[3];
 		if (!id || !token) return null;
 		return { type, id, token };
+	}
+
+	if (type === 'FLOW') {
+		// EPI:FLOW:<flow_key> atau EPI:FLOW:<flow_key>:<node_id> — kunci ketat agar QR rusak/asing ditolak, bukan dipaksa menjadi URL.
+		if (parts.length < 3 || parts.length > 4) return null;
+		const flowKey = parts[2];
+		const node = parts[3];
+		if (!/^[a-z0-9_]{1,100}$/.test(flowKey)) return null;
+		if (node !== undefined && !/^[a-z0-9_]{1,60}$/.test(node)) return null;
+		return node ? { type, id: flowKey, node } : { type, id: flowKey };
 	}
 
 	if (type === 'EQUIPMENT') {

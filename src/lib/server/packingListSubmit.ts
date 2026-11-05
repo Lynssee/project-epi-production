@@ -17,6 +17,7 @@ import { createApprovalRequest } from './approvalSubmit';
 import { createMasterPengajuanEntry } from './masterPengajuanSubmit';
 import { evaluateFieldPLGatesWithDisiplin } from './gates/plDisiplinFieldGates';
 import { recordFieldGateOverride } from './gates/plFieldOverride';
+import { notifyFieldAnomaly } from './gates/plFieldAnomalyNotify';
 import { formatPlTitle, resolveProjectTitleParts } from './approvalTitle';
 
 const num = (v: any) => parseFloat(v || 0) || 0;
@@ -110,7 +111,7 @@ export async function submitPackingListRequest({
 
 	const ids = cleanItems.map((it) => it.id);
 	const rowsRes: any = await directusServerJson(
-		`/items/project_budgets?filter[id][_in]=${ids.join(',')}&fields=id,project_id,material_name,material_color,unit_price,identitas_barang_id,no_item_needed,is_manpower`
+		`/items/project_budgets?filter[id][_in]=${ids.join(',')}&fields=id,project_id,material_name,material_color,budget_category,unit,unit_price,identitas_barang_id,no_item_needed,is_manpower`
 	);
 	const rows: any[] = rowsRes?.data || [];
 	const rowById = new Map(rows.map((r) => [r.id, r]));
@@ -138,6 +139,8 @@ export async function submitPackingListRequest({
 				identitas_barang_id: idb,
 				material_name: r.material_name,
 				material_color: r.material_color || null,
+				budget_category: r.budget_category || null,
+				unit: r.unit || null,
 				no_item_needed: r.no_item_needed === true || r.no_item_needed === 1 || r.no_item_needed === '1',
 				is_manpower: r.is_manpower === true || r.is_manpower === 1 || r.is_manpower === '1'
 			};
@@ -158,6 +161,8 @@ export async function submitPackingListRequest({
 				sourceId: cleanItems[0].id
 			});
 		}
+		// Early warning n8n bila qty ekstrem (best-effort, dedupe; biaya API nol bila webhook belum diset) — tidak menahan pengajuan.
+		void notifyFieldAnomaly(gateRows, directusServerJson, { source: 'field_submit', sourceId: cleanItems[0].id });
 	}
 
 	const totalAmount = cleanItems.reduce((sum, it) => {

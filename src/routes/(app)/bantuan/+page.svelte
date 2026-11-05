@@ -11,6 +11,11 @@
   import { fetchReleaseNotes, type ReleaseNoteItem } from '$lib/services/releaseNotesApi';
   import { startTour } from '$lib/stores/tourStore.svelte';
   import TutorialVideoPlayer from '$lib/components/shared/TutorialVideoPlayer.svelte';
+  import { goto } from '$app/navigation';
+  import KendalaSearch from '../panduan/alur/KendalaSearch.svelte';
+
+  /** Hasil pencarian kendala → buka Alur Kerja tepat di langkah terkait (deep-link ?alur=&fokus=). */
+  const bukaLangkah = (flowId: string, nodeId: string) => goto(`/panduan/alur?alur=${encodeURIComponent(flowId)}&fokus=${encodeURIComponent(nodeId)}`);
 
   // Fase 3 (implementation_plan_Help System): widget "Yang Baru" — release
   // notes published untuk project-epi/both. Gagal fetch = diam-diam kosong,
@@ -123,6 +128,9 @@
   </div>
 
   <div class="p-4 space-y-4">
+    <!-- Cari kendala / pesan gate → loncat ke langkah SOP beserta solusinya -->
+    <KendalaSearch onjump={bukaLangkah} />
+
     <a href="/panduan/alur" class="flex items-center gap-3 bg-white rounded-2xl border border-gray-200 p-4 shadow-sm active:scale-[0.99] transition-transform">
       <span class="text-2xl" aria-hidden="true">🗺️</span>
       <span class="flex-1 min-w-0">

@@ -63,6 +63,9 @@ export function buildCardWarnings(card, context) {
   if (card.profile.sumber_data === 'ai' && st !== 'verified') {
     out.push({ level: 'warn', text: 'Isi dibuat AI dan belum diverifikasi manusia.' });
   }
+  if (card.profile.sumber_data === 'supplier' && st !== 'verified') {
+    out.push({ level: 'warn', text: 'Isi diambil otomatis dari dokumen TDS/MSDS supplier dan belum diverifikasi manusia — cocokkan dengan dokumen aslinya.' });
+  }
   if (card.source === 'group') {
     out.push({ level: 'info', text: 'Profil berlaku untuk model ini (semua unit bernomor).' });
   }

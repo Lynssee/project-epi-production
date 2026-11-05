@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { createFormPersist } from '$lib/utils/formPersist';
-	import { collectDecisionNotes, waitingInfo, oldestWaitDays } from '$lib/shared/pettyCashRules';
+	import { collectDecisionNotes, waitingInfo, oldestWaitDays, atasanStuckHint } from '$lib/shared/pettyCashRules';
 	import { WAITING_STATUSES, buildTimeline, type TimelineEntry } from '$lib/shared/pettyCashUx';
 	import {
 		getPettyCashData,
@@ -824,6 +824,9 @@
 									{/if}
 									<button type="button" class="text-[10px] font-bold text-sky-300 underline" title="Lihat siapa yang sedang memproses pengajuan ini" onclick={() => openHistory(r)}>Riwayat</button>
 								</div>
+								{#if atasanStuckHint(r)}
+									<p class="mt-1 text-[10px] leading-snug text-amber-300">⚠️ {atasanStuckHint(r)}</p>
+								{/if}
 
 								<!-- Fund & Date Info -->
 								<div class="flex items-center gap-2 text-xs text-slate-400 mb-2 flex-wrap">

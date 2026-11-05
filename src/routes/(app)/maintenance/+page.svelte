@@ -128,9 +128,18 @@
 </script>
 
 <div class="max-w-4xl mx-auto p-4 md:p-6 pb-24">
-	<div class="mb-8">
-		<h1 class="text-2xl md:text-3xl font-extrabold tracking-tight gradient-text">Dashboard Maintenance</h1>
-		<p class="text-sm md:text-base mt-1 font-medium" style="color: var(--sys-label3)">Ringkasan pekerjaan maintenance lapangan Anda hari ini</p>
+	<div class="mb-8 flex flex-wrap items-center justify-between gap-3">
+		<div>
+			<h1 class="text-2xl md:text-3xl font-extrabold tracking-tight gradient-text">Dashboard Maintenance</h1>
+			<p class="text-sm md:text-base mt-1 font-medium" style="color: var(--sys-label3)">Ringkasan pekerjaan maintenance lapangan Anda hari ini</p>
+		</div>
+		<a
+			href="/panduan/alur?alur=field_mechanic_daily_activity_and_equipment_downtime_triage"
+			class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 text-xs font-bold transition-colors shadow-2xs shrink-0"
+			title="Lihat Instruksi Kerja (IK) Aktivitas Harian Mekanik & Downtime Alat"
+		>
+			<span>🔧 Panduan IK Mekanik</span>
+		</a>
 	</div>
 
 	{#if loading}

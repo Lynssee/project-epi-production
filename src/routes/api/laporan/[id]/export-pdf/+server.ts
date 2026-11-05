@@ -197,22 +197,130 @@ export async function GET(event: RequestEvent) {
 		? selectBestPhotoCandidates(photoFileIds, 3, 6)
 		: photoFileIds.slice(0, 12);
 
-	// Ambil buffer foto via directusServerFetch dan ubah ke base64
-	const photosList: Array<{ url: string; label: string; category: string }> = [];
-	for (const pf of candidatePhotos) {
+	// In-memory cache agar foto dengan ID sama tidak di-fetch berulang
+	const fileCache = new Map<string, string>();
+	const fetchBase64 = async (fid: any, width = 700): Promise<string | null> => {
+		const fileId = typeof fid === 'object' ? (fid?.id || fid?.directus_files_id || fid?.file_id) : fid;
+		if (!fileId || typeof fileId !== 'string' || fileId.length < 5) return null;
+		if (fileCache.has(fileId)) return fileCache.get(fileId)!;
 		try {
-			const imgRes = await directusServerFetch(`/assets/${pf.id}?width=600&quality=70`);
+			const imgRes = await directusServerFetch(`/assets/${fileId}?width=${width}&quality=75`);
 			if (imgRes.ok) {
 				const buf = Buffer.from(await imgRes.arrayBuffer());
 				const mime = imgRes.headers.get('content-type') || 'image/jpeg';
-				photosList.push({
-					url: `data:${mime};base64,${buf.toString('base64')}`,
-					label: pf.label,
-					category: pf.category
-				});
+				const dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+				fileCache.set(fileId, dataUrl);
+				return dataUrl;
 			}
 		} catch (imgErr) {
-			console.warn('[export-pdf] Gagal ambil aset foto:', pf.id, imgErr);
+			console.warn('[export-pdf] Gagal ambil aset foto:', fileId, imgErr);
+		}
+		return null;
+	};
+
+	// Ambil buffer foto umum via fetchBase64
+	const photosList: Array<{ url: string; label: string; category: string }> = [];
+	for (const pf of candidatePhotos) {
+		const dataUrl = await fetchBase64(pf.id, 600);
+		if (dataUrl) {
+			photosList.push({
+				url: dataUrl,
+				label: pf.label,
+				category: pf.category
+			});
+		}
+	}
+
+	// Ambil subtask_documentation khusus laporan ini dari Directus SSOT (terpisah sesuai aturan relasi)
+	const subdocsRes = await directusServerJson<{ data: any[] }>(
+		`/items/subtask_documentation?filter[report_id][_eq]=${id}&fields=*`
+	).catch(() => ({ data: [] }));
+	const subdocs = Array.isArray(subdocsRes?.data) ? subdocsRes.data : [];
+	const subdocsByName = new Map<string, any>();
+	for (const sd of subdocs) {
+		if (sd.subtask_name) subdocsByName.set(String(sd.subtask_name).trim().toLowerCase(), sd);
+	}
+
+	// Bangun subtaskPairs untuk Lampiran Before & After (Fase 4)
+	const subtaskPairs: any[] = [];
+	const processedSubtaskKeys = new Set<string>();
+
+	if (Array.isArray(progressItems)) {
+		for (const pi of progressItems) {
+			if (!pi) continue;
+			const actName = String(pi.activity || pi.subtask_name || '').trim();
+			if (!actName) continue;
+			const key = actName.toLowerCase();
+			processedSubtaskKeys.add(key);
+
+			const sd = subdocsByName.get(key);
+			const beforeId = pi.foto_before || pi.existing_foto_before || sd?.foto_before || null;
+			const afterId = pi.foto_after || pi.existing_foto_after || sd?.foto_after || null;
+			const duringId = pi.foto_during || pi.existing_foto_during || sd?.foto_during || null;
+
+			// Bila ada salah satu foto, atau bila ada progres fisik > 0
+			if (beforeId || afterId || duringId || (Number(pi.progress_value) > 0)) {
+				const [beforeUrl, afterUrl, duringUrl] = await Promise.all([
+					fetchBase64(beforeId, 800),
+					fetchBase64(afterId, 800),
+					fetchBase64(duringId, 800)
+				]);
+
+				let status: 'complete' | 'before_only' | 'after_only' | 'no_photo' = 'no_photo';
+				if (beforeUrl && afterUrl) status = 'complete';
+				else if (beforeUrl) status = 'before_only';
+				else if (afterUrl) status = 'after_only';
+
+				subtaskPairs.push({
+					subtask_name: actName,
+					category: pi.category || '',
+					progress_value: Number(pi.progress_value) || 0,
+					unit: pi.unit || 'm²',
+					before_url: beforeUrl,
+					before_gps: pi.foto_before_gps || sd?.foto_before_gps || null,
+					after_url: afterUrl,
+					after_gps: pi.foto_after_gps || sd?.foto_after_gps || null,
+					during_url: duringUrl,
+					during_gps: pi.foto_during_gps || sd?.foto_during_gps || null,
+					notes: pi.notes || '',
+					kategori_defect: pi.kategori_defect || '',
+					tindakan_perbaikan: pi.tindakan_perbaikan || '',
+					status
+				});
+			}
+		}
+	}
+
+	// Periksa juga jika ada subdocs yang belum masuk dari progressItems
+	for (const sd of subdocs) {
+		const key = String(sd.subtask_name || '').trim().toLowerCase();
+		if (key && !processedSubtaskKeys.has(key)) {
+			processedSubtaskKeys.add(key);
+			const [beforeUrl, afterUrl, duringUrl] = await Promise.all([
+				fetchBase64(sd.foto_before, 800),
+				fetchBase64(sd.foto_after, 800),
+				fetchBase64(sd.foto_during, 800)
+			]);
+
+			let status: 'complete' | 'before_only' | 'after_only' | 'no_photo' = 'no_photo';
+			if (beforeUrl && afterUrl) status = 'complete';
+			else if (beforeUrl) status = 'before_only';
+			else if (afterUrl) status = 'after_only';
+
+			subtaskPairs.push({
+				subtask_name: sd.subtask_name,
+				category: 'Subtask Documentation',
+				progress_value: 0,
+				unit: '',
+				before_url: beforeUrl,
+				before_gps: sd.foto_before_gps || null,
+				after_url: afterUrl,
+				after_gps: sd.foto_after_gps || null,
+				during_url: duringUrl,
+				during_gps: sd.foto_during_gps || null,
+				notes: '',
+				status
+			});
 		}
 	}
 
@@ -234,6 +342,7 @@ export async function GET(event: RequestEvent) {
 			issues: report.issues,
 			tomorrow_plan: report.tomorrow_plan,
 			photos: photosList,
+			subtask_pairs: subtaskPairs,
 			hse_daily: report.hse_daily,
 			downtime_log: report.downtime_log,
 			qc_ambient: report.qc_ambient,

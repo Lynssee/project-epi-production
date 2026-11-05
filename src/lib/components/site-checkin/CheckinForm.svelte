@@ -2,6 +2,7 @@
 <!-- Fase 3: form check-in modern & intuitif. Proyek dari penugasan aktif / leader + semua proyek aktif untuk kunjungan.
      GPS + foto terverifikasi + deteksi jarak geofence real-time. -->
 <script lang="ts">
+	import { susunBarisPemilih } from '$lib/utils/siteGroupList';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { watchPositionUntilAccurate, type DevicePosition } from '$lib/utils/geoClient';
 	import { watermarkPhoto } from '$lib/utils/photoWatermark';
@@ -54,12 +55,14 @@
 		onSuccess,
 		presetBookingId = null,
 		presetProjectId = null,
-		presetBookingCode = ''
+		presetBookingCode = '',
+		presetPlanId = null
 	}: {
 		onSuccess: () => void;
 		presetBookingId?: string | null;
 		presetProjectId?: number | null;
 		presetBookingCode?: string;
+		presetPlanId?: string | number | null;
 	} = $props();
 
 	// "4-Gate Site Visit System" Fase 3 (8 Sep 2026) — Type Selector: Proyek / Maintenance.
@@ -410,6 +413,9 @@
 		});
 	});
 
+	// GPM-C11 — proyek se-site (banyak PO di satu lokasi) dikelompokkan di bawah judul site.
+	const barisPemilih = $derived(susunBarisPemilih(filteredProjects));
+
 	function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
 		const R = 6371000;
 		const toRad = (d: number) => (d * Math.PI) / 180;
@@ -643,6 +649,7 @@
 				photoFile: finalPhoto,
 				catatan: catatan || undefined,
 				bookingId: presetBookingId,
+				planId: presetPlanId,
 				tipeKeperluan,
 				// Online: TANPA clientCreatedAt (jam HP bisa salah; server pakai jam server).
 				// clientTxnId TETAP dikirim — lihat catatan write-ahead di atas.
@@ -940,6 +947,9 @@
 						<p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5 flex items-center gap-1">
 							<IconMapPin size={13} class="shrink-0 text-slate-400" />
 							{selectedProject.lokasi || 'Lokasi umum'}
+							{#if selectedProject.site_nama && (selectedProject.site_jumlah ?? 0) > 1}
+								<span class="font-semibold text-slate-500 dark:text-slate-400">· Site {selectedProject.site_nama}</span>
+							{/if}
 						</p>
 					{:else}
 						<p class="text-xs font-medium text-slate-400 dark:text-slate-500">
@@ -997,10 +1007,16 @@
 						{:else if filteredProjects.length === 0}
 							<p class="text-xs text-slate-400 dark:text-slate-500 py-3 text-center">Tidak ada proyek yang sesuai filter pencarian.</p>
 						{:else}
-							{#each filteredProjects as p (p.id)}
+							{#each barisPemilih as baris (baris.key)}
+								{#if baris.type === 'header'}
+									<p class="mt-1 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1" title="Beberapa PO/proyek berada di lokasi fisik yang sama. Check-in di salah satunya tetap tercatat untuk lokasi ini.">
+										<IconMapPin size={12} class="shrink-0" /> {baris.nama} — {baris.jumlah} PO
+									</p>
+								{:else}
+								{@const p = baris.p}
 								<button
 									type="button"
-									class="w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 {p.id === selectedProjectId ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-400 dark:border-blue-600' : 'bg-slate-50/40 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/70 dark:border-slate-700/70'}"
+									class="w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 {baris.dalamGrup ? 'ml-3 w-[calc(100%-0.75rem)] ' : ''}{p.id === selectedProjectId ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-400 dark:border-blue-600' : 'bg-slate-50/40 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/70 dark:border-slate-700/70'}"
 									onclick={() => {
 										selectedProjectId = p.id;
 										isProjectSelectorOpen = false;
@@ -1032,6 +1048,7 @@
 										<IconCheck size={16} class="text-blue-600 dark:text-blue-400 shrink-0" />
 									{/if}
 								</button>
+								{/if}
 							{/each}
 						{/if}
 					</div>

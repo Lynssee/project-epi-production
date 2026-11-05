@@ -10,17 +10,18 @@
 // RAB terpilih + item dari template + item manual baru dalam satu pengajuan) — keduanya
 // digabung jadi satu daftar baris sebelum dievaluasi (Gate Transparan & Popup Benahi Data
 // v2, Fase 5, 16 Sep 2026) supaya G_PKL_INVENTORY_LINK bisa melihat baris project_budgets
-// asli yang membawa no_item_needed/is_manpower — draf items (template/manual) tidak punya
-// flag itu jadi otomatis dikecualikan dari gate tsb (lihat plFieldGates.ts).
+// asli yang membawa no_item_needed/is_manpower. Draf dari template membawa template_item_id
+// supaya tautan & flag-nya dibaca dari baris template (lihat loadTemplateFlags).
 //
-//   POST { budgetItemIds?: number[], projectId?: number, items?: [{ qty, identitas_barang_id }] }
+//   POST { budgetItemIds?: number[], projectId?: number,
+//          items?: [{ qty, identitas_barang_id?, template_item_id?, material_name?, material_color?, budget_category? }] }
 //     -> { success, status, gates[], blocking[], warnings[], overridden[], override_allowed }
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { requireUser } from '$lib/server/firebaseAuth';
 import { directusServerJson } from '$lib/server/directus';
-import type { FieldPLRow } from '$lib/server/gates/plFieldGates';
+import { isTruth, loadTemplateFlags, type FieldPLRow } from '$lib/server/gates/plFieldGates';
 import { evaluateFieldPLGatesWithDisiplin } from '$lib/server/gates/plDisiplinFieldGates';
 import { resolveFieldOverrideAllowed } from '$lib/server/gates/plFieldOverride';
 import { getKaryawanByFirebaseUid } from '$lib/server/approvalSubmit';
@@ -44,7 +45,7 @@ export async function POST(event: RequestEvent) {
 		if (budgetItemIds.length) {
 			const res: any = await directusServerJson(
 				`/items/project_budgets?filter[id][_in]=${budgetItemIds.join(',')}` +
-					`&fields=id,project_id,qty,identitas_barang_id,material_name,material_color,no_item_needed,is_manpower&limit=-1`
+					`&fields=id,project_id,qty,unit,identitas_barang_id,material_name,material_color,budget_category,no_item_needed,is_manpower&limit=-1`
 			);
 			for (const r of res?.data || []) {
 				const pid = r.project_id ? (typeof r.project_id === 'object' ? r.project_id.id : r.project_id) : null;
@@ -60,29 +61,39 @@ export async function POST(event: RequestEvent) {
 						: null,
 					material_name: r.material_name || r.description || null,
 					material_color: r.material_color || null,
-					no_item_needed: r.no_item_needed === true,
-					is_manpower: r.is_manpower === true
+					budget_category: r.budget_category || null,
+					unit: r.unit || null,
+					no_item_needed: isTruth(r.no_item_needed),
+					is_manpower: isTruth(r.is_manpower)
 				});
 			}
 		}
 
 		// Jalur 2: item baru / dari template -> tidak punya id project_budgets asli
-		// (id negatif sintetis supaya tak pernah tabrakan dengan id asli), TANPA flag
-		// no_item_needed/is_manpower -> otomatis dikecualikan dari G_PKL_INVENTORY_LINK.
+		// (id negatif sintetis supaya tak pernah tabrakan dengan id asli). Flag non-barang
+		// hanya dari baris template di server, sama dengan createPackingItemsRequest.
 		const projectId = Number(body?.projectId) || resolvedProjectId || null;
 		if (Array.isArray(body?.items)) {
+			const tplFlags = await loadTemplateFlags(body.items.map((it: any) => it?.template_item_id), directusServerJson);
 			body.items.forEach((it: any, i: number) => {
+				const f = it?.template_item_id ? tplFlags.get(Number(it.template_item_id)) : undefined;
+				const clientIdb = it?.identitas_barang_id
+					? typeof it.identitas_barang_id === 'object'
+						? it.identitas_barang_id.id
+						: it.identitas_barang_id
+					: null;
 				rows.push({
 					id: -1000 - i,
 					project_id: projectId,
 					qty: num(it?.qty),
-					identitas_barang_id: it?.identitas_barang_id
-						? typeof it.identitas_barang_id === 'object'
-							? it.identitas_barang_id.id
-							: it.identitas_barang_id
-						: null,
+					identitas_barang_id: f?.identitas_barang_id ?? clientIdb,
 					material_name: it?.material_name || it?.description || null,
-					material_color: it?.material_color || null
+					material_color: it?.material_color || null,
+					budget_category: it?.budget_category || null,
+					unit: it?.unit || null,
+					no_item_needed: !!f?.no_item_needed,
+					is_manpower: !!f?.is_manpower,
+					usul_baru: !!it?.usul_baru && !(f?.identitas_barang_id ?? clientIdb)
 				});
 			});
 		}

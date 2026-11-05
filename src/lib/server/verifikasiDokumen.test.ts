@@ -7,6 +7,7 @@ describe('KONTRAK LINTAS-REPO — vektor tetap (harus sama persis dengan erp-epi
 	it('tanda tangan deterministik untuk rahasia/jenis/id tetap', () => {
 		expect(signDokumen(SECRET, 'pa', 123)).toBe('rVn5NppfebhstXoohhJv8n5r');
 		expect(signDokumen(SECRET, 'bdp', 45)).toBe('lTIFYlrey3hQSvVi-2Y09lGj');
+		expect(signDokumen(SECRET, 'grand_po', 123)).toBe('jDZwC6O8wDJCDhAJu54SPQ6d');
 		expect(signDokumen('lain-secret-0123456789abcdef', 'pa', 123)).toBe('D2V5ez3eT4BxhEQ0y0d3Yf4b');
 	});
 });
@@ -54,6 +55,7 @@ describe('helper', () => {
 	it('buildVerifyUrl & isJenisVerifikasi', () => {
 		expect(buildVerifyUrl('https://project.eltamaprimaindo.com/', 'pa', 9, 'abc_-')).toBe('https://project.eltamaprimaindo.com/verifikasi/pa/9?s=abc_-');
 		expect(isJenisVerifikasi('pa')).toBe(true);
+		expect(isJenisVerifikasi('grand_po')).toBe(true);
 		expect(isJenisVerifikasi('pr')).toBe(false);
 	});
 });

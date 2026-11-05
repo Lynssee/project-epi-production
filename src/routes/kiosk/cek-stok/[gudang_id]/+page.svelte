@@ -10,6 +10,7 @@
 	//   (untuk item yang stok tercatatnya kosong). Hanya master penempatan, tidak menulis stok.
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { fetchExpiryHints, hintTampil, type ExpiryHintItem } from '$lib/services/expiryHint';
 	import { onMount } from 'svelte';
 	import { parseEpiQr } from '$lib/utils/qrParse';
 	import {
@@ -46,6 +47,7 @@
 	let loadError = $state('');
 	let detail = $state<Detail | null>(null);
 	let searchItem = $state('');
+	let expiryHints = $state<Record<number, ExpiryHintItem>>({});
 
 	let filteredPlacements = $derived(
 		detail?.placements
@@ -67,6 +69,8 @@
 			const data = await res.json().catch(() => null);
 			if (!res.ok) throw new Error(data?.message || `Gagal memuat rak (${res.status}).`);
 			detail = data;
+			// Expired Date v2 F5: badge kadaluarsa per barang (1 panggilan; gagal = badge disembunyikan).
+			fetchExpiryHints((data?.placements || []).map((p: Placement) => p.identitas_barang_id), 'kiosk').then((h) => (expiryHints = h));
 		} catch (e) {
 			loadError = e instanceof Error ? e.message : 'Gagal memuat rak.';
 		} finally {
@@ -472,6 +476,16 @@
 								{/if}
 							</div>
 							{#if p.kode_item}<span class="kode">{p.kode_item}</span>{/if}
+							{#if hintTampil(expiryHints[p.identitas_barang_id])}
+								{@const ex = hintTampil(expiryHints[p.identitas_barang_id])!}
+								<div style="margin:4px 0">
+									<span
+										style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:700;background:{ex.bg};color:{ex.fg}"
+										title="Batch aktif paling dekat kadaluarsa (FEFO). Lot {expiryHints[p.identitas_barang_id].terdekat?.lot || '-'}, sisa {expiryHints[p.identitas_barang_id].terdekat?.qty} {expiryHints[p.identitas_barang_id].terdekat?.satuan || ''}."
+									>{ex.ikon} {ex.teks}</span>
+									{#if ex.anjuran}<div style="font-size:11px;color:{ex.fg};margin-top:2px">{ex.anjuran}</div>{/if}
+								</div>
+							{/if}
 							<div class="qty-row">
 								<div class="qty-cell">
 									<span class="qty-label">Sistem</span>

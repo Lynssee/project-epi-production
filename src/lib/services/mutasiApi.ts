@@ -23,7 +23,36 @@ export type Mutasi = {
 	aksi: string[];
 	shipped_at?: string | null;
 	riwayat?: Array<{ keputusan: string; oleh_nama?: string; waktu?: string; catatan?: string | null }>;
+	qr_token?: string | null;
+	driver_name?: string | null;
+	vehicle_plate?: string | null;
+	efek_catatan?: string | null;
 };
+
+/** Jalur yang boleh diajukan dari lapangan. Jalur gudang/workshop-asal diajukan Admin Inventory dari dashboard admin. */
+export const JENIS_LAPANGAN = [
+	{ value: 'proyek_ke_proyek', label: 'Ke proyek lain', hint: 'Sisa material/alat dipindah langsung ke site proyek lain. Proyek tujuan harus menyetujui; biaya ikut pindah.' },
+	{ value: 'proyek_ke_workshop', label: 'Ke workshop', hint: 'Alat rusak / material sisa dikirim ke workshop. Cukup disetujui Admin Inventory; diterima Admin di workshop.' }
+] as const;
+export type JenisLapangan = (typeof JENIS_LAPANGAN)[number]['value'];
+
+/** Workshop tujuan (id sama dengan WORKSHOP_CONFIGS di erp-epi: 1 = Ciketing, 2 = Balaraja). */
+export const WORKSHOP_TUJUAN = [
+	{ id: 1, nama: 'Workshop Ciketing' },
+	{ id: 2, nama: 'MB Balaraja' }
+] as const;
+
+/** Isi QR e-SJ Mutasi — SAMA dengan cetakan admin (/print/mutasi-barang/[id]) dan yang dipindai satpam. */
+export const qrPayloadMutasi = (m: Pick<Mutasi, 'id' | 'qr_token'>): string | null => (m.qr_token ? `EPI:MUT:${m.id}:${m.qr_token}` : null);
+
+/** Urai hasil pindai QR; null bila bukan QR mutasi. */
+export function parseQrMutasi(text: string): { id: number; token: string } | null {
+	const mm = /^EPI:MUT:(\d+):([^\s:]+)$/.exec(String(text || '').trim());
+	return mm ? { id: Number(mm[1]), token: mm[2] } : null;
+}
+
+/** QR hanya bermakna setelah dokumen disetujui sampai diterima (sopir / satpam / penerima membutuhkannya). */
+export const bisaTampilQr = (status: string): boolean => ['disetujui_tujuan', 'dikirim', 'lolos_gerbang'].includes(status);
 
 export const LABEL_STATUS: Record<string, string> = {
 	diajukan: 'Menunggu persetujuan',
@@ -63,7 +92,7 @@ export async function listMutasi(opts: { projectId?: number | null; aktif?: bool
 }
 
 export type AjukanInput = {
-	jenis: 'proyek_ke_proyek';
+	jenis: JenisLapangan;
 	asal_id: number;
 	tujuan_id: number;
 	rute: 'langsung_site' | 'via_gudang';
@@ -115,10 +144,11 @@ export const perluTindakanSaya = (m: Parameters<typeof aksiUntukSaya>[0], me: { 
 export const qtyBolehDimutasi = (saldo: number, terkunci: number): number => Math.max(0, (Number(saldo) || 0) - (Number(terkunci) || 0));
 
 /** Validasi ringan di klien (server tetap yang berwenang). Mengembalikan pesan error atau null. */
-export function validasiFormAjukan(f: { asal: number | ''; tujuan: number | ''; alasan: string; items: Array<{ item_id: number; qty: number; maks: number }> }): string | null {
+export function validasiFormAjukan(f: { jenis?: JenisLapangan; asal: number | ''; tujuan: number | ''; alasan: string; items: Array<{ item_id: number; qty: number; maks: number }> }): string | null {
+	const keWorkshop = f.jenis === 'proyek_ke_workshop';
 	if (!f.asal) return 'Pilih proyek asal.';
-	if (!f.tujuan) return 'Pilih proyek tujuan.';
-	if (f.asal === f.tujuan) return 'Proyek tujuan tidak boleh sama dengan proyek asal.';
+	if (!f.tujuan) return keWorkshop ? 'Pilih workshop tujuan.' : 'Pilih proyek tujuan.';
+	if (!keWorkshop && f.asal === f.tujuan) return 'Proyek tujuan tidak boleh sama dengan proyek asal.';
 	if (!f.items.length) return 'Pilih minimal satu barang.';
 	const lebih = f.items.find((i) => !(i.qty > 0) || i.qty > i.maks + 0.0001);
 	if (lebih) return 'Jumlah tiap barang harus > 0 dan tidak melebihi saldo yang tersedia.';

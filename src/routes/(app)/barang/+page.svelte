@@ -29,6 +29,18 @@
 	// -- tidak ada query/API baru.
 	let kirimanTransit = $state<any[]>([]);
 	let alatBelumKembali = $state(0);
+	// Sinkron pembelian proyek (Fase 4): PO drop-ship yang dikirim supplier LANGSUNG ke site (tanpa SJ gudang). Read-only.
+	let dropshipOrders = $state<any[]>([]);
+	let dropshipBuka = $state(false);
+
+	async function loadDropshipOrders() {
+		try {
+			const { fetchDropshipOrders } = await import('$lib/services/goodsReceived');
+			dropshipOrders = await fetchDropshipOrders();
+		} catch {
+			/* diam-diam — kartu informasi, bukan alur utama */
+		}
+	}
 
 	async function loadKirimanTransit() {
 		try {
@@ -104,6 +116,7 @@
 		}
 		loadRangkapSaya();
 		loadKirimanTransit();
+		loadDropshipOrders();
 		loadAlatBelumKembali();
 	});
 
@@ -286,6 +299,51 @@
 				</div>
 			</div>
 		</button>
+	{/if}
+
+	{#if dropshipOrders.length > 0}
+		<!-- Barang PO drop-ship menuju site: dikirim supplier/toko langsung ke lokasi, TANPA Surat Jalan gudang. Read-only —
+		     penerimaan dicatat Admin (butuh SJ supplier & pencocokan barang master); lapangan cukup siap menerima. -->
+		<div class="rounded-2xl p-4 mb-4" style="background: var(--sys-fill)">
+			<button class="w-full text-left flex items-center justify-between gap-3" onclick={() => (dropshipBuka = !dropshipBuka)} aria-expanded={dropshipBuka}>
+				<div class="flex items-center gap-3 min-w-0">
+					<div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-amber-500/10 text-amber-600">
+						<IconTruck size={20} />
+					</div>
+					<div class="min-w-0">
+						<p class="text-sm font-bold truncate" style="color: var(--sys-label)">
+							Barang dari toko/supplier menuju site ({dropshipOrders.length} PO)
+						</p>
+						<p class="text-xs" style="color: var(--sys-label3)">
+							Dikirim langsung ke lokasi tanpa Surat Jalan gudang — ketuk untuk lihat isinya
+						</p>
+					</div>
+				</div>
+				<span class="text-xs shrink-0" style="color: var(--sys-label3)">{dropshipBuka ? 'Tutup' : 'Lihat'}</span>
+			</button>
+			{#if dropshipBuka}
+				<div class="mt-3 space-y-3">
+					{#each dropshipOrders as o (o.poId)}
+						<div class="rounded-xl p-3" style="background: var(--sys-bg, transparent); border: 1px solid var(--sys-separator, rgba(0,0,0,0.08))">
+							<p class="text-xs font-bold" style="color: var(--sys-label)">{o.poNumber} · {o.supplierName}</p>
+							<p class="text-[10px]" style="color: var(--sys-label3)">
+								{o.projectName}{o.eta ? ` · estimasi tiba ${new Date(o.eta).toLocaleDateString('id-ID')}` : ' · estimasi tiba belum diisi'}
+							</p>
+							<ul class="mt-1.5 space-y-0.5">
+								{#each o.items as it}
+									<li class="text-[11px]" style="color: var(--sys-label2)">
+										{it.name} — {it.received > 0 ? `${it.received}/` : ''}{it.qty} {it.unit}
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/each}
+					<p class="text-[10px]" style="color: var(--sys-label3)">
+						💡 Barang tiba? Periksa spek &amp; kondisinya, lalu buka <a href="/procurement/terima" class="underline font-semibold">Terima Barang PO</a> — isi qty diterima, tandai bagian yang salah spek/rusak (reject) beserta foto. Konfirmasi Anda dipakai Admin untuk mencatat penerimaan resmi; stok lokasi bertambah setelah itu, dan hanya barang yang diterima baik yang ditagih.
+					</p>
+				</div>
+			{/if}
+		</div>
 	{/if}
 
 	{#if rangkapSaya.kiriman.length > 0 || rangkapSaya.kembalikan.length > 0}

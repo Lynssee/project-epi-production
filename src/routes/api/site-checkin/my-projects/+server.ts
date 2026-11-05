@@ -14,8 +14,9 @@ import type { RequestHandler } from './$types';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { directusServerJson } from '$lib/server/directus';
 import { getSiteCheckinSettings } from '$lib/server/siteCheckin';
+import { loadSiteGroupIds, loadSiteMap, anotasiSite, type InfoSiteOpsi } from '$lib/server/siteGeo';
 
-export interface ProjectOption {
+export interface ProjectOption extends Partial<InfoSiteOpsi> {
 	id: number;
 	name: string;
 	lokasi: string | null;
@@ -207,7 +208,18 @@ export const GET: RequestHandler = async (event) => {
 		console.warn('[SiteCheckin] Error fetching kunjungan projects:', e);
 	}
 
-	const allProjects = [...results.values()];
+	// GPM-C11: grup site — proyek se-lokasi (banyak PO) diberi penanda site supaya UI mengelompokkan; titik proyek yang kosong mewarisi titik site.
+	// Dua query kecil (site_group_id proyek, lalu project_sites bila ada), fail-soft: tanpa grup, hasilnya identik dengan sebelumnya.
+	let allProjects: ProjectOption[] = [...results.values()];
+	try {
+		const grup = await loadSiteGroupIds(allProjects.map((p) => p.id));
+		if (grup.size > 0) {
+			const sites = await loadSiteMap([...new Set(grup.values())]);
+			allProjects = anotasiSite(allProjects, grup, sites);
+		}
+	} catch (e) {
+		console.warn('[SiteCheckin] Gagal menerapkan grup site (daftar proyek tanpa grup):', e);
+	}
 	const peranOrder: Record<string, number> = {
 		leader: 1,
 		manpower_leader: 2,

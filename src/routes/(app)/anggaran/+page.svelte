@@ -33,6 +33,8 @@
 	import FilterSort from '$lib/components/FilterSort.svelte';
 	import Tooltip from '$lib/components/ui/Tooltip.svelte';
 	import { getBudgetCategories, type BudgetCategory } from '$lib/services/budgetCategory';
+	import ProjectRecurringAlertBanner from '$lib/components/anggaran/ProjectRecurringAlertBanner.svelte';
+	import { getProjectRecurringExpenses, type ProjectRecurringItem } from '$lib/services/recurringProjectApi';
 	import {
 		getBudgetStatusLabel,
 		getBudgetStatusBadgeClass,
@@ -43,6 +45,7 @@
 	let loading = $state(true);
 	let isLeader = $state(false);
 	let userProjectIds: any[] = $state([]);
+	let projectRecurringItems = $state<ProjectRecurringItem[]>([]);
 	let totalDiajukan = $state(0);
 	let menungguAcc = $state(0);
 	let disetujui = $state(0);
@@ -130,6 +133,9 @@
 				map[p.id] = p.name;
 			});
 			projectsMap = map;
+			getProjectRecurringExpenses(userProjectIds).then((items) => {
+				projectRecurringItems = items;
+			});
 		} catch (error) {
 			console.error('Gagal memuat proyek:', error);
 		}
@@ -318,6 +324,9 @@
 					</button>
 				</div>
 			</div>
+
+			<!-- Pengingat Biaya Berulang Proyek (Fase 4: Sewa Mess & Alat Lapangan) -->
+			<ProjectRecurringAlertBanner items={projectRecurringItems} {projectsMap} />
 
 			<!-- Stats Cards Grid -->
 			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">

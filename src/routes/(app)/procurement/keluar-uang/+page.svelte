@@ -61,7 +61,7 @@
 		}
 		if (sudah === 'belum') {
 			if (untuk === 'proyek') return { key: 'pa_proyek', label: 'Pengajuan Anggaran (Proyek)', href: '/anggaran', why: 'Belum keluar uang & terkait proyek — minta pencairan dana lewat Pengajuan Anggaran, nanti dipertanggungjawabkan (SPJ).' };
-			if (untuk === 'operasional') return { key: 'pa_kaskecil', label: 'Pengajuan Anggaran (Kas Kecil)', href: '/anggaran', why: 'Belum keluar uang, kebutuhan operasional non-proyek — ajukan lewat Pengajuan Anggaran kategori Kas Kecil. SPJ maksimal 7 hari.' };
+			if (untuk === 'operasional') return { key: 'pa_kaskecil', label: 'Pengajuan Anggaran (Operasional)', href: '/anggaran', why: 'Belum keluar uang, kebutuhan operasional non-proyek — ajukan Pengajuan Anggaran kategori Operasional (bukan "Isi Ulang Dana Kas Kecil", itu khusus kustodian). SPJ maksimal 7 hari.' };
 			return { key: 'kasbon', label: 'Kasbon', href: '/kasbon-terpusat', why: 'Butuh dana talangan pribadi yang akan dipotong dari gaji — pakai Kasbon.' };
 		}
 		if (sudah === 'sudah') {

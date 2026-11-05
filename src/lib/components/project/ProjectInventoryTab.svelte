@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { authStore } from '$lib/stores/auth';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
+	import { prefetchKnowledgeCards, type PrefetchResult } from '$lib/services/inventoryCardApi';
 	import {
 		getProjectInventory,
 		getProjectInventoryLogs,
@@ -209,9 +210,89 @@
 				return 'bg-slate-100 text-slate-700 border-slate-200';
 		}
 	}
+
+	// ─── Unduh panduan proyek (Inventory 360° Fase D): pra-muat Kartu 360° semua barang proyek ke HP ───
+	let dlBusy = $state(false);
+	let dlDone = $state(0);
+	let dlTotal = $state(0);
+	let dlResult = $state<PrefetchResult | null>(null);
+	let dlError = $state('');
+	let dlAt = $state<number | null>(null);
+	const dlKey = () => `inv360.pocket.proyek.${projectId}`;
+	// Prioritas: barang yang stoknya ada di site dulu (paling mungkin dipindai/dipakai).
+	const dlIds = $derived([...inventoryItems].sort((a, b) => (b.qtyOnHand || 0) - (a.qtyOnHand || 0)).map((i) => i.itemId));
+
+	$effect(() => {
+		try {
+			dlAt = Number(localStorage.getItem(dlKey())) || null;
+		} catch {
+			dlAt = null;
+		}
+	});
+
+	async function unduhPanduan() {
+		if (dlBusy || !dlIds.length) return;
+		dlBusy = true;
+		dlError = '';
+		dlResult = null;
+		dlDone = 0;
+		dlTotal = 0;
+		try {
+			dlResult = await prefetchKnowledgeCards(dlIds, (done, total) => {
+				dlDone = done;
+				dlTotal = total;
+			});
+			dlAt = Date.now();
+			try {
+				localStorage.setItem(dlKey(), String(dlAt));
+			} catch {
+				/* best-effort */
+			}
+		} catch (e: any) {
+			console.error('[ProjectInventoryTab] unduh panduan proyek gagal:', e);
+			dlError = e?.message || 'Gagal mengunduh panduan.';
+		} finally {
+			dlBusy = false;
+		}
+	}
 </script>
 
 <div class="space-y-6">
+	<!-- Unduh panduan proyek (offline) -->
+	{#if !loading && inventoryItems.length}
+		<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+			<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+				<div>
+					<h3 class="flex items-center gap-2 text-sm font-bold text-slate-800">📴 Panduan offline proyek ini</h3>
+					<p class="mt-0.5 text-xs text-slate-500">
+						Unduh panduan pakai, APD, dan tanda harus ganti untuk {inventoryItems.length} barang di proyek ini, supaya tetap terbaca di site tanpa sinyal.
+						{#if dlAt}Terakhir diunduh {new Date(dlAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}.{/if}
+					</p>
+				</div>
+				<button
+					type="button"
+					class="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+					disabled={dlBusy}
+					onclick={unduhPanduan}
+					title="Lakukan saat HP terhubung internet, sebelum berangkat ke site."
+				>
+					{#if dlBusy}<IconLoader2 size={16} class="animate-spin" /> Mengunduh {dlDone}/{dlTotal}…{:else}Unduh panduan proyek{/if}
+				</button>
+			</div>
+			<ol class="mt-2 list-decimal space-y-0.5 pl-5 text-[11px] text-slate-500">
+				<li>Lakukan <b>saat ada sinyal</b>, sebelum berangkat ke site.</li>
+				<li>Barang yang stoknya ada di site diunduh lebih dulu; yang belum punya profil 360° tidak ikut.</li>
+				<li>Setelah itu, pindai QR barang atau buka kartu — panduan tetap muncul tanpa sinyal, dengan tanda "Mode offline".</li>
+			</ol>
+			{#if dlError}<p class="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{dlError}</p>{/if}
+			{#if dlResult}
+				<p class="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+					Selesai: {dlResult.saved} panduan baru tersimpan{dlResult.skippedFresh ? `, ${dlResult.skippedFresh} sudah terbaru` : ''}{dlResult.noProfile ? `, ${dlResult.noProfile} barang belum punya profil 360°` : ''}{dlResult.trimmed ? `, ${dlResult.trimmed} barang tidak muat di HP (batas diatur admin)` : ''}.
+				</p>
+			{/if}
+		</div>
+	{/if}
+
 	<!-- Top Bar / Action Header -->
 	<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
 		<div>

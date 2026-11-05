@@ -37,6 +37,8 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	let closed = 0;
 	let failed = 0;
+	// Penyebab kegagalan ikut dikembalikan (maks 20) supaya terlihat di eksekusi n8n — dulu hanya jumlah, penyebab hanya di log server.
+	const gagal: { id: string; error: string }[] = [];
 	for (const row of stale) {
 		try {
 			// SV-03: akhir hari WIB dari HARI CHECK-IN kunjungan itu sendiri (bukan hari cron
@@ -60,8 +62,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		} catch (e) {
 			failed += 1;
 			console.error('[site-checkin/auto-close] gagal tutup', row.id, e instanceof Error ? e.message : e);
+			if (gagal.length < 20) gagal.push({ id: row.id, error: e instanceof Error ? e.message : String(e) });
 		}
 	}
 
-	return json({ checked: stale.length, closed, failed });
+	return json({ checked: stale.length, closed, failed, gagal });
 };

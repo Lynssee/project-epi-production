@@ -607,6 +607,11 @@ const STATIC_ROUTE_MAP: Record<string, BreadcrumbResult> = {
 		title: 'Site Check-in Proyek',
 		parentHref: '/ess'
 	},
+	'/spj-upah': {
+		breadcrumb: [{ label: 'Portal Karyawan', href: '/ess' }, { label: 'SPJ Upah' }],
+		title: 'SPJ Upah — Bukti Pembagian',
+		parentHref: '/ess'
+	},
 	'/ess/absen': {
 		breadcrumb: [{ label: 'Portal Karyawan', href: '/ess' }, { label: 'Absensi' }],
 		title: 'Absensi Masuk / Pulang',

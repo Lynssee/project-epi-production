@@ -39,9 +39,10 @@ describe('data panduan alur (lapangan)', () => {
 	const erpCfg = resolve(process.cwd(), '..', 'erp-epi', 'src/lib/config/processGuidanceConfig.js');
 	it.skipIf(!existsSync(erpCfg))('id node & edge sama dengan konfigurasi dashboard admin (erp-epi)', () => {
 		const src = readFileSync(erpCfg, 'utf8');
-		const erpNodeIds = [...src.matchAll(/id: '([a-z_]+)', type:/g)].map((m) => m[1]).sort();
+		const firstFlowSrc = src.split("id: 'sales_to_inventory'")[1]?.split("id: 'maintenance_repair_lifecycle'")[0] ?? src;
+		const erpNodeIds = [...firstFlowSrc.matchAll(/id: '([a-z_]+)', type:/g)].map((m) => m[1]).sort();
 		expect(flow.nodes.map((n) => n.id).sort()).toEqual(erpNodeIds);
-		const erpEdges = [...src.matchAll(/\{ from: '([a-z_]+)', to: '([a-z_]+)'/g)].map((m) => `${m[1]}->${m[2]}`).sort();
+		const erpEdges = [...firstFlowSrc.matchAll(/\{ from: '([a-z_]+)', to: '([a-z_]+)'/g)].map((m) => `${m[1]}->${m[2]}`).sort();
 		expect(flow.edges.map((e) => `${e.from}->${e.to}`).sort()).toEqual(erpEdges);
 	});
 });

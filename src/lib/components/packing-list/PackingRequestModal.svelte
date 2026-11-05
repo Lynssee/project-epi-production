@@ -12,10 +12,13 @@
 	import {
 		getPackingListTemplates, getTemplateItems, getProjectBudgetItems,
 		submitPackingRequest, createPackingListItems, submitPackingFromTemplate,
-		searchMasterCatalog, precheckPackingGate, type MasterCatalogItem
+		searchMasterCatalog, resolveCatalogExact, precheckPackingGate, type MasterCatalogItem
 	} from '$lib/services/packingList';
 	import type { TemplateItem } from '$lib/services/packingList';
+	import { isPaintItem, cleanColor } from '$lib/shared/paintColorUtils';
 	import GateCompletionWizard from '$lib/components/shared/GateCompletionWizard.svelte';
+	import PlGateNotice from '$lib/components/packing-list/PlGateNotice.svelte';
+	import PlCoverageLivePanel from '$lib/components/packing-list/PlCoverageLivePanel.svelte';
 	import GateFixTautanBarang from '$lib/components/shared/GateFixTautanBarang.svelte';
 	import { fetchGateHints, applyGateHints } from '$lib/services/gateHintClient.js';
 	import { createFormPersist, registerFormPersistSaveTriggers } from '$lib/utils/formPersist';
@@ -58,13 +61,16 @@
 	let templateItems = $state<TemplateItem[]>([]);
 	let templateQtyMap = $state<Record<number, number>>({});
 	let templateNotesMap = $state<Record<number, string>>({}); // Keterangan per item template
+	// Warna yang diisi leader untuk baris cat di template yang warnanya kosong (G_PKL_CAT_WARNA).
+	let templateColorMap = $state<Record<number, string>>({});
+	const tplColor = (i: any) => (i?.id != null && templateColorMap[i.id]) || i?.material_color || '';
 	let templateSearch = $state('');
 	
 	let rabItems = $state<any[]>([]);
 	let selectedRab = $state<Set<number>>(new Set());
 	let rabSearch = $state('');
 	
-	let manualItems = $state<Array<{ material_name: string; material_color: string; qty: number; unit: string; description: string; budget_category: string }>>([]);
+	let manualItems = $state<Array<{ material_name: string; material_color: string; qty: number; unit: string; description: string; budget_category: string; identitas_barang_id?: number | null; usul_baru?: boolean }>>([]);
 	// PRJ-26: satu master satuan (bukan daftar sendiri).
 	const unitOptions = UNIT_LABELS;
 	
@@ -84,8 +90,22 @@
 		if (!pid) return { ok: true, gates: [] };
 		const gateItems = [
 			...rabSelected.map((i: any) => ({ qty: i.qty, identitas_barang_id: i.identitas_barang_id, budgetItemId: i.id })),
-			...tplSelected.map((i: any) => ({ qty: templateQtyMap[i.id!] || 0, material_name: i.material_name || i.description })),
-			...manualValid.map((i) => ({ qty: i.qty, material_name: i.material_name }))
+			...tplSelected.map((i: any) => ({
+				qty: templateQtyMap[i.id!] || 0,
+				template_item_id: i.id,
+				identitas_barang_id: i.identitas_barang_id ?? null,
+				material_name: i.material_name || i.description,
+				material_color: tplColor(i) || null,
+				budget_category: i.budget_category || null
+			})),
+			...manualValid.map((i) => ({
+				qty: i.qty,
+				identitas_barang_id: i.identitas_barang_id ?? null,
+				material_name: i.material_name,
+				material_color: i.material_color || null,
+				budget_category: i.budget_category || null,
+				usul_baru: !!i.usul_baru
+			}))
 		];
 		const gate = await precheckPackingGate(pid, gateItems);
 		const hintResult = await fetchGateHints('packing_list', 'packing_list');
@@ -107,6 +127,11 @@
 
 	function handleWizardFixItem(gateKey: string, item: { id: number; label: string }) {
 		if (gateKey === 'G_PKL_INVENTORY_LINK') {
+			// Id negatif = draf yang belum tersimpan, belum bisa diusulkan tautannya.
+			if (item.id <= 0) {
+				alert(`"${item.label}" belum tersimpan. Pilih barangnya dari saran Master Katalog di tab Manual. Bila belum ada di katalog, minta Admin Logistik mendaftarkannya.`);
+				return;
+			}
 			fixTautanBudgetId = item.id;
 			fixTautanLabel = item.label;
 			fixTautanOpen = true;
@@ -138,6 +163,7 @@
 	function onMaterialNameInput(index: number, text: string) {
 		if (!manualItems[index]) return;
 		manualItems[index].material_name = text;
+		manualItems[index].identitas_barang_id = null; // mengetik ulang nama = bukan lagi barang katalog
 		activeSuggestRow = index;
 		clearTimeout(searchDebounceTimer);
 		if (!text || text.trim().length < 2) {
@@ -161,6 +187,8 @@
 	function selectMasterItem(index: number, item: MasterCatalogItem) {
 		if (!manualItems[index]) return;
 		manualItems[index].material_name = item.nama_barang_lengkap;
+		manualItems[index].identitas_barang_id = item.id;
+		manualItems[index].usul_baru = false;
 		if (item.satuan) {
 			// Satuan katalog dipetakan lewat master (Meter→M, Lbr→Lembar); tak dikenal dipakai apa adanya.
 			const matchUnit = normalizeUnitLabel(item.satuan);
@@ -182,7 +210,8 @@
 			manualItems[index].budget_category = 'packing_sewa_alat';
 		}
 
-		if (item.kode_item && !manualItems[index].material_color) {
+		// Cat: kode_item adalah kode barang, bukan warna. Jangan dipakai agar gate warna tidak lolos palsu.
+		if (item.kode_item && !manualItems[index].material_color && !isPaintItem(item.nama_barang_lengkap, { category: manualItems[index].budget_category })) {
 			manualItems[index].material_color = item.kode_item;
 		}
 		
@@ -190,7 +219,7 @@
 		activeSuggestRow = null;
 	}
 
-	function addQuickChip(chip: { name: string; category: string; unit: string }) {
+	async function addQuickChip(chip: { name: string; category: string; unit: string }) {
 		manualItems = [
 			...manualItems,
 			{
@@ -199,9 +228,20 @@
 				qty: 1,
 				unit: chip.unit,
 				description: 'Kebutuhan consumable operasional lapangan',
-				budget_category: chip.category
+				budget_category: chip.category,
+				identitas_barang_id: null
 			}
 		];
+		const idx = manualItems.length - 1;
+		// Tautkan otomatis hanya bila nama chip persis ada di Master Katalog; selain itu label "Belum tertaut" tampil.
+		try {
+			const hit = await resolveCatalogExact(chip.name);
+			if (hit && manualItems[idx]?.material_name === chip.name && !manualItems[idx].identitas_barang_id) {
+				manualItems[idx].identitas_barang_id = hit.id;
+			}
+		} catch (e) {
+			console.warn('[addQuickChip] Gagal mencocokkan katalog:', e);
+		}
 	}
 
 	function getDuplicateWarning(name?: string): { type: 'rab' | 'template'; item: string } | null {
@@ -271,6 +311,21 @@
 	let manualValid = $derived(manualItems.filter(i => (i.material_name || '').trim() && i.qty > 0));
 	let totalItems = $derived(tplSelected.length + rabSelected.length + manualValid.length);
 
+	// Gate Rasionalitas PL (Fase 4) — daftar item untuk kalkulator kewajaran qty. key menunjuk balik ke sumbernya (r: RAB, t: template, m: manual).
+	let coverageItems = $derived([
+		...rabSelected.map((i: any) => ({ key: 'r:' + i.id, item_id: i.identitas_barang_id ?? null, nama_barang: i.material_name || i.description || '', qty_required: Number(i.qty) || 0, unit: i.unit || '' })),
+		...tplSelected.map((i: any) => ({ key: 't:' + i.id, item_id: i.identitas_barang_id ?? null, nama_barang: i.material_name || i.description || '', qty_required: Number(templateQtyMap[i.id!]) || 0, unit: i.unit || '' })),
+		...manualItems
+			.map((i, idx) => ({ key: 'm:' + idx, item_id: i.identitas_barang_id ?? null, nama_barang: i.material_name || '', qty_required: Number(i.qty) || 0, unit: i.unit || '' }))
+			.filter((x) => x.nama_barang.trim() && x.qty_required > 0)
+	]);
+	function applyCoverageQty(key: string, qty: number) {
+		const [kind, ref] = key.split(':');
+		if (kind === 'r') rabItems = rabItems.map((i: any) => (String(i.id) === ref ? { ...i, qty } : i));
+		else if (kind === 't') templateQtyMap = { ...templateQtyMap, [Number(ref)]: qty };
+		else manualItems = manualItems.map((it, idx) => (idx === Number(ref) ? { ...it, qty } : it));
+	}
+
 	function getModalSnapshot(): PackingModalDraft {
 		const rabQtyMap: Record<number, number> = {};
 		for (const item of rabItems) {
@@ -295,6 +350,7 @@
 		draftRestoredNotice = false;
 		templateQtyMap = {};
 		templateNotesMap = {};
+		templateColorMap = {};
 		selectedRab = new Set();
 		manualItems = [];
 		if (selectedProjectId) {
@@ -427,13 +483,13 @@
 
 	function reset() {
 		activeTab = 'template'; selectedProjectId = ''; selectedTemplate = '';
-		templateItems = []; templateQtyMap = {}; templateNotesMap = {}; templateSearch = '';
+		templateItems = []; templateQtyMap = {}; templateNotesMap = {}; templateColorMap = {}; templateSearch = '';
 		rabItems = []; selectedRab = new Set(); rabSearch = ''; manualItems = []; showConfirm = false;
 	}
 
 	async function loadTpl(name: string) {
 		if (!name) return;
-		loadingTpl = true; templateQtyMap = {}; templateNotesMap = {};
+		loadingTpl = true; templateQtyMap = {}; templateNotesMap = {}; templateColorMap = {};
 		try { templateItems = (await getTemplateItems(name)) || []; }
 		finally { loadingTpl = false; }
 	}
@@ -485,6 +541,10 @@
 		templateQtyMap = m;
 	}
 	
+	function setColor(id: number, val: string) {
+		templateColorMap = { ...templateColorMap, [id]: val };
+	}
+
 	function setNotes(id: number, val: string) {
 		const m = { ...templateNotesMap };
 		m[id] = val;
@@ -547,6 +607,7 @@
 						item: {
 							...i,
 							material_name: matName,
+							material_color: tplColor(i),
 							description: desc
 						},
 						qty
@@ -694,6 +755,8 @@
 
 		<!-- Body -->
 		<div class="flex-1 overflow-y-auto bg-slate-50">
+			<div class="m-3 empty:hidden"><PlGateNotice /></div>
+			<div class="mx-3 empty:hidden"><PlCoverageLivePanel projectId={selectedProjectId ? Number(selectedProjectId) : null} items={coverageItems} onApply={applyCoverageQty} /></div>
 			<!-- Banner Bila Belum Ada Proyek -->
 			{#if !loading && projects.length === 0}
 				<div class="m-3 p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl flex items-start gap-3 text-xs text-amber-900 dark:text-amber-200 shadow-xs">
@@ -798,6 +861,18 @@
 														</div>
 														{#if item.material_color}
 															<div class="text-[9px] text-gray-400">{item.material_color}</div>
+														{/if}
+														{#if isSelected && item.id != null && isPaintItem(item.material_name || item.description, { category: item.budget_category }) && !cleanColor(item.material_color)}
+															<input type="text" value={templateColorMap[item.id] || ''} oninput={(e) => setColor(item.id!, (e.target as HTMLInputElement).value)}
+																   placeholder="Warna cat (wajib), cth: RAL 7035 / Clear" title="Item cat wajib punya warna. Isi nama warna / kode RAL, atau 'Clear' untuk cat bening."
+																   class="mt-0.5 w-full text-[10px] py-0.5 px-1.5 border border-amber-300 rounded bg-amber-50 focus:border-[var(--g)] outline-none" />
+														{/if}
+														{#if item.identitas_barang_id}
+															<span class="text-[9px] font-semibold text-emerald-600" title="Tertaut Master Barang: stok terpotong otomatis saat Surat Jalan terbit.">✓ Tertaut master</span>
+														{:else if item.no_item_needed || item.is_manpower}
+															<span class="text-[9px] text-gray-400" title="Ditandai Admin sebagai bukan barang stok, tidak perlu tautan.">Non-stok</span>
+														{:else}
+															<span class="text-[9px] font-semibold text-amber-600" title="Belum tertaut Master Barang. Minta Admin Logistik menautkan baris template ini.">Belum tertaut</span>
 														{/if}
 													</td>
 													<td class="py-1 px-1">
@@ -1014,6 +1089,18 @@
 										placeholder="Cth: CAT PRIMER EPOXY / THINNER PU"
 									/>
 									
+									{#if item.identitas_barang_id}
+										<p class="text-[10px] font-semibold text-emerald-600 mt-0.5">✓ Tertaut Master Barang</p>
+									{:else if (item.material_name || '').trim()}
+										<p class="text-[10px] text-amber-600 mt-0.5">Belum tertaut. Pilih dari saran Master Katalog agar stok terpotong otomatis.</p>
+										{#if !item.identitas_barang_id}
+											<label class="flex items-start gap-1.5 mt-1 text-[10px] text-gray-600 cursor-pointer" title="Pakai bila barang ini benar-benar tidak ada di saran Master Katalog. Admin Logistik akan mendaftarkannya; PL Anda tetap bisa dikirim.">
+												<input type="checkbox" class="mt-0.5" bind:checked={item.usul_baru} />
+												<span>Barang belum ada di katalog — usulkan ke Admin Logistik</span>
+											</label>
+										{/if}
+									{/if}
+
 									<!-- Suggestions Dropdown -->
 									{#if activeSuggestRow === i && searchSuggestions.length > 0}
 										<div class="absolute z-30 left-0 right-0 top-[calc(100%+4px)] bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-56 overflow-y-auto divide-y divide-gray-100">

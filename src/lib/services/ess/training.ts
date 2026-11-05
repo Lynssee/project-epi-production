@@ -97,6 +97,18 @@ export interface KursusListItem {
 	enrollment: TrainingEnrollmentRecord | null;
 	terdaftar: boolean;
 	bisaSelfEnroll: boolean;
+	/** Kode pilar Knowledge (product | technical | management | general | administrative). */
+	pilar?: string;
+}
+
+export interface PilarKnowledge {
+	code: string;
+	label: string;
+	short: string;
+	icon: string;
+	hint: string;
+	/** Jumlah kursus karyawan ini di pilar tsb. */
+	jumlah: number;
 }
 
 export interface KursusDetail {
@@ -166,10 +178,38 @@ async function authedFetch(url: string, options: RequestInit = {}): Promise<Resp
 	});
 }
 
-export async function getKursusList(): Promise<{ kursus: KursusListItem[] }> {
+export async function getKursusList(): Promise<{ kursus: KursusListItem[]; pilar?: PilarKnowledge[] }> {
 	const res = await authedFetch('/api/ess/training');
 	if (!res.ok) throw new Error(await parseErrorMessage(res));
 	return res.json();
+}
+
+export interface PintasanItem {
+	programId: number;
+	judul: string;
+	kode: string | null;
+	pilar: string;
+	pilarLabel: string;
+	durasiMenit: number | null;
+	progress: number;
+	wajib: boolean;
+	status: 'baru' | 'berjalan';
+}
+
+// Cache per sesi (1 panggilan API per konteks) — kartu pintasan muncul di banyak halaman; hemat request.
+const pintasanCache = new Map<string, Promise<{ items: PintasanItem[] }>>();
+
+export function getPintasanBelajar(konteks: string): Promise<{ items: PintasanItem[] }> {
+	const hit = pintasanCache.get(konteks);
+	if (hit) return hit;
+	const p = (async () => {
+		const res = await authedFetch(`/api/ess/training/pintasan?konteks=${encodeURIComponent(konteks)}`);
+		if (!res.ok) throw new Error(await parseErrorMessage(res));
+		return (await res.json()) as { items: PintasanItem[] };
+	})();
+	pintasanCache.set(konteks, p);
+	p.catch(() => pintasanCache.delete(konteks)); // gagal tidak di-cache
+	return p;
 }
 
 export async function getKursusDetail(programId: number | string): Promise<KursusDetail> {

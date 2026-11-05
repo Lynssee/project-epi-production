@@ -401,3 +401,49 @@ export async function notifyProjectManpowerDeficit(
 	});
 }
 
+/**
+ * Fase 5 Penajaman Laporan Harian (Epoxy/Coating QC):
+ * Alert instan ke Supervisor, QC Manager, & Admin Project saat terdeteksi cacat mutu kritis
+ * (blistering, fish eye, peeling, tacky) atau anomali parameter ambient (Delta T < 3°C, kelembaban beton > 5%).
+ * Fail-soft, dipanggil fire-and-forget setelah submit laporan harian.
+ */
+export async function notifyProjectQcDefectAlert(
+	reportId: number | string,
+	projectId: number | string,
+	projectName: string,
+	defectItems: Array<{ subtask?: string; defect?: string; notes?: string; action?: string }>,
+	ambientAlertText?: string | null
+): Promise<void> {
+	const waRecipients = await fetchProjectRecipients('supervisor');
+	const lines: string[] = [];
+
+	if (defectItems && defectItems.length > 0) {
+		lines.push('⚠️ *Temuan Cacat Kritis:*');
+		for (const d of defectItems) {
+			const sub = d.subtask ? `[${d.subtask}] ` : '';
+			const def = d.defect ? `*${d.defect}*` : 'Anomali Mutu';
+			const nts = d.notes ? ` - ${d.notes}` : '';
+			const act = d.action ? `\n   ↳ _Tindakan Site: ${d.action}_` : '';
+			lines.push(`• ${sub}${def}${nts}${act}`);
+		}
+	}
+
+	if (ambientAlertText) {
+		lines.push(`\n🌡️ *Kondisi QC Ambient:* ${ambientAlertText}`);
+	}
+
+	const message = `🚨 *PERINGATAN DINI CACAT MUTU LAPANGAN (QC DEFECT ALERT)*\n` +
+		`Proyek: *${projectName}*\n\n` +
+		`${lines.join('\n')}\n\n` +
+		`🔍 Mohon QC / Technical Advisor segera review komparasi foto Before-After sebelum material curing permanen.\n` +
+		`🔗 Dashboard: https://internal.eltamaprimaindo.com/project?tab=laporan-harian`;
+
+	await dispatch('project_qc_defect_critical_alert', message, {
+		waRecipients,
+		sourceCollection: 'reports',
+		sourceId: reportId,
+		actionUrl: `/laporan/${projectId}`,
+		actionRequired: true
+	});
+}
+

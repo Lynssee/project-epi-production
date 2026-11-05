@@ -4,7 +4,8 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { getSopDetail, confirmSopRead, type SopDocument } from '$lib/services/ess/sop';
+	import { getSopDetail, confirmSopRead, submitSopUsulan, type SopDocument } from '$lib/services/ess/sop';
+	import { JENIS_USULAN, CATATAN_MIN, CATATAN_MAX } from '$lib/utils/sopUsulan';
 	import { cacheSopDetail, getCachedSopDetail, enqueueSopConfirmation, registerSopAutoFlush } from '$lib/utils/offlineSopCache';
 	import { IconAlertTriangle, IconArrowLeft, IconCheck, IconClock, IconFileText, IconLoader2, IconPaperclip, IconWifiOff } from '@tabler/icons-svelte';
 
@@ -65,6 +66,33 @@
 			}
 		} finally {
 			confirming = false;
+		}
+	}
+
+	// Usulan perbaikan SOP dari lapangan (Fase 4c) -> antrean ditinjau tim HRD.
+	let usulanOpen = $state(false);
+	let usulanJenis = $state<string>(JENIS_USULAN[0].value);
+	let usulanCatatan = $state('');
+	let usulanSending = $state(false);
+	let usulanError = $state('');
+	let usulanSent = $state(false);
+
+	async function kirimUsulan() {
+		usulanError = '';
+		if (usulanCatatan.trim().length < CATATAN_MIN) {
+			usulanError = `Jelaskan minimal ${CATATAN_MIN} karakter agar bisa ditindaklanjuti.`;
+			return;
+		}
+		usulanSending = true;
+		try {
+			await submitSopUsulan(sopId, { jenis: usulanJenis, catatan: usulanCatatan });
+			usulanSent = true;
+			usulanOpen = false;
+			usulanCatatan = '';
+		} catch (err: any) {
+			usulanError = err instanceof TypeError ? 'Tidak ada koneksi. Coba lagi saat sinyal kembali.' : err?.message || 'Gagal mengirim usulan.';
+		} finally {
+			usulanSending = false;
 		}
 	}
 
@@ -141,6 +169,38 @@
 						onclick={handleConfirm}>
 						{confirming ? 'Menyimpan...' : 'Saya sudah membaca dan memahami'}
 					</button>
+				{/if}
+			</div>
+
+			<div class="pt-2 border-t space-y-2" style="border-color: var(--sys-separator)">
+				{#if usulanSent}
+					<div class="flex items-center gap-2 text-sm font-bold" style="color: #16A34A">
+						<IconCheck size={18} /> Terima kasih — usulan Anda sudah dikirim ke tim HRD untuk ditinjau.
+					</div>
+				{:else if !usulanOpen}
+					<button class="text-xs font-semibold underline" style="color: var(--sys-label3)" onclick={() => (usulanOpen = true)}>
+						Ada yang tidak pas di SOP ini? Usulkan perbaikan
+					</button>
+				{:else}
+					<div class="space-y-2">
+						<p class="text-xs" style="color: var(--sys-label3)">
+							Usulan dikirim ke tim HRD (bukan mengubah SOP langsung). Sebutkan langkah mana dan seharusnya bagaimana. Maksimal 3 usulan per hari.
+						</p>
+						<label class="block text-xs font-bold" for="usulan-jenis">Jenis masalah</label>
+						<select id="usulan-jenis" class="w-full px-3 py-2 rounded-xl text-sm glass-panel" bind:value={usulanJenis}>
+							{#each JENIS_USULAN as j (j.value)}<option value={j.value}>{j.label}</option>{/each}
+						</select>
+						<label class="block text-xs font-bold" for="usulan-catatan">Penjelasan</label>
+						<textarea id="usulan-catatan" rows="4" maxlength={CATATAN_MAX} class="w-full px-3 py-2 rounded-xl text-sm glass-panel" placeholder="Contoh: Langkah 3 menyebut cek manual, padahal di lapangan memakai alat ukur X." bind:value={usulanCatatan}></textarea>
+						<p class="text-[10px]" style="color: var(--sys-label3)">{usulanCatatan.trim().length}/{CATATAN_MAX} (min. {CATATAN_MIN})</p>
+						{#if usulanError}<p class="text-xs text-red-500">{usulanError}</p>{/if}
+						<div class="flex gap-2">
+							<button class="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white gradient-bg disabled:opacity-50" disabled={usulanSending} onclick={kirimUsulan}>
+								{usulanSending ? 'Mengirim...' : 'Kirim Usulan'}
+							</button>
+							<button class="px-4 py-2.5 rounded-xl text-sm font-semibold glass-panel" onclick={() => (usulanOpen = false)}>Batal</button>
+						</div>
+					</div>
 				{/if}
 			</div>
 		</div>

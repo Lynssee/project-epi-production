@@ -27,6 +27,8 @@
 import type { RequestEvent } from '@sveltejs/kit';
 import { requireUser, type FirebaseVerifiedUser } from '$lib/server/firebaseAuth';
 import { directusServerFetch, directusServerUpload, directusServerJson } from '$lib/server/directus';
+import { recordDirectusRequest, refererPath, type CacheStatus } from '../../health/pulse/directusLatencyTracker';
+import { coalesced, dropInflight } from './coalesce';
 import { canViewHseSensitiveFields, stripHseIncidentSensitiveFields } from '$lib/server/hse/hseGuard';
 import { isPettyCashWriteBlocked, isPettyCashReadBlocked, PETTY_CASH_PROXY_BLOCK_MESSAGE } from '$lib/shared/pettyCashRules';
 import { resolveFieldProjectScope, withScopeFilter, projectIdInCondition } from '$lib/server/fieldProjectScope';
@@ -158,6 +160,7 @@ function evaluateQ2(item: any): { reason: string } | null {
 }
 
 async function handle(event: RequestEvent): Promise<Response> {
+	const handleStart = performance.now();
 	try {
 		const path = event.params.path || '';
 		let search = event.url.search || '';
@@ -384,14 +387,41 @@ async function handle(event: RequestEvent): Promise<Response> {
 			}
 		}
 
-		const upstream = await directusServerFetch(`/${path}${search}`, {
-			method,
-			body: body as any,
-			headers: contentType ? { 'Content-Type': contentType } : {}
-		});
+		const upstreamEndpoint = `/${path}${search}`;
+		const doFetch = () =>
+			directusServerFetch(upstreamEndpoint, {
+				method,
+				body: body as any,
+				headers: contentType ? { 'Content-Type': contentType } : {}
+			});
+
+		// Tulis: putus penumpang baru dari GET yang sudah berjalan untuk koleksi ini (read-your-writes).
+		if (method !== 'GET' && method !== 'HEAD') dropInflight(path);
+
+		// GET items/* identik yang sedang berjalan digabung jadi satu round-trip ke Directus (proxy ini tanpa cache).
+		// Lewati bila klien minta pembacaan segar (x-directus-no-cache) -- konsisten dengan proxy admin.
+		const canCoalesce = method === 'GET' && path.startsWith('items/') && event.request.headers.get('x-directus-no-cache') !== '1';
+
+		const fetchStart = performance.now();
+		let upstream: Response;
+		let cacheStatus: CacheStatus = method === 'GET' || method === 'HEAD' ? 'MISS' : 'BYPASS';
+		if (canCoalesce) {
+			const r = await coalesced(`GET:${upstreamEndpoint}`, doFetch);
+			upstream = r.response;
+			if (r.coalesced) cacheStatus = 'COALESCED';
+		} else {
+			upstream = await doFetch();
+		}
+
+		const fetchDur = Math.round(performance.now() - fetchStart);
+		const profileRequest = (bytes: number) =>
+			recordDirectusRequest({
+				method, path, search, referer: refererPath(event.request), durMs: fetchDur, status: upstream.status, bytes, cache: cacheStatus
+			});
 
 		// Status 204/304 tidak boleh punya body per HTTP spec.
 		if (upstream.status === 204 || upstream.status === 304) {
+			profileRequest(0);
 			return new Response(null, {
 				status: upstream.status,
 				headers: { 'Cache-Control': 'no-store' }
@@ -402,6 +432,7 @@ async function handle(event: RequestEvent): Promise<Response> {
 		let finalBody: string | Uint8Array = resContentType.includes('application/json')
 			? await upstream.text()
 			: new Uint8Array(await upstream.arrayBuffer());
+		profileRequest(typeof finalBody === 'string' ? Buffer.byteLength(finalBody) : finalBody.byteLength);
 
 		if (upstream.ok && reportGateRejected && typeof finalBody === 'string' && resContentType.includes('application/json')) {
 			try {
@@ -457,7 +488,12 @@ async function handle(event: RequestEvent): Promise<Response> {
 
 		const resHeaders: Record<string, string> = {
 			'Content-Type': resContentType || 'application/json',
-			'Cache-Control': cacheControlHeader
+			'Cache-Control': cacheControlHeader,
+			// directus = waktu round-trip upstream (desc = MISS/COALESCED/BYPASS); app = total waktu proxy (selisihnya = overhead guard)
+			'Server-Timing': `directus;dur=${fetchDur};desc="${cacheStatus}", app;dur=${Math.round(performance.now() - handleStart)}`,
+			'X-Directus-Latency-Ms': String(fetchDur),
+			// ukuran badan respons (byte, sebelum kompresi CDN) -- dibaca perekam fetch klien; Content-Length sering hilang saat gzip
+			'X-Epi-Bytes': String(typeof finalBody === 'string' ? Buffer.byteLength(finalBody) : finalBody.byteLength)
 		};
 
 		const contentDisposition = upstream.headers.get('content-disposition');

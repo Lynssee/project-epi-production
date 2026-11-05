@@ -237,3 +237,18 @@ describe('alur tiket dana kerja proyek — skenario lengkap (PRJ-22 Tahap A)', (
 		expect(checkRequestAgainstFund({ ...fund, status: 'SUSPENDED' }, 100_000)).toContain('tidak aktif');
 	});
 });
+
+import { atasanStuckHint } from './pettyCashRules';
+describe('atasanStuckHint (PCK-10 §4.7)', () => {
+	const NOW2 = new Date('2026-09-29T05:00:00Z');
+	it('menunggu atasan > 2 hari kerja → petunjuk hubungi HR & Hitung ulang atasan', () => {
+		const h = atasanStuckHint({ status: 'menunggu_atasan', date_updated: '2026-09-24T05:00:00Z' }, NOW2);
+		expect(h).toMatch(/3 hari kerja/);
+		expect(h).toMatch(/HR/);
+		expect(h).toMatch(/Hitung ulang atasan/);
+	});
+	it('≤ 2 hari kerja atau status lain → null', () => {
+		expect(atasanStuckHint({ status: 'menunggu_atasan', date_updated: '2026-09-25T05:00:00Z' }, NOW2)).toBeNull();
+		expect(atasanStuckHint({ status: 'menunggu_kasir', date_updated: '2026-09-01T05:00:00Z' }, NOW2)).toBeNull();
+	});
+});

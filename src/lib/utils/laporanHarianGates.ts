@@ -46,6 +46,8 @@ export interface LaporanHarianGateContext {
 	// Fase 2 Laporan Lapangan & Paritas ERP (16 Okt 2026) — QC Ambient & Rasio Material.
 	qcAmbient?: { applicable?: boolean; filled_today?: boolean; [key: string]: any };
 	materialVariance?: { flagged?: boolean; note?: string; [key: string]: any };
+	unconfirmedSopCount?: number;
+	sopGateMode?: 'warn' | 'hard' | 'soft' | 'shadow';
 }
 
 const TAB_LABEL: Record<string, string> = {
@@ -108,5 +110,17 @@ export function evaluateLaporanHarianGates(ctx: LaporanHarianGateContext) {
 	// G_LH_ANTI_SALIN butuh previousReport terpisah (fetch di pemanggil, Aturan #2) —
 	// belum dipakai di wizard klien. Disembunyikan di sini (bukan gate yang bisa
 	// "diperbaiki" lewat tombol Benahi) supaya tidak membingungkan lapangan.
-	return gates.filter((g) => g.gate_key !== 'G_LH_ANTI_SALIN').map(toGateShape);
+	const res = gates.filter((g) => g.gate_key !== 'G_LH_ANTI_SALIN').map(toGateShape);
+	if (ctx.unconfirmedSopCount !== undefined && ctx.unconfirmedSopCount > 0) {
+		res.unshift({
+			gate_key: 'G_FLD_SOP_READ_CONFIRMATION',
+			label: 'Konfirmasi Pemahaman SOP & Alur Kerja Lapangan',
+			severity: ctx.sopGateMode === 'hard' ? ('WAJIB' as const) : ('WARN' as const),
+			status: 'failed' as const,
+			message: `Terdapat ${ctx.unconfirmedSopCount} SOP/Alur baru yang belum dikonfirmasi pemahamannya oleh Anda. Buka menu Panduan Alur Kerja untuk membaca dan menandai paham.`,
+			tab: 'summary',
+			tab_label: 'Ringkasan'
+		});
+	}
+	return res;
 }

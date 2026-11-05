@@ -9,6 +9,7 @@
 	import { onMount } from 'svelte';
 	import { IconArrowLeft, IconLoader2, IconAlertTriangle, IconCheck, IconAlertCircle, IconPackageImport } from '@tabler/icons-svelte';
 	import { TEKS_KONSUMSI } from '$lib/kiosk/teks';
+	import { fetchExpiryHints, hintTampil, type ExpiryHintItem } from '$lib/services/expiryHint';
 
 	type ChecklistItem = {
 		material_id: number;
@@ -27,6 +28,8 @@
 	let selectedSpk = $state<any | null>(null);
 	let checklist = $state<ChecklistItem[]>([]);
 	let togglingId = $state<number | null>(null);
+	// Expired Date v2 F5: petunjuk kadaluarsa/FEFO per bahan (gagal = disembunyikan, checklist tetap jalan).
+	let expiryHints = $state<Record<number, ExpiryHintItem>>({});
 
 	// File 09 Tahap 2 — panel lapor per baris: 'kurang' (minta tambahan ke gudang) atau 'sisa'
 	// (kembalikan ke stok). Hanya satu baris aktif dalam satu waktu supaya layar tidak penuh.
@@ -62,6 +65,7 @@
 			selectedSpk = data.selectedSpk;
 			checklist = data.checklist || [];
 			step = 'checklist';
+			fetchExpiryHints(checklist.map((c) => c.material_id), 'kiosk').then((h) => (expiryHints = h));
 		} catch (e) {
 			errorMsg = e instanceof Error ? e.message : 'Gagal memuat checklist.';
 		} finally {
@@ -220,6 +224,16 @@
 								<span class="item-qty">{item.total_qty} {item.satuan}</span>
 							</span>
 						</button>
+						{#if hintTampil(expiryHints[item.material_id])}
+							{@const ex = hintTampil(expiryHints[item.material_id])!}
+							<div style="margin:4px 0 6px">
+								<span
+									style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:700;background:{ex.bg};color:{ex.fg}"
+									title="Batch aktif paling dekat kadaluarsa (FEFO). Ambil lot ini lebih dulu bila ada beberapa kaleng."
+								>{ex.ikon} {ex.teks}</span>
+								{#if ex.anjuran}<div style="font-size:11px;color:{ex.fg};margin-top:2px">{ex.anjuran}</div>{/if}
+							</div>
+						{/if}
 						<div class="lapor-actions">
 							<button class="lapor-btn kurang" onclick={() => bukaLapor(item, 'kurang')}>
 								<IconAlertCircle size={16} /> Bahan kurang

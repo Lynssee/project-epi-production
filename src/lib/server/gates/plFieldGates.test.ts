@@ -1,6 +1,6 @@
 // Gate PL lapangan: status proyek tidak aktif (termasuk cancelled) & penanganan error lookup.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { evaluateFieldPLGates, evaluateFieldPLGatesFor, type FieldPLRow } from './plFieldGates';
+import { evaluateFieldPLGates, evaluateFieldPLGatesFor, loadTemplateFlags, type FieldPLRow } from './plFieldGates';
 
 const row = (over: Partial<FieldPLRow> = {}): FieldPLRow => ({ id: 1, project_id: 10, qty: 1, identitas_barang_id: 1, ...over });
 const ctx = (status: string | null | undefined, rows = [row()]) => ({
@@ -114,3 +114,120 @@ describe('G_PKL_CAT_WARNA — spesifikasi warna cat', () => {
 	});
 });
 
+
+describe('mode gate mengikuti Kalibrasi Gate', () => {
+	const unlinked = row({ id: 7, identitas_barang_id: null, material_name: 'THINNER CUCI' });
+	const paint = row({ material_name: 'FOXA 955', material_color: '' });
+	const withModes = (modes: any, rows: FieldPLRow[]) => ({ ...ctx('on progress', rows), modes });
+
+	it('G_PKL_INVENTORY_LINK shadow -> tidak tampil, tidak memblokir, tercatat di shadowed', () => {
+		const r = evaluateFieldPLGates(withModes({ G_PKL_INVENTORY_LINK: 'shadow' }, [unlinked]));
+		expect(r.blocking).toEqual([]);
+		expect(r.warnings).toEqual([]);
+		expect(gate(r, 'G_PKL_INVENTORY_LINK')).toBeUndefined();
+		expect(r.shadowed).toContain('G_PKL_INVENTORY_LINK');
+	});
+
+	it.each(['soft', 'warn'])('G_PKL_INVENTORY_LINK %s -> peringatan, tetap terkirim', (mode) => {
+		const r = evaluateFieldPLGates(withModes({ G_PKL_INVENTORY_LINK: mode }, [unlinked]));
+		expect(r.blocking).toEqual([]);
+		expect(r.warnings).toContain('G_PKL_INVENTORY_LINK');
+		expect(gate(r, 'G_PKL_INVENTORY_LINK')?.severity).toBe('SEMI');
+		expect(gate(r, 'G_PKL_INVENTORY_LINK')?.affected_items).toEqual([{ id: 7, label: 'THINNER CUCI' }]);
+	});
+
+	it('G_PKL_INVENTORY_LINK hard -> memblokir; override super admin/GM -> peringatan overridden', () => {
+		expect(evaluateFieldPLGates(withModes({ G_PKL_INVENTORY_LINK: 'hard' }, [unlinked])).blocking).toContain('G_PKL_INVENTORY_LINK');
+		const r = evaluateFieldPLGates(withModes({ G_PKL_INVENTORY_LINK: 'hard' }, [unlinked]), { overrideAllowed: true });
+		expect(r.blocking).toEqual([]);
+		expect(r.overridden).toContain('G_PKL_INVENTORY_LINK');
+	});
+
+	it('G_PKL_CAT_WARNA shadow -> tidak memblokir', () => {
+		const r = evaluateFieldPLGates(withModes({ G_PKL_CAT_WARNA: 'shadow' }, [paint]));
+		expect(r.blocking).toEqual([]);
+		expect(r.shadowed).toContain('G_PKL_CAT_WARNA');
+	});
+
+	it('G_PKL_PROJECT soft -> proyek tidak aktif jadi peringatan', () => {
+		const r = evaluateFieldPLGates({ ...ctx('cancelled'), modes: { G_PKL_PROJECT: 'soft' } });
+		expect(r.blocking).toEqual([]);
+		expect(r.warnings).toContain('G_PKL_PROJECT');
+	});
+
+	it('G_PKL_STOK hard tetap peringatan; shadow tidak tampil', () => {
+		const rows = [row({ identitas_barang_id: 5, qty: 100 })];
+		const base = { ...ctx('on progress', rows), stockById: new Map([['5', 1]]) };
+		const hard = evaluateFieldPLGates({ ...base, modes: { G_PKL_STOK: 'hard' } });
+		expect(hard.blocking).toEqual([]);
+		expect(hard.warnings).toContain('G_PKL_STOK');
+		const shadow = evaluateFieldPLGates({ ...base, modes: { G_PKL_STOK: 'shadow' } });
+		expect(shadow.warnings).toEqual([]);
+		expect(shadow.shadowed).toContain('G_PKL_STOK');
+	});
+
+	it('evaluateFieldPLGatesFor membaca mode lewat resolveMode', async () => {
+		const fetcher = vi.fn(async () => ({ data: [{ id: 10, status: 'on progress' }] }));
+		const resolveMode = vi.fn(async () => 'shadow' as const);
+		const r = await evaluateFieldPLGatesFor([unlinked], fetcher, { resolveMode });
+		// 4 gate lama + 3 gate rasionalitas qty (COVERAGE_M2, TIMELINE_RUNRATE, SITE_STOCK_RECON) = FIELD_PL_GATE_KEYS.length
+		expect(resolveMode).toHaveBeenCalledTimes(7);
+		expect(r.blocking).toEqual([]);
+	});
+});
+
+describe('G_PKL_INVENTORY_LINK — baris non-barang dikecualikan', () => {
+	const strict = (rows: FieldPLRow[]) => evaluateFieldPLGates({ ...ctx('on progress', rows), modes: { G_PKL_INVENTORY_LINK: 'hard' } });
+
+	it.each([
+		['no_item_needed', { no_item_needed: true }],
+		['is_manpower', { is_manpower: true }],
+		['no_item_needed = 1 dari Directus', { no_item_needed: 1 as any }],
+		['kategori jasa', { budget_category: 'jasa' }],
+		['kategori packing_jasa', { budget_category: 'packing_jasa' }],
+		['kategori packing_lain_lain', { budget_category: 'packing_lain_lain' }]
+	])('%s lolos', (_label, over) => {
+		expect(strict([row({ identitas_barang_id: null, ...over })]).blocking).toEqual([]);
+	});
+
+	it('kategori packing_consumable tanpa tautan tetap dinilai', () => {
+		expect(strict([row({ identitas_barang_id: null, budget_category: 'packing_consumable' })]).blocking).toContain('G_PKL_INVENTORY_LINK');
+	});
+});
+
+describe('G_PKL_INVENTORY_LINK — usulan barang baru', () => {
+	const hard = (rows: FieldPLRow[], allowProposal: boolean) =>
+		evaluateFieldPLGates({ ...ctx('on progress', rows), modes: { G_PKL_INVENTORY_LINK: 'hard' }, allowProposal });
+	const proposed = row({ identitas_barang_id: null, usul_baru: true, material_name: 'BARANG BARU' });
+
+	it('mode hard + allowProposal -> baris ber-usulan lolos', () => {
+		expect(hard([proposed], true).blocking).toEqual([]);
+	});
+	it('allowProposal dimatikan di pengaturan gate -> tetap memblokir', () => {
+		expect(hard([proposed], false).blocking).toContain('G_PKL_INVENTORY_LINK');
+	});
+	it('baris tanpa tautan dan tanpa usulan tetap memblokir walau allowProposal aktif', () => {
+		expect(hard([row({ identitas_barang_id: null })], true).blocking).toContain('G_PKL_INVENTORY_LINK');
+	});
+});
+
+describe('loadTemplateFlags', () => {
+	it('membaca tautan & flag dari baris is_template, tanpa query bila tak ada id', async () => {
+		const fetcher = vi.fn(async () => ({ data: [{ id: 11183, identitas_barang_id: 17122, no_item_needed: 0, is_manpower: 0 }, { id: 825, identitas_barang_id: null, no_item_needed: 1, is_manpower: 0 }] }));
+		const map = await loadTemplateFlags([11183, 825, null], fetcher);
+		expect(String(fetcher.mock.calls[0]).includes('filter[is_template][_eq]=true')).toBe(true);
+		expect(map.get(11183)).toEqual({ identitas_barang_id: 17122, no_item_needed: false, is_manpower: false });
+		expect(map.get(825)?.no_item_needed).toBe(true);
+
+		const none = vi.fn();
+		expect((await loadTemplateFlags([null, undefined], none)).size).toBe(0);
+		expect(none).not.toHaveBeenCalled();
+	});
+
+	it('gagal baca -> dilog dan peta kosong', async () => {
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const map = await loadTemplateFlags([1], vi.fn(async () => { throw new Error('HTTP 403'); }));
+		expect(map.size).toBe(0);
+		expect(spy).toHaveBeenCalled();
+	});
+});

@@ -15,6 +15,7 @@
 // bukan error.
 
 import { directusServerJson } from '$lib/server/directus';
+import { hitungMttr, loadMttrSettings, type MttrResult } from './maintenanceMttr';
 
 export interface MyWorkOrder {
 	id: string;
@@ -27,13 +28,15 @@ export interface MyWorkOrder {
 	created_at: string | null;
 }
 
-export interface MaintenanceKpiSummary {
+export interface MaintenanceKpiSummary extends MttrResult {
 	linked: boolean; // false = karyawan ini tidak punya personnel record tertaut
 	personnelName: string | null;
 	periode: string | null;
 	total: number;
 	selesai: number;
 	pct: number | null; // null kalau total=0 (bukan 0%, memang tidak ada WO)
+	/** WO berstatus selesai tapi tanggal_done kosong -> penyebab MTTR belum bisa dihitung; dipakai sebagai pengingat kelengkapan data. */
+	selesaiTanpaTanggal: number;
 	openList: MyWorkOrder[]; // WO belum selesai, untuk ditindaklanjuti
 }
 
@@ -77,7 +80,7 @@ async function getOpenPeriod(): Promise<{ id: string; kode: string; tanggal_mula
 export async function getMyMaintenanceKpi(karyawanId: number): Promise<MaintenanceKpiSummary> {
 	const personnel = await resolvePersonnelId(karyawanId);
 	if (!personnel) {
-		return { linked: false, personnelName: null, periode: null, total: 0, selesai: 0, pct: null, openList: [] };
+		return { linked: false, personnelName: null, periode: null, total: 0, selesai: 0, pct: null, selesaiTanpaTanggal: 0, mttrJam: null, mttrSample: 0, mttrCoveragePct: null, mttrReady: false, mttrMinSample: 5, mttrMinCoveragePct: 60, openList: [] };
 	}
 
 	const period = await getOpenPeriod();
@@ -128,6 +131,8 @@ export async function getMyMaintenanceKpi(karyawanId: number): Promise<Maintenan
 		total: dinilai.length,
 		selesai: selesai.length,
 		pct,
+		selesaiTanpaTanggal: selesai.filter((w) => !w.tanggal_done).length,
+		...hitungMttr(selesai, await loadMttrSettings()),
 		openList: dinilai.filter((w) => !w.statusSelesai)
 	};
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StepChecklistBanner from '$lib/components/help/StepChecklistBanner.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -981,6 +982,8 @@
 		</button>
 		<h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">Pengembalian (Return) Packing List</h2>
 	</div>
+
+	<div class="mb-4"><StepChecklistBanner alur="inter_project_material_transfer" fokus="mut_retur_gudang" judul="Syarat Retur ke Gudang" /></div>
 
 	{#if loading}
 		<div class="flex-1 flex flex-col items-center justify-center py-16">

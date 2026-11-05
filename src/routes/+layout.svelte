@@ -324,7 +324,8 @@
 		if (!$authStore.user) {
 			// /konfirmasi/* = tautan WhatsApp konfirmasi pengajuan atas nama (token + 4 digit HP, tanpa akun).
 			// /verifikasi/* = halaman verifikasi keaslian dokumen lewat QR (publik; dijaga tanda tangan HMAC di server).
-			if (path !== '/login' && !path.startsWith('/kiosk') && !path.startsWith('/konfirmasi/') && !path.startsWith('/verifikasi/')) {
+			// /k/* = Kiosk Proyek (absensi kru lewat HP/tablet yang diaktifkan leader; cookie perangkat HMAC, bukan Firebase).
+			if (path !== '/login' && !path.startsWith('/kiosk') && !path.startsWith('/k/') && !path.startsWith('/konfirmasi/') && !path.startsWith('/verifikasi/')) {
 				// Simpan tujuan asli (mis. /scan/CP-AU-005 dari QR fisik) supaya setelah
 				// login pengguna diarahkan balik ke sana, bukan ke beranda (rencana:
 				// QR checkpoint/label scannable langsung dari kamera HP, 2026-07-29).

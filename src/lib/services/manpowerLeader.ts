@@ -12,6 +12,7 @@ import { readItems, readItem, updateItem } from '@directus/sdk';
 import { auth } from '$lib/firebase';
 import { compressPhoto } from '$lib/utils/photoCompress';
 import { watermarkPhoto } from '$lib/utils/photoWatermark';
+import { decodeFlags, encodeCatatan } from '$lib/shared/kioskFlags';
 
 export const PERAN_LEADER = 'manpower_leader';
 export const PERAN_WAKIL = 'wakil_leader';
@@ -363,6 +364,7 @@ export async function getAntrianVerifikasi(projectId: number, tanggal?: string) 
 				fields: [
 					'id', 'tanggal', 'status', 'jam_masuk', 'jam_pulang', 'jam_kerja',
 					'metode_catat', 'dikunci', 'masuk_valid', 'pulang_valid',
+					'jarak_masuk_m', 'jarak_pulang_m', 'dobel_proyek_flag', 'dicatat_oleh', 'verifikasi_leader_catatan',
 					'verifikasi_leader_status',
 					'manpower_id.id', 'manpower_id.nama', 'manpower_id.posisi'
 				],
@@ -399,7 +401,7 @@ export async function verifikasiAbsensi(params: {
 		if (!setuju && !catatan.trim()) return { success: false, error: 'Penolakan wajib disertai alasan' };
 
 		const row: any = await directus.request(
-			readItem('manpower_absensi', absensiId, { fields: ['id', 'manpower_id', 'dikunci'] })
+			readItem('manpower_absensi', absensiId, { fields: ['id', 'manpower_id', 'dikunci', 'verifikasi_leader_catatan'] })
 		);
 		if (row?.dikunci) {
 			return { success: false, error: 'Absensi ini sudah terkunci (masuk periode gajian).' };
@@ -413,7 +415,8 @@ export async function verifikasiAbsensi(params: {
 				verifikasi_leader_status: setuju ? 'disetujui' : 'ditolak',
 				verifikasi_leader_oleh: verifikatorManpowerId,
 				verifikasi_leader_at: new Date().toISOString(),
-				verifikasi_leader_catatan: catatan || ''
+				// Penanda anomali kiosk ("[kiosk] ...") dipertahankan agar jejaknya tidak hilang setelah diputuskan.
+				verifikasi_leader_catatan: encodeCatatan(decodeFlags(row?.verifikasi_leader_catatan), catatan || '')
 			})
 		);
 		return { success: true };

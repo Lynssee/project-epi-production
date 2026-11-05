@@ -114,6 +114,12 @@ export const INVENTORY_SETTINGS_DEFAULTS: InventorySettingsMap = {
 	'inventory.knowledge.min_skor_verified_default': 70,
 	'inventory.knowledge.tampilkan_harga_wajar': true,
 	'inventory.knowledge.statistik_aktif': true,
+	'inventory.knowledge.laporan_lapangan_aktif': false,
+	'inventory.knowledge.checklist_terima_aktif': true,
+	'inventory.knowledge.checklist_terima_simpan': false,
+	'inventory.knowledge.pocket_offline_aktif': true,
+	'inventory.knowledge.pocket_maks_item': 80,
+	'inventory.knowledge.pocket_umur_maks_hari': 30,
 	'inventory.knowledge.cetak_spek_di_dokumen': true
 };
 

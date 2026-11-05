@@ -2,7 +2,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('./directus', () => ({ directusServerJson: vi.fn() }));
-vi.mock('./packingListCreateItems', () => ({ createPackingItemsRequest: vi.fn() }));
+vi.mock('./packingListCreateItems', () => ({
+	createPackingItemsRequest: vi.fn(),
+	GATE_BLOCKED_PREFIX: 'Pengajuan packing list belum bisa dikirim:'
+}));
 
 import {
 	pickUrgentNeeds,
@@ -159,6 +162,15 @@ describe('createUrgentPackingFromReport', () => {
 		const r = await createUrgentPackingFromReport(3411, actor, deps);
 		expect(r.created).toBe(0);
 		expect(r.error).toContain('cancelled');
+	});
+
+	it('gate memblokir (mode hard) -> reason diblokir_gate, tidak gagal diam-diam', async () => {
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const { deps, create } = mkDeps(report());
+		create.mockRejectedValueOnce(new Error('Pengajuan packing list belum bisa dikirim:\n• Tautan barang master: 1 item belum tertaut'));
+		const r = await createUrgentPackingFromReport(3411, actor, deps);
+		expect(r).toMatchObject({ created: 0, reason: 'diblokir_gate' });
+		expect(r.error).toContain('belum tertaut');
 	});
 
 	it('error baca Directus tidak melempar ke pemanggil dan dilog', async () => {

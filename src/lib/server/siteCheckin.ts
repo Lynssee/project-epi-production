@@ -4,6 +4,7 @@
 // tetap kebenaran payroll. Identitas karyawan SELALU dari token Firebase (authenticateEss),
 // tidak pernah dari body klien. Semua perhitungan jarak di server.
 
+import { siteUntukProyek, terapkanGeoSite } from '$lib/server/siteGeo';
 import { directusServerJson, directusServerUpload } from '$lib/server/directus';
 import { haversineMeters, withinRadius, computeAntiFakeGpsScore } from '$lib/server/ess/geo';
 import { todayJakarta } from '$lib/server/ess/time';
@@ -206,7 +207,12 @@ async function getProject(projectId: number): Promise<ProjectGeo | null> {
 	});
 	try {
 		const result = await directusServerJson<{ data: ProjectGeo }>(`/items/projects/${projectId}?${query.toString()}`);
-		return result?.data || null;
+		const proyek = result?.data || null;
+		// GPM-C11: titik proyek kosong → pakai titik grup site-nya (bila ada). Query site hanya dijalankan saat titik proyek kosong.
+		if (proyek && (proyek.geo_lat == null || proyek.geo_lng == null)) {
+			return terapkanGeoSite(proyek, await siteUntukProyek(projectId));
+		}
+		return proyek;
 	} catch {
 		return null;
 	}
@@ -530,6 +536,7 @@ export interface CreateCheckinInput {
 	// SV-12 (disetujui Lead 26 Sep 2026, skema): UUID dibuat klien saat masuk antrean offline —
 	// dikirim ulang tiap replay. Dedup exact-match terhadap site_checkin.client_txn_id (unique).
 	clientTxnId?: string | null;
+	planId?: string | number | null;
 }
 
 /** SHA-256 hex dari isi file — dipakai deteksi foto daur-ulang (Fase 5). */
@@ -874,22 +881,45 @@ export async function createCheckin(
 	};
 
 	let result: { data: SiteCheckinRecord };
-	try {
-		result = await directusServerJson<{ data: SiteCheckinRecord }>('/items/site_checkin', {
-			method: 'POST',
-			body: JSON.stringify(payload)
-		});
-	} catch (e) {
-		// SV-12: request kembar (race) lolos pre-check exact-match di atas lalu sama-sama mencoba
-		// INSERT — constraint unik client_txn_id menolak yang kedua. Alih-alih gagal, ambil baris
-		// yang berhasil dibuat request pertama (tetap idempoten dari sudut pandang klien).
-		if (input.clientTxnId) {
-			const raceQuery = new URLSearchParams({ 'filter[client_txn_id][_eq]': input.clientTxnId, fields: '*', limit: '1' });
-			const raceRes = await directusServerJson<{ data: SiteCheckinRecord[] }>(`/items/site_checkin?${raceQuery.toString()}`).catch(() => null);
-			const raceExisting = raceRes?.data?.[0];
-			if (raceExisting) return raceExisting;
+	if (input.planId) {
+		try {
+			const updatePayload = {
+				...payload,
+				is_planned: true,
+				plan_status: 'checked_in'
+			};
+			result = await directusServerJson<{ data: SiteCheckinRecord }>(
+				`/items/site_checkin/${input.planId}`,
+				{
+					method: 'PATCH',
+					body: JSON.stringify(updatePayload)
+				}
+			);
+		} catch (e) {
+			console.error('[createCheckin] Gagal update record planning, fallback ke create baru:', e);
+			result = await directusServerJson<{ data: SiteCheckinRecord }>('/items/site_checkin', {
+				method: 'POST',
+				body: JSON.stringify(payload)
+			});
 		}
-		throw e;
+	} else {
+		try {
+			result = await directusServerJson<{ data: SiteCheckinRecord }>('/items/site_checkin', {
+				method: 'POST',
+				body: JSON.stringify(payload)
+			});
+		} catch (e) {
+			// SV-12: request kembar (race) lolos pre-check exact-match di atas lalu sama-sama mencoba
+			// INSERT — constraint unik client_txn_id menolak yang kedua. Alih-alih gagal, ambil baris
+			// yang berhasil dibuat request pertama (tetap idempoten dari sudut pandang klien).
+			if (input.clientTxnId) {
+				const raceQuery = new URLSearchParams({ 'filter[client_txn_id][_eq]': input.clientTxnId, fields: '*', limit: '1' });
+				const raceRes = await directusServerJson<{ data: SiteCheckinRecord[] }>(`/items/site_checkin?${raceQuery.toString()}`).catch(() => null);
+				const raceExisting = raceRes?.data?.[0];
+				if (raceExisting) return raceExisting;
+			}
+			throw e;
+		}
 	}
 
 	// Paket 02 §3.10: baris ini LEBIH TUA dari check-in yang sedang aktif (replay offline

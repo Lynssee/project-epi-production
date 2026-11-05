@@ -13,6 +13,46 @@ export interface ProcessAction {
 	href: string;
 }
 
+/** Serah-terima lintas alur (diatur di editor erp-epi: bagian "Serah-Terima Lintas Modul"). */
+export interface ProcessHandoff {
+	target_flow_key: string;
+	target_node_id: string;
+	doc_label: string;
+	handoff_type: 'dokumen' | 'barang' | 'dana' | 'otorisasi';
+}
+
+export interface ProcessGateRef {
+	key: string;
+	modul?: string;
+	documentType?: string;
+}
+
+export interface ProcessFlowApprovalItem {
+	label: string;
+	name?: string;
+	title?: string;
+	status?: string;
+	date?: string;
+}
+
+export interface ProcessFlowSop {
+	doc_number?: string;
+	effective_date?: string;
+	revision_status?: string;
+	department_key?: string;
+	department_label?: string;
+	company_name?: string;
+	purpose?: string;
+	scope?: string;
+	deliverables?: string[];
+	definitions?: { term: string; meaning: string }[];
+	approvals?: {
+		hrd?: ProcessFlowApprovalItem;
+		related_div?: ProcessFlowApprovalItem;
+		management?: ProcessFlowApprovalItem;
+	};
+}
+
 export interface ProcessNode {
 	id: string;
 	type: ProcessNodeType;
@@ -22,15 +62,32 @@ export interface ProcessNode {
 	label: string;
 	desc: string;
 	pic?: string;
+	/** Jabatan PIC terstruktur (posisi.id) yang dipilih di editor erp-epi; menang atas teks `pic`. */
+	posisi_ids?: number[];
+	/** Target waktu penyelesaian langkah (jam). */
+	sla_hours?: number;
+	kpi_code?: string;
+	/** Program training yang ditautkan khusus ke langkah ini (training_program.id). */
+	training_ids?: number[];
 	checklist?: string[];
 	blockers?: string[];
 	actions?: ProcessAction[];
+	gates?: ProcessGateRef[];
+	/** Ke alur lain hasil langkah ini diserahkan (opsional). */
+	handoffs?: ProcessHandoff[];
 }
 
 export interface ProcessEdge {
 	from: string;
 	to: string;
 	label?: string;
+}
+
+/** Tautan alur ↔ program training (diatur di editor erp-epi, tab Training). `wajib` HANYA informasi. */
+export interface ProcessTrainingLink {
+	program_id: number;
+	wajib: boolean;
+	catatan?: string;
 }
 
 export interface ProcessFlow {
@@ -40,6 +97,20 @@ export interface ProcessFlow {
 	lanes: { key: string; label: string }[];
 	nodes: ProcessNode[];
 	edges: ProcessEdge[];
+	/** Training terkait alur ini (berlaku untuk semua langkah). */
+	training?: ProcessTrainingLink[];
+	sop?: ProcessFlowSop;
+	sop_code?: string;
+	kategori_sop?: 'master' | 'induk' | 'turunan';
+	sub_kategori?: string;
+	approval_status?: string;
+	external_flowchart_url?: string;
+	external_doc_url?: string;
+	sosialisasi_end_date?: string;
+	procedure_type?: 'field_ops' | 'administrative' | 'management_gate' | 'emergency_qhse' | string;
+	/** id baris Directus & id induknya — hanya untuk breadcrumb Master › Induk › IK di halaman Alur Kerja. */
+	row_id?: number;
+	parent_row_id?: number;
 }
 
 export const PROCESS_FLOWS: ProcessFlow[] = [

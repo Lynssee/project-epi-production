@@ -73,4 +73,46 @@ describe('ProcessGuidanceMobile', () => {
 		render({ flow: null });
 		expect(box!.textContent).toContain('belum tersedia');
 	});
+
+	it('menampilkan banner SOP resmi, klausul saat dibuka, dan chip gate pada langkah', () => {
+		const flowWithSop = {
+			...flow,
+			doc_number: 'SOP/SLS/SALES_TO_INVENTORY/1',
+			sop: {
+				doc_number: 'SOP/SLS/SALES_TO_INVENTORY/1',
+				department_label: 'Sales & Komersial',
+				revision_status: 1,
+				purpose: 'Tujuan SOP Alur Bisnis Lapangan',
+				scope: 'Cakupan operasional sales & gudang',
+				deliverables: ['Surat Jalan (SJ)', 'Sales Order (SO)']
+			},
+			nodes: flow.nodes.map((n) =>
+				n.id === 'survey'
+					? { ...n, gates: [{ key: 'G_SURVEY_REQ', modul: 'sales', documentType: 'survey' }] }
+					: n
+			)
+		};
+		render({ flow: flowWithSop });
+
+		// Banner SOP tampil
+		expect(box!.textContent).toContain('SOP/SLS/SALES_TO_INVENTORY/1');
+		expect(box!.textContent).toContain('Sales & Komersial');
+		expect(box!.textContent).toContain('Rev: 1');
+
+		// Buka klausul SOP
+		const sopBtn = [...box!.querySelectorAll('button')].find((b) => b.textContent?.includes('Standar SOP')) as HTMLElement;
+		expect(sopBtn).toBeTruthy();
+		sopBtn.click();
+		flushSync();
+		expect(box!.textContent).toContain('1. TUJUAN');
+		expect(box!.textContent).toContain('Tujuan SOP Alur Bisnis Lapangan');
+		expect(box!.textContent).toContain('Surat Jalan (SJ)');
+
+		// Langkah survey memiliki gate
+		const surveyBtn = box!.querySelector('#pg-node-survey > button') as HTMLElement;
+		surveyBtn.click();
+		flushSync();
+		expect(box!.querySelector('#pg-node-survey')!.textContent).toContain('Dijaga 1 Gate Sistem');
+		expect(box!.querySelector('#pg-node-survey')!.textContent).toContain('G_SURVEY_REQ');
+	});
 });

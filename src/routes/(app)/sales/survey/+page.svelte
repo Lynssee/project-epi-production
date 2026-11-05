@@ -8,7 +8,7 @@
 	import { getMySurveys, getUpcomingFollowUps, getSalesVisitKpis, type SurveyRow } from '$lib/services/sales';
 	import { getMyPoStatusSummary } from '$lib/services/salesPo';
 	import SalesNavTabs from '$lib/components/sales/SalesNavTabs.svelte';
-	import ProcessGuideLink from '$lib/components/help/ProcessGuideLink.svelte';
+	import ProcessStepPeek from '$lib/components/help/ProcessStepPeek.svelte';
 	import FieldExportButton from '$lib/components/sales/FieldExportButton.svelte';
 	import {
 		IconPlus,
@@ -178,7 +178,7 @@
 			<div>
 				<h1 class="text-[20px] font-black tracking-tight" style="color: var(--sys-label)">Survey Lokasi Lapangan</h1>
 				<p class="text-[12px] font-medium mt-0.5" style="color: var(--sys-label3)">Data teknis lapangan, fasilitas & spesifikasi awal penawaran</p>
-				<div class="mt-1.5"><ProcessGuideLink fokus="survey" /></div>
+				<div class="mt-1.5"><ProcessStepPeek fokus="survey" /></div>
 			</div>
 			<button
 				type="button"

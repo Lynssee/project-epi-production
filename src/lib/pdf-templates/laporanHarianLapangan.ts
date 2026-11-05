@@ -26,6 +26,23 @@ function rows(items: any[], cols: { key: string; label: string }[]): string {
 		.join('');
 }
 
+export interface SubtaskPhotoPair {
+	subtask_name: string;
+	category?: string;
+	progress_value?: number;
+	unit?: string;
+	before_url?: string | null;
+	before_gps?: string | null;
+	after_url?: string | null;
+	after_gps?: string | null;
+	during_url?: string | null;
+	during_gps?: string | null;
+	notes?: string;
+	kategori_defect?: string;
+	tindakan_perbaikan?: string;
+	status: 'complete' | 'before_only' | 'after_only' | 'no_photo';
+}
+
 export interface LaporanHarianLapanganData {
 	projectName: string;
 	date: string;
@@ -43,6 +60,7 @@ export interface LaporanHarianLapanganData {
 	issues?: unknown;
 	tomorrow_plan?: unknown;
 	photos?: Array<{ url: string; label: string; category?: string }>;
+	subtask_pairs?: SubtaskPhotoPair[];
 	hse_daily?: unknown;
 	downtime_log?: unknown;
 	qc_ambient?: unknown;
@@ -86,13 +104,14 @@ export function buildLaporanHarianLapanganHtml(data: LaporanHarianLapanganData):
 
 	// QC Ambient ISO 8502-4
 	let qcHtml = '';
-	if (qcAmbient && (qcAmbient.temp_air || qcAmbient.temp_steel || qcAmbient.relative_humidity || qcAmbient.dew_point)) {
-		const tempAir = Number(qcAmbient.temp_air || 0);
-		const tempSteel = Number(qcAmbient.temp_steel || 0);
-		const rh = Number(qcAmbient.relative_humidity || 0);
-		const dewPoint = Number(qcAmbient.dew_point || 0);
+	if (qcAmbient && (qcAmbient.temp_air || qcAmbient.air_temp || qcAmbient.temp_steel || qcAmbient.steel_temp || qcAmbient.relative_humidity || qcAmbient.dew_point || qcAmbient.concrete_moisture != null)) {
+		const tempAir = Number(qcAmbient.air_temp ?? qcAmbient.temp_air ?? 0);
+		const tempSteel = Number(qcAmbient.steel_temp ?? qcAmbient.temp_steel ?? 0);
+		const rh = Number(qcAmbient.relative_humidity ?? 0);
+		const dewPoint = Number(qcAmbient.dew_point ?? 0);
+		const concreteMoist = qcAmbient.concrete_moisture != null ? Number(qcAmbient.concrete_moisture) : null;
 		const delta = tempSteel - dewPoint;
-		const isSafe = delta >= 3 && rh <= 85;
+		const isSafe = delta >= 3 && rh <= 85 && (concreteMoist === null || concreteMoist <= 5);
 		qcHtml = `
 		<h2>Parameter Lingkungan QC Ambient (ISO 8502-4)</h2>
 		<table>
@@ -103,6 +122,7 @@ export function buildLaporanHarianLapanganHtml(data: LaporanHarianLapanganData):
 					<th>Kelembaban (RH %)</th>
 					<th>Titik Embun (&deg;C)</th>
 					<th>&Delta;T Substrat - Dew</th>
+					${concreteMoist != null ? '<th>Kadar Air Beton (%)</th>' : ''}
 					<th>Kondisi Aplikasi Coating</th>
 				</tr>
 			</thead>
@@ -113,6 +133,7 @@ export function buildLaporanHarianLapanganHtml(data: LaporanHarianLapanganData):
 					<td>${rh}%</td>
 					<td>${dewPoint}&deg;C</td>
 					<td><strong>+${delta.toFixed(1)}&deg;C</strong> (&ge; +3.0&deg;C)</td>
+					${concreteMoist != null ? `<td><strong>${concreteMoist}%</strong> (${concreteMoist <= 5 ? 'Aman &le; 5%' : 'Lembab > 5%'})</td>` : ''}
 					<td><strong style="color: ${isSafe ? '#16a34a' : '#dc2626'}">${isSafe ? 'MEMENUHI SYARAT (SAFE)' : 'PERINGATAN / DILUAR AMBANG'}</strong></td>
 				</tr>
 			</tbody>
@@ -264,6 +285,162 @@ export function buildLaporanHarianLapanganHtml(data: LaporanHarianLapanganData):
 			`).join('')}
 		</div>
 	` : ''}
+
+	${(() => {
+		const subtaskPairs = data.subtask_pairs || [];
+		if (!subtaskPairs || subtaskPairs.length === 0) return '';
+		const completeCount = subtaskPairs.filter((p) => p.status === 'complete').length;
+
+		return `
+		<div style="page-break-before: always; margin-top: 24px;">
+			<div style="border-bottom: 2px solid #1F6592; padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end;">
+				<div>
+					<h2 style="font-size: 14px; margin: 0; color: #1F6592; border: none; padding: 0; text-transform: uppercase; letter-spacing: 0.5px;">
+						Lampiran: Dokumentasi Mutu Foto Before &amp; After Pekerjaan
+					</h2>
+					<p style="font-size: 9.5px; color: #555; margin: 3px 0 0;">
+						Evidensi visual kondisi substrat pra-aplikasi (Before) dan hasil akhir pekerjaan (After) per subtask berprogres
+					</p>
+				</div>
+				<div style="text-align: right; font-size: 9px; color: #444; line-height: 1.4;">
+					<span><strong>Proyek:</strong> ${esc(data.projectName)}</span><br/>
+					<span><strong>Tanggal:</strong> ${esc(data.date)}</span> | <span style="color: #16a34a; font-weight: bold;">${completeCount}/${subtaskPairs.length} Subtask Lengkap BA</span>
+				</div>
+			</div>
+
+			<!-- QC Ambient Summary Mini-Box di Lembar Lampiran -->
+			${qcAmbient ? `
+				<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; padding: 6px 10px; margin-bottom: 12px; font-size: 9.5px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+					<div>
+						<strong style="color: #0f172a;">Kondisi Lingkungan QC (ISO 8502-4):</strong>
+						<span style="margin-left: 8px; color: #334155;">Suhu Udara: <strong>${esc(qcAmbient.air_temp ?? qcAmbient.temp_air ?? '-')} &deg;C</strong></span>
+						<span style="margin-left: 8px; color: #334155;">Suhu Substrat: <strong>${esc(qcAmbient.steel_temp ?? qcAmbient.temp_steel ?? '-')} &deg;C</strong></span>
+						<span style="margin-left: 8px; color: #334155;">RH: <strong>${esc(qcAmbient.relative_humidity ?? '-')} %</strong></span>
+						<span style="margin-left: 8px; color: #334155;">Dew Point: <strong>${esc(qcAmbient.dew_point ?? '-')} &deg;C</strong></span>
+						${qcAmbient.concrete_moisture != null ? `<span style="margin-left: 8px; color: #334155;">Kadar Air Beton: <strong>${esc(qcAmbient.concrete_moisture)} %</strong></span>` : ''}
+					</div>
+					<div>
+						${(() => {
+							const tStl = Number(qcAmbient.steel_temp ?? qcAmbient.temp_steel ?? 0);
+							const dp = Number(qcAmbient.dew_point ?? 0);
+							const dlt = tStl - dp;
+							const safe = dlt >= 3 && Number(qcAmbient.relative_humidity || 0) <= 85;
+							return `<span style="font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 8.5px; background: ${safe ? '#dcfce7; color: #166534;' : '#fee2e2; color: #991b1b;'}">
+								&Delta;T: +${dlt.toFixed(1)}&deg;C (${safe ? 'AMAN / SAFE' : 'PERINGATAN KONDENSASI'})
+							</span>`;
+						})()}
+					</div>
+				</div>
+			` : ''}
+
+			<!-- Grid / List Komparasi Before vs After per Subtask -->
+			${subtaskPairs.map((pair, idx) => `
+				<div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; margin-bottom: 12px; background: #ffffff; page-break-inside: avoid;">
+					<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 8px;">
+						<div>
+							<span style="font-size: 11px; font-weight: bold; color: #0f172a;">#${idx + 1}. ${esc(pair.subtask_name)}</span>
+							${pair.category ? `<span style="font-size: 9px; color: #64748b; margin-left: 6px;">(${esc(pair.category)})</span>` : ''}
+							${pair.progress_value ? `<span style="font-size: 9.5px; font-weight: 600; color: #1F6592; margin-left: 8px;">Realisasi: ${esc(pair.progress_value)} ${esc(pair.unit || '')}</span>` : ''}
+						</div>
+						<div>
+							${pair.status === 'complete' ? `
+								<span style="background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; font-size: 8.5px; font-weight: bold; padding: 2px 6px; border-radius: 3px;">
+									&#10003; Before &amp; After Lengkap
+								</span>
+							` : pair.status === 'before_only' ? `
+								<span style="background: #fef9c3; color: #854d0e; border: 1px solid #fef08a; font-size: 8.5px; font-weight: bold; padding: 2px 6px; border-radius: 3px;">
+									&#9203; Hanya Foto Before
+								</span>
+							` : pair.status === 'after_only' ? `
+								<span style="background: #ffedd5; color: #9a3412; border: 1px solid #fed7aa; font-size: 8.5px; font-weight: bold; padding: 2px 6px; border-radius: 3px;">
+									&#9203; Hanya Foto After
+								</span>
+							` : `
+								<span style="background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; font-size: 8.5px; font-weight: bold; padding: 2px 6px; border-radius: 3px;">
+									&#9888; Belum Ada Foto
+								</span>
+							`}
+						</div>
+					</div>
+
+					<!-- Table 2 Kolom: Kiri Before, Kanan After -->
+					<table style="width: 100%; border-collapse: collapse; margin-bottom: 4px; table-layout: fixed;">
+						<thead>
+							<tr>
+								<th style="width: 50%; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; font-size: 9px; padding: 4px 6px;">
+									BEFORE (Pra-Aplikasi / Kondisi Substrat Awal)
+								</th>
+								<th style="width: 50%; background: #f0fdf4; color: #166534; border: 1px solid #cbd5e1; font-size: 9px; padding: 4px 6px;">
+									AFTER (Pasca-Aplikasi / Hasil Akhir Pekerjaan)
+								</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<!-- Kolom Before -->
+								<td style="border: 1px solid #cbd5e1; padding: 6px; vertical-align: top; background: #fafafa;">
+									${pair.before_url ? `
+										<div style="width: 100%; height: 180px; overflow: hidden; background: #eee; text-align: center; border-radius: 3px; border: 1px solid #e2e8f0;">
+											<img src="${pair.before_url}" style="width: 100%; height: 100%; object-fit: cover;" alt="Foto Before" />
+										</div>
+										<div style="font-size: 8px; color: #475569; margin-top: 4px; display: flex; justify-content: space-between;">
+											<span>&#128248; Kondisi Substrat</span>
+											${pair.before_gps ? `<span style="font-family: monospace;">GPS: ${esc(pair.before_gps)}</span>` : ''}
+										</div>
+									` : `
+										<div style="width: 100%; height: 180px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 3px; display: flex; align-items: center; justify-content: center; text-align: center; color: #94a3b8; font-size: 10px;">
+											<div>
+												<span style="font-size: 20px; display: block; margin-bottom: 4px;">&#128247;</span>
+												Foto Before belum diunggah
+											</div>
+										</div>
+									`}
+								</td>
+
+								<!-- Kolom After -->
+								<td style="border: 1px solid #cbd5e1; padding: 6px; vertical-align: top; background: #fafafa;">
+									${pair.after_url ? `
+										<div style="width: 100%; height: 180px; overflow: hidden; background: #eee; text-align: center; border-radius: 3px; border: 1px solid #e2e8f0;">
+											<img src="${pair.after_url}" style="width: 100%; height: 100%; object-fit: cover;" alt="Foto After" />
+										</div>
+										<div style="font-size: 8px; color: #475569; margin-top: 4px; display: flex; justify-content: space-between;">
+											<span>&#128248; Hasil Aplikasi</span>
+											${pair.after_gps ? `<span style="font-family: monospace;">GPS: ${esc(pair.after_gps)}</span>` : ''}
+										</div>
+									` : `
+										<div style="width: 100%; height: 180px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 3px; display: flex; align-items: center; justify-content: center; text-align: center; color: #94a3b8; font-size: 10px;">
+											<div>
+												<span style="font-size: 20px; display: block; margin-bottom: 4px;">&#128247;</span>
+												Foto After belum diunggah
+											</div>
+										</div>
+									`}
+								</td>
+							</tr>
+						</tbody>
+					</table>
+
+					<!-- Info Tambahan Subtask: Foto During, Catatan, Defect -->
+					<div style="font-size: 9px; color: #475569; margin-top: 4px; display: flex; flex-direction: column; gap: 3px;">
+						${pair.during_url ? `
+							<div style="display: flex; align-items: center; gap: 6px; background: #f8fafc; padding: 4px 6px; border-radius: 3px; border: 1px solid #e2e8f0;">
+								<span style="font-weight: bold; color: #0284c7;">&#128247; Foto Proses (During):</span>
+								<a href="${pair.during_url}" style="color: #0284c7; text-decoration: underline;" target="_blank">Lihat Dokumentasi Proses Aplikasi</a>
+							</div>
+						` : ''}
+						${pair.notes ? `<div><strong>Catatan Subtask:</strong> ${esc(pair.notes)}</div>` : ''}
+						${pair.kategori_defect ? `
+							<div style="background: #fff7ed; border-left: 3px solid #f97316; padding: 3px 6px; color: #9a3412;">
+								<strong>Temuan Defect:</strong> ${esc(pair.kategori_defect)}
+								${pair.tindakan_perbaikan ? ` &mdash; <em>Tindakan Korektif: ${esc(pair.tindakan_perbaikan)}</em>` : ''}
+							</div>
+						` : ''}
+					</div>
+				</div>
+			`).join('')}
+		</div>
+		`;
+	})()}
 </body>
 </html>`;
 }
