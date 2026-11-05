@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StepChecklistBanner from '$lib/components/help/StepChecklistBanner.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -111,6 +112,10 @@
 	<button class="flex items-center gap-1.5 text-[12px] font-medium mb-3" style="color: var(--sys-label3)" onclick={() => goto('/sji')}>
 		<IconArrowLeft size={15} /> Kembali
 	</button>
+
+	{#if !success}
+		<div class="mb-3"><StepChecklistBanner alur="internal_tool_equipment_borrowing" fokus="tool_buat_tiket" judul="Syarat Pengajuan Pinjam Alat" /></div>
+	{/if}
 
 	{#if success}
 		<div class="text-center py-16">

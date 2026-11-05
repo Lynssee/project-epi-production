@@ -149,6 +149,28 @@
 				{/if}
 			</div>
 
+			<!-- Status Likuiditas Kas & Talangan Kantor (Fase 3) -->
+			<div class="mt-3 pt-3 border-t border-black/5">
+				<div class="flex items-center justify-between text-xs">
+					<span class="font-medium text-gray-700 flex items-center gap-1.5">
+						<span>💵</span>
+						<span>Status Saldo Kas Proyek:</span>
+					</span>
+					<span class="font-bold px-2 py-0.5 rounded-full text-[10px] {pos.is_cash_deficit ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'}">
+						{pos.is_cash_deficit ? '⚠️ Pinjam Modal Kantor' : '✓ Kas Mandiri / Surplus'}
+					</span>
+				</div>
+				{#if pos.is_cash_deficit}
+					<p class="text-xs text-gray-600 mt-1">
+						Biaya dikeluarkan mendahului pencairan kas termin{#if pos.show_rupiah} (defisit sementara: <strong>-{rp(pos.cash_deficit_amount)}</strong>){/if}. Segera capai ambang fisik milestone agar termin bisa ditagihkan.
+					</p>
+				{:else if pos.contract_billed > 0}
+					<p class="text-xs text-gray-600 mt-1">
+						Penerimaan termin mencukupi biaya operasional proyek{#if pos.show_rupiah} (surplus: <strong>+{rp(pos.net_cash)}</strong>){/if}.
+					</p>
+				{/if}
+			</div>
+
 			{#if tone === 'danger'}
 				<div class="mt-2 flex items-start gap-1.5 text-xs text-red-700">
 					<IconAlertTriangle size={14} class="mt-0.5 shrink-0" />

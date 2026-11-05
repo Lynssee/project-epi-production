@@ -20,6 +20,7 @@
 		type ClosureEvaluation
 	} from '$lib/services/projectClosureLapangan';
 	import { loadPaStatus, loadIdleLoans, type PaStatusResponse } from '$lib/services/paStatusLapangan';
+	import { loadCloseoutRatingCheck, type CloseoutRatingCheck } from '$lib/services/closeoutRatingCheck';
 	import { IconArrowLeft, IconLoader2, IconFileText } from '@tabler/icons-svelte';
 
 	let projectId = $derived($page.params.project_id as string);
@@ -38,7 +39,10 @@
 		loansActive: null,
 		loansError: false
 	});
+	// Penilaian pekerja outsource (gate G_MANPOWER_RATING_CLOSEOUT, KPI & Kinerja Terpusat Fase 6). Informatif; gagal -> baris disembunyikan.
+	let ratingCheck = $state<CloseoutRatingCheck | null>(null);
 	async function loadAutoChecks() {
+		loadCloseoutRatingCheck(Number(projectId)).then((r) => (ratingCheck = r));
 		const pid = Number(projectId);
 		const [pa, loans] = await Promise.allSettled([loadPaStatus(pid), loadIdleLoans(pid)]);
 		autoChecks = {
@@ -248,6 +252,21 @@
 				</div>
 			{:else}
 				<div class="text-xs text-gray-400">Memeriksa pengajuan anggaran…</div>
+			{/if}
+			{#if ratingCheck?.available && ratingCheck.detail}
+				{@const belum = ratingCheck.detail.missing.length}
+				<div class="flex items-start gap-2 {ratingCheck.status === 'passed' ? 'text-green-700' : 'text-amber-700'}" data-testid="closeout-rating">
+					<span>{ratingCheck.status === 'passed' ? '✅' : '⚠️'}</span>
+					<span>
+						{#if ratingCheck.status === 'passed'}
+							{ratingCheck.detail.total === 0 ? 'Tidak ada pekerja outsource aktif di proyek ini.' : 'Semua pekerja outsource aktif sudah dinilai.'}
+						{:else}
+							{belum} dari {ratingCheck.detail.total} pekerja outsource aktif belum dinilai.
+							{ratingCheck.blocked ? 'Closing akan ditahan sampai dinilai.' : 'Disarankan dinilai sebelum closing — penilaian jadi dasar skor pekerja.'}
+							<button type="button" class="ml-1 font-semibold underline" onclick={() => goto('/manpower/rating')}>Nilai sekarang</button>
+						{/if}
+					</span>
+				</div>
 			{/if}
 			{#if autoChecks.loansError}
 				<div class="text-xs text-red-600">Data alat pinjaman gagal dimuat.</div>

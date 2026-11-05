@@ -4,7 +4,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { IconArrowsExchange, IconCamera, IconLoader2, IconInfoCircle, IconCheck, IconX, IconTruckDelivery } from '@tabler/icons-svelte';
+	import { IconArrowsExchange, IconCamera, IconLoader2, IconInfoCircle, IconCheck, IconX, IconTruckDelivery, IconQrcode, IconScan } from '@tabler/icons-svelte';
+	import MutasiQrModal from '$lib/components/inventory/MutasiQrModal.svelte';
+	import QrScannerModal from '$lib/components/scanner/QrScannerModal.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import CameraCaptureModal from '$lib/components/scanner/CameraCaptureModal.svelte';
 	import { compressPhoto } from '$lib/utils/photoCompress';
@@ -14,7 +16,7 @@
 	import { getAllStockBalancesForProjects, type LowStockBalanceRow } from '$lib/services/projectStockBalanceApi';
 	import {
 		getMutasiStatus, listMutasi, ajukanMutasi, aksiMutasi, getQtyTerkunci, aksiUntukSaya, perluTindakanSaya, qtyBolehDimutasi,
-		validasiFormAjukan, LABEL_STATUS, type Mutasi, type AksiMutasi
+		validasiFormAjukan, LABEL_STATUS, JENIS_LAPANGAN, WORKSHOP_TUJUAN, bisaTampilQr, parseQrMutasi, type Mutasi, type AksiMutasi, type JenisLapangan
 	} from '$lib/services/mutasiApi';
 
 	let loading = $state(true);
@@ -31,7 +33,11 @@
 	let allProjects = $state<any[]>([]);
 	let asal = $state<number | ''>('');
 	let tujuan = $state<number | ''>('');
+	let jenis = $state<JenisLapangan>('proyek_ke_proyek');
 	let rute = $state<'langsung_site' | 'via_gudang'>('langsung_site');
+	// QR: tampil di layar HP (sopir/leader) & pindai (leader tujuan saat barang tiba)
+	let qrTampil = $state<Mutasi | null>(null);
+	let showScanner = $state(false);
 	let alasan = $state('');
 	let saldoRows = $state<LowStockBalanceRow[]>([]);
 	let terkunci = $state<Record<number, number>>({});
@@ -77,6 +83,18 @@
 		}
 	});
 
+	/** Pindai QR e-SJ dari sopir: cocokkan dengan dokumen yang bisa saya terima, lalu buka dialog Terima. */
+	function onQrTerdeteksi(teks: string) {
+		showScanner = false;
+		const q = parseQrMutasi(teks);
+		if (!q) { error = 'QR ini bukan e-SJ Mutasi. Pindai QR di surat jalan mutasi.'; return; }
+		const m = daftar.find((d) => d.id === q.id);
+		if (!m) { error = 'e-SJ ini tidak ditemukan di daftar Anda. Pastikan barang ini memang untuk proyek Anda, lalu muat ulang.'; return; }
+		if (m.qr_token && m.qr_token !== q.token) { error = 'QR tidak cocok dengan dokumen di sistem. Jangan terima barang sebelum diperiksa Admin Inventory.'; return; }
+		if (!aksiUntukSaya(m, me).includes('terima')) { error = `Mutasi ${m.nomor_mutasi} belum bisa Anda terima (status: ${LABEL_STATUS[m.status] || m.status}).`; return; }
+		error = ''; tab = 'semua';
+		bukaDialog(m, 'terima');
+	}
 	async function muat() {
 		const r = await listMutasi({});
 		daftar = r.data || [];
@@ -109,16 +127,16 @@
 	async function kirimPengajuan() {
 		error = ''; pesan = '';
 		const items = Object.entries(pilih).map(([id, qty]) => ({ item_id: Number(id), qty: Number(qty), maks: qtyBolehDimutasi(saldoRows.find((r) => r.item_id === Number(id))?.qty_on_hand || 0, terkunci[Number(id)] || 0) }));
-		const bad = validasiFormAjukan({ asal, tujuan, alasan, items });
+		const bad = validasiFormAjukan({ jenis, asal, tujuan, alasan, items });
 		if (bad) { error = bad; return; }
 		submitting = true;
 		try {
 			const r = await ajukanMutasi({
-				jenis: 'proyek_ke_proyek', asal_id: Number(asal), tujuan_id: Number(tujuan), rute, alasan: alasan.trim(),
+				jenis, asal_id: Number(asal), tujuan_id: Number(tujuan), rute, alasan: alasan.trim(),
 				items: items.map((i) => ({ item_id: i.item_id, qty: i.qty })), client_txn_id: clientTxnId, ...(alasanGate.trim() ? { alasan_gate: alasanGate.trim() } : {})
 			});
-			pesan = `Mutasi ${r.data.nomor_mutasi} diajukan. Menunggu persetujuan proyek tujuan — saldo Anda belum berubah.${r.peringatan?.length ? ' Perhatian: ' + r.peringatan.join(' ') : ''}`;
-			asal = ''; tujuan = ''; alasan = ''; alasanGate = ''; pilih = {}; saldoRows = []; clientTxnId = crypto.randomUUID();
+			pesan = `Mutasi ${r.data.nomor_mutasi} diajukan. Menunggu persetujuan ${jenis === 'proyek_ke_workshop' ? 'Admin Inventory' : 'proyek tujuan'} — saldo Anda belum berubah.${r.peringatan?.length ? ' Perhatian: ' + r.peringatan.join(' ') : ''}`;
+			asal = ''; tujuan = ''; jenis = 'proyek_ke_proyek'; alasan = ''; alasanGate = ''; pilih = {}; saldoRows = []; clientTxnId = crypto.randomUUID();
 			await muat();
 			tab = 'semua';
 		} catch (e: any) {
@@ -211,6 +229,7 @@
 		</div>
 
 		{#if tab !== 'ajukan'}
+			<button type="button" class="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 font-semibold text-xs" onclick={() => (showScanner = true)} title="Truk tiba? Pindai QR di surat jalan sopir, lalu hitung barang yang turun."><IconScan size={15} /> Pindai QR surat jalan (barang tiba)</button>
 			{#if tab === 'tindakan'}
 				<p class="text-[11px] text-slate-500">Setujui hanya bila barang memang dibutuhkan proyek Anda — nilainya akan masuk realisasi proyek Anda.</p>
 			{/if}
@@ -228,6 +247,9 @@
 					<p class="text-slate-500">Alasan: {m.alasan}</p>
 					{#if m.langkah && m.status === 'diajukan'}<p class="text-[11px] text-amber-700">Menunggu: langkah {m.langkah.urut}/{m.langkah.total} — {m.langkah.label || m.langkah.role}</p>{/if}
 					{#if m.rute === 'via_gudang' && m.status === 'dikirim'}<p class="text-[11px] text-indigo-700">Menunggu lolos gerbang sebelum bisa diterima.</p>{/if}
+					{#if bisaTampilQr(m.status)}
+						<button type="button" class="flex items-center gap-1 text-[11px] font-semibold text-indigo-700 underline" onclick={() => (qrTampil = m)} title="Tunjukkan layar ini ke satpam dan penerima — tidak perlu cetak kertas."><IconQrcode size={13} /> Tampilkan QR Gerbang</button>
+					{/if}
 					{#if aksi.length}
 						<div class="flex flex-wrap gap-1.5 pt-1">
 							{#each aksi as a}
@@ -246,10 +268,23 @@
 						<option value="">— pilih —</option>
 						{#each myProjects as p (p.id)}<option value={p.id}>{namaProyek(p)}</option>{/each}
 					</select></label>
-				<label class="block"><span class="text-[10px] font-semibold text-slate-500">Ke proyek</span>
+				<div>
+					<span class="text-[10px] font-semibold text-slate-500">Dipindah ke mana?</span>
+					<div class="grid grid-cols-2 gap-1.5 mt-0.5">
+						{#each JENIS_LAPANGAN as j (j.value)}
+							<button type="button" class="py-1.5 rounded-lg border font-semibold {jenis === j.value ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-600'}" onclick={() => { jenis = j.value; tujuan = ''; }}>{j.label}</button>
+						{/each}
+					</div>
+					<p class="text-[10px] text-slate-500 mt-1">{JENIS_LAPANGAN.find((j) => j.value === jenis)?.hint}</p>
+				</div>
+				<label class="block"><span class="text-[10px] font-semibold text-slate-500">{jenis === 'proyek_ke_workshop' ? 'Ke workshop' : 'Ke proyek'}</span>
 					<select class="w-full border rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800" bind:value={tujuan}>
 						<option value="">— pilih —</option>
-						{#each allProjects.filter((p) => p.id !== asal) as p (p.id)}<option value={p.id}>{namaProyek(p)}</option>{/each}
+						{#if jenis === 'proyek_ke_workshop'}
+							{#each WORKSHOP_TUJUAN as w (w.id)}<option value={w.id}>{w.nama}</option>{/each}
+						{:else}
+							{#each allProjects.filter((p) => p.id !== asal) as p (p.id)}<option value={p.id}>{namaProyek(p)}</option>{/each}
+						{/if}
 					</select></label>
 				<div>
 					<span class="text-[10px] font-semibold text-slate-500">Rute</span>
@@ -327,6 +362,12 @@
 			</div>
 		</div>
 	</div>
+{/if}
+{#if qrTampil}
+	<MutasiQrModal m={qrTampil} onClose={() => (qrTampil = null)} />
+{/if}
+{#if showScanner}
+	<QrScannerModal expectedPrefix="EPI:MUT:" onDetect={onQrTerdeteksi} onClose={() => (showScanner = false)} />
 {/if}
 {#if showCamera}
 	<CameraCaptureModal onCapture={ambilFoto} onClose={() => (showCamera = false)} />

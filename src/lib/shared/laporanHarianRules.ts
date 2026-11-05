@@ -299,6 +299,21 @@ export function evaluateLaporanHarianRules(
 		gates.push(noFotoPerItem === 0
 			? gate('G_LH_PROGRESS_FOTO_PER_ITEM', 'Setiap baris progress punya foto bukti sendiri', 'C', 'passed', `${progress.length} baris punya foto bukti`)
 			: gate('G_LH_PROGRESS_FOTO_PER_ITEM', 'Setiap baris progress punya foto bukti sendiri', 'C', 'failed', `${noFotoPerItem} baris progress belum punya foto bukti fisik (lampirkan minimal 1 foto per pekerjaan yang ada progres).`, { tab: 'progress' }));
+
+		// G_FOTO_BA: Penajaman Dokumentasi — Foto Before & After per subtask berprogres
+		const withActualProgress = progress.filter((p) => (Number(p?.progress_value) || 0) > 0);
+		if (withActualProgress.length === 0) {
+			gates.push(gate('G_FOTO_BA', 'Foto Before & After Subtask Berprogres Lengkap', 'C', 'passed', 'Tidak ada subtask dengan progres baru hari ini', { tab: 'progress' }));
+		} else {
+			const incompleteBA = withActualProgress.filter((p) => {
+				const hasBefore = !isEmpty(p?.foto_before) || !isEmpty(p?.existing_foto_before) || (Array.isArray(p?.foto_bukti) && p.foto_bukti.length > 0 && p.has_foto_before);
+				const hasAfter = !isEmpty(p?.foto_after) || !isEmpty(p?.existing_foto_after) || (Array.isArray(p?.foto_bukti) && p.foto_bukti.length > 1);
+				return !(hasBefore && hasAfter);
+			}).length;
+			gates.push(incompleteBA === 0
+				? gate('G_FOTO_BA', 'Foto Before & After Subtask Berprogres Lengkap', 'C', 'passed', `${withActualProgress.length} subtask memiliki foto Before & After lengkap`, { tab: 'progress' })
+				: gate('G_FOTO_BA', 'Foto Before & After Subtask Berprogres Lengkap', 'C', 'failed', `${incompleteBA} subtask berprogres belum memiliki sepasang foto Before (pra-aplikasi) dan After (pasca-aplikasi).`, { tab: 'progress' }));
+		}
 	}
 
 	gates.push(!isEmpty(s.karyawan_id)
@@ -389,7 +404,7 @@ export const LAPORAN_HARIAN_GATE_KEYS = [
 	'G_LH_FOTO_TOOLBOX', 'G_LH_FOTO_AREA_KERJA', 'G_LH_FOTO_KENDALA',
 	'G_LH_HSE_CHECKLIST', 'G_LH_DOWNTIME_REASON', 'G_LH_QC_AMBIENT', 'G_LH_MATERIAL_VARIANCE',
 	'G_LH_CUACA', 'G_LH_JML_TENAGA', 'G_LH_CATATAN_UMUM', 'G_LH_KENDALA_UMUM', 'G_LH_RENCANA_BESOK_RINGKASAN',
-	'G_LH_PROGRESS_SUBTASK', 'G_LH_PROGRESS_CATATAN', 'G_LH_PROGRESS_FOTO_PER_ITEM', 'G_LH_KARYAWAN_ID',
+	'G_LH_PROGRESS_SUBTASK', 'G_LH_PROGRESS_CATATAN', 'G_LH_PROGRESS_FOTO_PER_ITEM', 'G_FOTO_BA', 'G_LH_KARYAWAN_ID',
 	'G_LH_HOLD_ALASAN', 'G_LH_HOLD_FOTO_STANDBY', 'G_LH_ANTI_SALIN',
 	'G_LH_DAILY_TARGET_CHECK', 'G_LH_CUSTOMER_RELEASE'
 ];

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PintasanBelajar from '$lib/components/ess/PintasanBelajar.svelte';
+	import FloatingSopHint from '$lib/components/help/FloatingSopHint.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { onMount } from 'svelte';
 	import {
@@ -40,6 +42,7 @@
 	}
 
 	onMount(loadAll);
+
 </script>
 
 <div class="flex-1 flex flex-col h-full overflow-hidden bg-slate-50">
@@ -54,6 +57,14 @@
 					<p class="text-xs font-medium" style="color: var(--sys-label3)">Data lapangan & pergerakan material</p>
 				</div>
 			</div>
+			<a
+				href="/panduan/alur?alur=daily_field_report_and_productivity"
+				class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 text-xs font-bold shadow-xs transition-colors shrink-0"
+				title="Lihat Instruksi Kerja (IK) Laporan Harian Mandor Lapangan"
+			>
+				<span>📖</span>
+				<span>Panduan IK Mandor</span>
+			</a>
 		</div>
 	</div>
 
@@ -64,6 +75,7 @@
 	{:else}
 		<div class="flex-1 overflow-y-auto px-4 md:px-6 py-6 pb-24">
 			<div class="max-w-7xl mx-auto w-full">
+				<PintasanBelajar konteks="field_report" />
 
 				<!-- KPI -->
 				<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -222,4 +234,6 @@
 			</div>
 		</div>
 	{/if}
+
+	<FloatingSopHint stageId={4} activeGateKey="G_DAILY_REPORT_CUTOFF" buttonLabel="SOP Daily Report" />
 </div>

@@ -187,6 +187,17 @@ export function waitingInfo(row: any, now: Date = new Date()): { days: number; l
 	return { days, label: `Menunggu ${who} ${days} hari kerja · pengingat otomatis dikirim` };
 }
 
+/**
+ * PCK-10 §4.7 — petunjuk untuk pemohon yang tiketnya menunggu atasan > 2 hari kerja (mis. atasan sudah berhenti/berganti).
+ * Paritas dengan erp-epi `src/lib/utils/pettyCashUi.js` (atasanStuckHint).
+ */
+export function atasanStuckHint(row: any, now: Date = new Date()): string | null {
+	if (row?.status !== 'menunggu_atasan') return null;
+	const days = businessDaysSince(row.date_updated || row.date_created, now);
+	if (days <= 2) return null;
+	return `Sudah ${days} hari kerja menunggu atasan. Kalau atasan Anda sudah berganti atau tidak aktif, hubungi HR untuk memperbarui data atasan, lalu minta kasir menekan "Hitung ulang atasan".`;
+}
+
 /** Umur tertua (hari kerja) di antrean — untuk lencana "tertua N hari". */
 export function oldestWaitDays(rows: any[] | null | undefined, now: Date = new Date()): number {
 	let max = 0;

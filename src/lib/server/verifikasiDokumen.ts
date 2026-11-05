@@ -8,7 +8,7 @@
 // orang lain. Dengan tanda tangan, hanya pemegang QR yang dicetak sistem yang bisa membuka halaman verifikasi.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-export const JENIS_VERIFIKASI = ['pa', 'bdp'] as const;
+export const JENIS_VERIFIKASI = ['pa', 'bdp', 'grand_po'] as const;
 export type JenisVerifikasi = (typeof JENIS_VERIFIKASI)[number];
 
 const VERSI = 'v1';

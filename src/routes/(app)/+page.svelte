@@ -37,6 +37,7 @@ import { authStore, getUserDisplay, getUserInitials, shouldFilterProjectsByLeade
 	import GateChangeBanner from '$lib/components/anggaran/GateChangeBanner.svelte';
 	import DisiplinKesiapanWidget from '$lib/components/DisiplinKesiapanWidget.svelte';
 	import PengecualianProyekWidget from '$lib/components/PengecualianProyekWidget.svelte';
+	import FieldActionAlertWidget from '$lib/components/project/FieldActionAlertWidget.svelte';
 	import GateKpiBannerMendesak from '$lib/components/ess/GateKpiBannerMendesak.svelte';
 	import TunggakanFisikWidget from '$lib/components/TunggakanFisikWidget.svelte';
 	import {
@@ -604,6 +605,8 @@ import { authStore, getUserDisplay, getUserInitials, shouldFilterProjectsByLeade
 			<GateKpiBannerMendesak />
 
 			<!-- PRJ-31 — Pengecualian Hari Ini (ringkas) untuk Leader/PM; komponen mandiri, nol tampil bila tidak ada masalah. -->
+			<FieldActionAlertWidget />
+
 			<PengecualianProyekWidget />
 
 			<!-- Penajaman Gate SJ Fase 3 — Tunggakan Fisik Saya; nol tampil bila tidak ada SJ menunggak. -->

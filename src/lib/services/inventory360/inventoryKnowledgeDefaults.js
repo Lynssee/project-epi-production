@@ -93,6 +93,7 @@ export const DEFAULT_TEMPLATES = Object.freeze([
   },
   {
     cocok: 'INSPEKSI',
+    alias: ['INPEKSI'], // ejaan di master parent_category live (id 131) salah ketik
     nama: 'Alat inspeksi & ukur',
     is_kritis_default: true,
     min_score_verified: 80,
@@ -128,15 +129,44 @@ export const DEFAULT_TEMPLATES = Object.freeze([
     ]
   },
   {
-    cocok: 'FINISH',
-    nama: 'Finished Goods (non-Foxa)',
+    cocok: 'FINISHGOOD',
+    alias: ['FINISH'],
+    nama: 'Finish Good (cat & coating)',
     is_kritis_default: false,
-    min_score_verified: 60,
+    sections_aktif: SECTION_KEYS.filter((s) => s !== 'dipakai_pada'),
+    min_score_verified: 70,
     spec_fields: [
-      f('jenis_produk', 'Jenis produk', { wajib: true }),
+      f('jenis_produk', 'Jenis produk', { wajib: true, hint: 'Mis. epoxy primer, polyurethane topcoat, zinc rich.' }),
       f('volume_kemasan', 'Volume kemasan'),
-      f('daya_sebar', 'Daya sebar teoritis', { unit: 'm²/L' }),
-      f('waktu_kering', 'Waktu kering')
+      f('solid_volume', 'Solid by volume', { tipe: 'angka', unit: '%', kritis: true }),
+      f('dft', 'DFT per lapis', { unit: 'µm', kritis: true, hint: 'Tebal film kering yang disyaratkan per lapis.' }),
+      f('daya_sebar', 'Daya sebar teoritis', { unit: 'm²/L', kritis: true }),
+      f('rasio_campuran', 'Rasio campuran (A:B)', { wajib: true, kritis: true }),
+      f('pot_life', 'Pot life', { unit: 'jam', kritis: true, hint: 'Batas waktu pakai setelah dicampur, pada suhu acuan.' }),
+      f('waktu_kering', 'Waktu kering sentuh / keras', { kritis: true }),
+      f('recoat_window', 'Jendela overcoat (min–maks)', { kritis: true, hint: 'Isi dari TDS resmi, bukan perkiraan.' }),
+      f('thinner', 'Thinner & rasio maksimum', { kritis: true }),
+      f('metode_aplikasi', 'Metode Aplikasi', { hint: 'Airless spray, conventional spray, roll, kuas.' })
+    ]
+  },
+  {
+    cocok: 'RAW MATERIAL',
+    alias: ['RAW'],
+    nama: 'Raw Material (bahan baku & kimia)',
+    is_kritis_default: true,
+    sections_aktif: SECTION_KEYS.filter((s) => s !== 'dipakai_pada'),
+    min_score_verified: 70,
+    spec_fields: [
+      f('cas_number', 'CAS number', { wajib: true, kritis: true, hint: 'Nomor registrasi CAS bahan kimia untuk identifikasi bahaya dan MSDS.' }),
+      f('grade', 'Grade / kemurnian', { wajib: true }),
+      f('viskositas', 'Viskositas (@25°C)', { unit: 'mPa.s', hint: 'Viskositas cairan atau pengenceran acuan lab.' }),
+      f('solid_content', 'Kadar Padatan / Solid content', { tipe: 'angka', unit: '%', kritis: true }),
+      f('density', 'Berat Jenis / Densitas', { unit: 'g/cm³', hint: 'Specific gravity @ 20°/25°C.' }),
+      f('flash_point', 'Flash point', { tipe: 'angka', unit: '°C', kritis: true, hint: 'Titik nyala api bahan cair/solvent.' }),
+      f('acid_amine_value', 'Acid / Amine / EEW Value', { unit: 'mg KOH/g / g/eq', hint: 'Nilai bilangan asam, amina, atau EEW resin.' }),
+      f('kondisi_simpan', 'Kondisi simpan', { hint: 'Suhu penyimpanan maksimum, kelembaban, ventilasi ruangan.' }),
+      f('umur_simpan', 'Umur simpan', { tipe: 'angka', unit: 'hari', kritis: true, hint: 'Masa simpan sebelum kedaluwarsa atau menggumpal.' }),
+      f('rekomendasi_apd', 'Rekomendasi APD Handling', { kritis: true, hint: 'Respirator, kacamata goggle, sarung tangan nitril/butyl.' })
     ]
   }
 ]);
@@ -206,7 +236,7 @@ export function buildDefaultTemplatePayload(def, parentCategoryId) {
     parent_category_id: parentCategoryId,
     sub_category_id: null,
     spec_fields: def.spec_fields.map((x) => ({ ...x })),
-    sections_aktif: [...SECTION_KEYS],
+    sections_aktif: def.sections_aktif ? [...def.sections_aktif] : [...SECTION_KEYS],
     context_map: Object.fromEntries(Object.entries(DEFAULT_CONTEXT_MAP).map(([k, v]) => [k, [...v]])),
     min_score_verified: def.min_score_verified,
     is_kritis_default: def.is_kritis_default,

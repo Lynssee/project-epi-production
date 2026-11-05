@@ -10,6 +10,7 @@
 	import { getProgressMap, markPersiapanStatus, type PersiapanProgressRow } from '$lib/services/persiapanProgress';
 	import { loadInventorySettings, getInventorySetting } from '$lib/services/inventorySettings';
 	import { vibrateTap } from '$lib/utils/haptic';
+	import { fetchExpiryHints, hintTampil, type ExpiryHintItem } from '$lib/services/expiryHint';
 	import { enqueueStockSubmission, registerStockAutoFlush, type QueuedStockSubmission } from '$lib/utils/offlineStockQueue';
 	import { IconArrowLeft, IconLoader2, IconAlertTriangle, IconBox, IconCheck, IconCamera } from '@tabler/icons-svelte';
 
@@ -33,6 +34,7 @@
 	let fileInput: HTMLInputElement;
 	let bulkFileInput: HTMLInputElement;
 	let highlightItemId = $state<number | null>(null);
+	let expiryHints = $state<Record<number, ExpiryHintItem>>({});
 
 	function progressKey(sourceId: string | number, itemId: number | null) {
 		return `${sourceId}:${itemId ?? ''}`;
@@ -62,6 +64,9 @@
 		const spkIds = data.spkReservations.map((r) => r.spkId);
 		const reorderIds = data.reorderAlerts.map((r) => `reorder-${r.itemId}`);
 		progress = await getProgressMap('bahan_baku_spk', [...spkIds, ...reorderIds]);
+		// Expired Date v2 F5: badge kadaluarsa/FEFO per bahan (1 panggilan, tidak memblokir tampilan; gagal = tanpa badge).
+		const itemIds = [...data.spkReservations.map((r) => Number(r.itemId)), ...data.reorderAlerts.map((r) => Number(r.itemId))];
+		fetchExpiryHints(itemIds, 'app').then((h) => (expiryHints = h));
 	}
 
 	async function flushOne(entry: QueuedStockSubmission) {
@@ -235,6 +240,10 @@
 						<div class="min-w-0">
 							<p class="text-[12.5px] font-medium truncate" style="color: var(--sys-label)">{item.namaBarang}</p>
 							<p class="text-[10.5px]" style="color: #DC2626">Sisa {item.stokTersedia} / min {item.stokMinimum} {item.satuan}</p>
+							{#if hintTampil(expiryHints[item.itemId])}
+								{@const ex = hintTampil(expiryHints[item.itemId])!}
+								<p class="text-[10.5px] font-semibold mt-0.5" style="color: {ex.fg}">{ex.ikon} {ex.teks}</p>
+							{/if}
 						</div>
 						<div class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center" style="background: {isSiap(sourceId, item.itemId) ? '#16A34A' : 'var(--sys-fill)'}">
 							{#if saving === k}
@@ -290,6 +299,12 @@
 								<div class="min-w-0">
 									<p class="text-[12.5px] font-medium truncate" style="color: var(--sys-label)">{item.namaBarang}</p>
 									<p class="text-[10.5px]" style="color: var(--sys-label3)">{item.quantity} {item.satuan}</p>
+									{#if hintTampil(expiryHints[item.itemId])}
+										{@const ex = hintTampil(expiryHints[item.itemId])!}
+										<p class="text-[10.5px] font-semibold mt-0.5" style="color: {ex.fg}" title="Batch aktif paling dekat kadaluarsa (FEFO). Ambil lot ini lebih dulu.">
+											{ex.ikon} {ex.teks}{ex.anjuran ? ` — ${ex.anjuran}` : ''}
+										</p>
+									{/if}
 								</div>
 								<div class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center" style="background: {isSiap(group.spkId, item.itemId) ? '#16A34A' : 'var(--sys-fill)'}">
 									{#if saving === k}

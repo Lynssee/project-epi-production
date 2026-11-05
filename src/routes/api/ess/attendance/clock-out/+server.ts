@@ -7,6 +7,8 @@ import { computeAntiFakeGpsScore, withinRadius } from '$lib/server/ess/geo';
 import { nowTimeJakarta, todayJakarta } from '$lib/server/ess/time';
 import { verifyFace } from '$lib/server/ess/faceVerify';
 import { loadIstirahatConfig, findJedaTerbuka, getKategoriNama } from '$lib/server/ess/istirahat';
+import { getFieldGateMode } from '$lib/server/gateEnforcement';
+import { findActiveCheckin } from '$lib/server/siteCheckin';
 
 export const POST: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
@@ -45,6 +47,41 @@ export const POST: RequestHandler = async (event) => {
 			const kategoriNama = jedaTerbuka.kategori_id ? await getKategoriNama(jedaTerbuka.kategori_id) : null;
 			const detail = kategoriNama ? ` (${kategoriNama}, sejak ${jedaTerbuka.jam_keluar})` : ` (sejak ${jedaTerbuka.jam_keluar})`;
 			throw error(409, `Anda belum absen kembali dari istirahat${detail}. Absen kembali dulu sebelum absen pulang.`);
+		}
+	}
+
+	// Gate G_ESS_CLOCKOUT_COMPLETE: Karyawan dilarang clock-out jika masih memiliki kunjungan lapangan aktif (belum checkout)
+	const clockoutGateMode = await getFieldGateMode('G_ESS_CLOCKOUT_COMPLETE');
+	if (clockoutGateMode === 'hard' || clockoutGateMode === 'soft') {
+		const activeVisit = await findActiveCheckin(String(karyawan.id));
+		if (activeVisit) {
+			const namaSite = activeVisit.nama_lokasi || 'Kunjungan Lapangan';
+			throw error(
+				409,
+				`[Gate G_ESS_CLOCKOUT_COMPLETE] Anda masih memiliki kunjungan aktif di "${namaSite}". Silakan selesaikan Check-Out kunjungan terlebih dahulu sebelum Absen Pulang.`
+			);
+		}
+	}
+
+	// Gate G_ESS_VISIT_PLAN_VS_ACTUAL: Validasi apakah semua rencana kunjungan hari ini sudah terealisasi atau memiliki alasan deviasi
+	const planVsActualGateMode = await getFieldGateMode('G_ESS_VISIT_PLAN_VS_ACTUAL');
+	if (planVsActualGateMode === 'hard' || planVsActualGateMode === 'soft') {
+		const todayPlansQuery = new URLSearchParams({
+			'filter[karyawan_id][_eq]': String(karyawan.id),
+			'filter[tanggal_rencana][_eq]': tanggal,
+			'filter[is_planned][_eq]': 'true',
+			'filter[plan_status][_eq]': 'planned',
+			fields: 'id,nama_lokasi,planned_start_time,planned_end_time,alasan_deviasi',
+			limit: '-1'
+		});
+		const todayPlansRes = await directusServerJson<{ data: any[] }>(`/items/site_checkin?${todayPlansQuery.toString()}`).catch(() => null);
+		const pendingPlans = (todayPlansRes?.data || []).filter((p) => !p.alasan_deviasi || p.alasan_deviasi.trim() === '');
+		if (pendingPlans.length > 0) {
+			const daftarPlan = pendingPlans.map((p) => `• ${p.nama_lokasi} (${p.planned_start_time || '-'}-${p.planned_end_time || '-'})`).join('\n');
+			throw error(
+				409,
+				`[Gate G_ESS_VISIT_PLAN_VS_ACTUAL] Anda memiliki ${pendingPlans.length} rencana kunjungan hari ini yang belum terealisasi:\n${daftarPlan}\nHarap beri alasan deviasi/batalkan jadwal di menu Site Check-in sebelum Absen Pulang.`
+			);
 		}
 	}
 

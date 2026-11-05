@@ -4,9 +4,10 @@
 	// bertumpuk (Wajib/Direkomendasikan/Selesai) menggantikan tab Wajib/Tersedia/Selesai lama.
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { getKursusList, getMySkills, type KursusListItem, type MySkillRecord } from '$lib/services/ess/training';
+	import { getKursusList, getMySkills, type KursusListItem, type MySkillRecord, type PilarKnowledge } from '$lib/services/ess/training';
 	import { getSilabusSaya, getTimSilabus, type SilabusProgress } from '$lib/services/ess/silabus';
 	import { getMyTrainingFeedback } from '$lib/services/ess/trainingFeedback';
+	import SopSayaCard from '$lib/components/ess/SopSayaCard.svelte';
 	import { IconAlertTriangle, IconChevronRight, IconClock, IconLoader2, IconLock, IconMedal, IconPlayerPlay, IconSchool, IconAward, IconCircleCheck, IconCircleDashed, IconProgressCheck } from '@tabler/icons-svelte';
 
 	const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_API_URL;
@@ -14,6 +15,10 @@
 	let loading = $state(true);
 	let errorMsg = $state('');
 	let kursus = $state<KursusListItem[]>([]);
+	let pilarList = $state<PilarKnowledge[]>([]);
+	// Filter 5 Pilar Knowledge: 'semua' atau kode pilar. Hanya menyaring daftar kursus di bawah;
+	// kartu "Lanjutkan Belajar" tetap menampilkan kursus yang sedang berjalan.
+	let pilarAktif = $state('semua');
 	let skills = $state<MySkillRecord[]>([]);
 	let silabusList = $state<SilabusProgress[]>([]);
 	let silabusLoading = $state(true);
@@ -26,6 +31,8 @@
 		try {
 			const res = await getKursusList();
 			kursus = res.kursus;
+			pilarList = res.pilar ?? [];
+			if (pilarAktif !== 'semua' && !pilarList.some((p) => p.code === pilarAktif)) pilarAktif = 'semua';
 		} catch (err: any) {
 			errorMsg = err?.message || 'Gagal memuat daftar kursus.';
 		} finally {
@@ -68,9 +75,12 @@
 	);
 	let hero = $derived(sedangBerjalan[0] ?? null);
 
-	let wajibDiselesaikan = $derived(kursus.filter((k) => k.program.wajib && k.enrollment?.status !== 'Lulus'));
-	let direkomendasikan = $derived(kursus.filter((k) => !k.program.wajib && k.enrollment?.status !== 'Lulus' && k.program.id !== hero?.program.id));
-	let selesai = $derived(kursus.filter((k) => k.enrollment?.status === 'Lulus'));
+	let kursusTampil = $derived(pilarAktif === 'semua' ? kursus : kursus.filter((k) => k.pilar === pilarAktif));
+	let pilarInfo = $derived(pilarList.find((p) => p.code === pilarAktif) ?? null);
+
+	let wajibDiselesaikan = $derived(kursusTampil.filter((k) => k.program.wajib && k.enrollment?.status !== 'Lulus'));
+	let direkomendasikan = $derived(kursusTampil.filter((k) => !k.program.wajib && k.enrollment?.status !== 'Lulus' && k.program.id !== hero?.program.id));
+	let selesai = $derived(kursusTampil.filter((k) => k.enrollment?.status === 'Lulus'));
 
 	function formatTenggat(tenggat: string | null) {
 		if (!tenggat) return null;
@@ -125,6 +135,8 @@
 			{/if}
 		</div>
 	</div>
+
+	<SopSayaCard variant="training" />
 
 	{#if !silabusLoading && silabusList.length > 0}
 		<div class="mb-8">
@@ -257,6 +269,36 @@
 					<span class="text-sm font-bold px-4 py-2 rounded-xl w-fit gradient-bg text-white mt-1">Lanjutkan</span>
 				</div>
 			</button>
+		{/if}
+
+		{#if pilarList.length > 1}
+			<!-- Filter 5 Pilar Knowledge -->
+			<div class="mb-6">
+				<div class="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" role="group" aria-label="Filter pilar pelatihan">
+					<button
+						class="shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-opacity {pilarAktif === 'semua' ? 'gradient-bg text-white' : 'glass-panel hover:opacity-90'}"
+						aria-pressed={pilarAktif === 'semua'}
+						onclick={() => (pilarAktif = 'semua')}>
+						Semua ({kursus.length})
+					</button>
+					{#each pilarList as p (p.code)}
+						<button
+							class="shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-opacity {pilarAktif === p.code ? 'gradient-bg text-white' : 'glass-panel hover:opacity-90'}"
+							aria-pressed={pilarAktif === p.code}
+							title={p.hint}
+							onclick={() => (pilarAktif = p.code)}>
+							{p.icon} {p.short} ({p.jumlah})
+						</button>
+					{/each}
+				</div>
+				<p class="text-xs font-medium mt-2" style="color: var(--sys-label4)">
+					{#if pilarInfo}
+						<b>{pilarInfo.label}</b> — {pilarInfo.hint}
+					{:else}
+						Ketuk salah satu pilar untuk menyaring kursus berdasarkan bidang pengetahuan.
+					{/if}
+				</p>
+			</div>
 		{/if}
 
 		{#snippet kursusRow(items: KursusListItem[], judul: string, kosongMsg: string)}

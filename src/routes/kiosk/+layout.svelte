@@ -24,6 +24,7 @@
 	let { data, children } = $props();
 
 	let online = $state(true);
+	let kioskPingMs = $state(0);
 	// R7 — lihat catatan panjang di markup kiosk-body di bawah.
 	let offlineQueueReady = $derived(page.url.pathname.startsWith('/kiosk/input-produksi'));
 	let now = $state(new Date());
@@ -293,7 +294,12 @@
 		initGlobalAutoDraft();
 
 		online = navigator.onLine;
-		const onOnline = () => (online = true);
+		const updateKioskPing = () => {
+			const conn = (navigator as any).connection;
+			if (conn?.rtt) kioskPingMs = Math.round(conn.rtt);
+		};
+		updateKioskPing();
+		const onOnline = () => { online = true; updateKioskPing(); };
 		const onOffline = () => (online = false);
 		window.addEventListener('online', onOnline);
 		window.addEventListener('offline', onOffline);
@@ -384,7 +390,7 @@
 					<span class="kiosk-statusbar__jam">{now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
 					<span class="kiosk-statusbar__koneksi" class:offline={!online}>
 						{#if online}<IconWifi size={18} />{:else}<IconWifiOff size={18} />{/if}
-						{online ? 'Online' : 'Tidak ada sinyal — tunggu sebentar'}
+						{online ? (kioskPingMs > 0 ? `Online (${kioskPingMs}ms)` : 'Online') : 'Tidak ada sinyal — tunggu sebentar'}
 					</span>
 				</div>
 			</div>

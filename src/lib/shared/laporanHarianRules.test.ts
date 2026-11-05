@@ -23,7 +23,7 @@ function baseSnapshot(overrides: Record<string, any> = {}) {
 		tomorrow_plan_summary: 'Lanjut pengecoran',
 		schedule: [{ activity: 'Pengecoran', start_time: '08:00', end_time: '12:00', status: 'done' }],
 		tomorrow_plan: [{ activity: 'Pengecoran lantai 2', notes: 'siap material' }],
-		progress: [{ subtask_id: 'sub-1', activity: 'Pengecoran', progress_value: 40, notes: 'progress sesuai jadwal hari ini', foto_bukti: ['file-progress-1'] }],
+		progress: [{ subtask_id: 'sub-1', activity: 'Pengecoran', progress_value: 40, notes: 'progress sesuai jadwal hari ini', foto_bukti: ['file-progress-1'], foto_before: 'foto-before-1', foto_after: 'foto-after-1' }],
 		progress_photos: ['file1'],
 		material_used: [{ type: 'Semen', amount: 10, unit: 'sak' }],
 		manpower: [{ role: 'Tukang', count: 3, workers: [{ id: 1, nama: 'A' }] }],
@@ -96,6 +96,17 @@ test('G_LH_PROGRESS_FOTO_PER_ITEM (WAJIB) gagal kalau ada baris tanpa foto_bukti
 	assert.equal(g?.status, 'failed');
 	assert.equal(g?.severity, 'WAJIB');
 	assert.match(g?.message || '', /1 baris/);
+});
+
+test('G_FOTO_BA gagal kalau ada subtask berprogres tanpa pasangan Before dan After lengkap', () => {
+	const { gates } = evaluateLaporanHarianRules(baseSnapshot({
+		progress: [
+			{ subtask_id: 'sub-1', progress_value: 30, notes: 'progress coating', foto_before: 'foto-before', foto_after: null }
+		]
+	}));
+	const g = gates.find((g) => g.gate_key === 'G_FOTO_BA');
+	assert.equal(g?.status, 'failed');
+	assert.match(g?.message || '', /1 subtask/);
 });
 
 test('status Hold: tab jadwal/progress/material jadi not_applicable, tenaga & foto absensi tetap wajib', () => {

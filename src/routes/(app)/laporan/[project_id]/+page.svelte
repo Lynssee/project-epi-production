@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StepChecklistBanner from '$lib/components/help/StepChecklistBanner.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -35,12 +36,21 @@
 	import FieldSCurve from '$lib/components/shared/FieldSCurve.svelte';
 	import KnowledgeCard from '$lib/components/inventory360/KnowledgeCard.svelte';
 	import { submitReport, updateReport, uploadFile, getReports, getReportById } from '$lib/services/reports';
+	import { listToolboxMeetings } from '$lib/services/toolboxMeeting';
 	import { getActiveCheckin, triggerAutoCheckout, getSiteCheckinSettings } from '$lib/services/siteCheckin';
 	import GateCompletionWizard from '$lib/components/shared/GateCompletionWizard.svelte';
 	import { evaluateLaporanHarianGates } from '$lib/utils/laporanHarianGates';
 	import { fetchGateHints, applyGateHints } from '$lib/services/gateHintClient';
 	import { checkTolerance, findMeasurableSpecFields } from '$lib/utils/qcToleranceChecker';
 	import { computeDailyProductivity } from '$lib/utils/manpowerProductivity';
+	import {
+		getSubtaskDocumentationForProject,
+		upsertSubtaskDocumentation,
+		type SubtaskDocumentationRow
+	} from '$lib/services/subtaskDocumentationApi';
+
+	let projectSubtaskDocs = $state<SubtaskDocumentationRow[]>([]);
+	let subtaskDocMap = $state<Map<string, SubtaskDocumentationRow>>(new Map());
 
 	// Wizard Kelengkapan Gate (26 Agu 2026) — pengganti alert() tunggal di sendReport()
 	// untuk menampilkan seluruh bagian yang belum lengkap sekaligus, bisa diklik langsung
@@ -49,6 +59,24 @@
 	let gateWizardOpen = $state(false);
 	let gateWizardGates = $state<any[]>([]);
 	let gateWizardHintsUnavailable = $state(false);
+
+	// Gate Konfirmasi Pemahaman SOP Lapangan (G_FLD_SOP_READ_CONFIRMATION)
+	let unconfirmedSopCount = $state(0);
+	let unconfirmedSopItems = $state<any[]>([]);
+	let sopGateMode = $state<'warn' | 'hard' | 'soft' | 'shadow'>('warn');
+
+	function loadSopConfirmationStatus() {
+		fetch('/api/process-guidance/read-confirm')
+			.then((r) => r.json())
+			.then((res) => {
+				if (res.success) {
+					unconfirmedSopCount = res.unconfirmed_count || 0;
+					unconfirmedSopItems = res.unconfirmed_items || [];
+					sopGateMode = res.gate_mode || 'warn';
+				}
+			})
+			.catch(() => {});
+	}
 
 	// UX-05 (correction plan site-visit-payroll, 27 Sep 2026): dulu submit laporan LANGSUNG
 	// menutup check-in aktif diam-diam (lihat reports.ts) walau leader masih di lapangan.
@@ -147,7 +175,7 @@
 	import { idNum } from '$lib/shared/manpowerGroups';
 	import { hariMundur, DEFAULT_DISIPLIN } from '$lib/shared/laporanKualitasRules';
 	import { upsertTimesheetAbsensi, findAbsensiTodayOtherProject } from '$lib/services/manpowerAbsensi';
-	import { reportUsageDeltas } from '$lib/services/projectUsageLedger';
+	import { reportUsageDeltas, checkKomplainLock } from '$lib/services/projectUsageLedger';
 	import { findMatchingMaterial, realUsageSkips, manualUsageItems } from '$lib/utils/materialManualMatch';
 	import FilterSort from '$lib/components/FilterSort.svelte';
 	import InfiniteScroll from '$lib/components/InfiniteScroll.svelte';
@@ -172,6 +200,10 @@
 	} from '$lib/utils/offlineReportDraft';
 	import { saveProjectMasterCache, loadProjectMasterCache, clearProjectMasterCache } from '$lib/utils/offlineProjectCache';
 	import { secureAssetSrc, secureAssetHref, getSecureAssetUrl } from '$lib/actions/secureAsset';
+	import MasukanKruPanel from '$lib/components/laporan/MasukanKruPanel.svelte';
+	import { tandaiMasukanKruDipakai } from '$lib/services/laporanMasukanKru';
+	import { gabungFoto, tambahBaris, type HasilImpor } from '$lib/utils/kioskCatatan';
+	import { drafMasihAda, gabungMaterialUsed, type DrafPemakaian } from '$lib/utils/kioskPemakaian';
 
 	// Peta lokasi (Fase 6 open-source plan, MapLibre) — reportPosition sudah ditangkap
 	// diam-diam untuk watermark foto, sebelumnya tidak pernah ditampilkan ke user.
@@ -184,7 +216,7 @@
 		showLocationMap = !showLocationMap;
 	}
 	import { SectionGuide, FieldHint, HelpIcon, StatusExplainer } from '$lib/components/hints';
-	import ProcessGuideLink from '$lib/components/help/ProcessGuideLink.svelte';
+	import ProcessStepPeek from '$lib/components/help/ProcessStepPeek.svelte';
 	// Impor modul hint langsung (bukan lewat barrel $lib/data/hints) supaya hanya data
 	// Laporan yang ikut bundle — penting di lapangan dengan koneksi lemah.
 	import { laporanHints } from '$lib/data/hints/laporan';
@@ -276,6 +308,24 @@
 	let existingAttendancePhotos = $state<string[]>([]);
 	let existingProgressPhotos = $state<string[]>([]);
 	let existingIssuePhotos = $state<string[]>([]);
+
+	// Catatan Kerja kru (Kiosk Proyek, Fase 4): id catatan yang sudah dimasukkan ke form ini. Status "dipakai"
+	// baru ditulis setelah laporan benar-benar tersimpan; kalau laporan batal, catatan tetap "baru" dan bisa diimpor lagi.
+	let catatanDiimpor = $state<number[]>([]);
+	// Draf pemakaian kru (Fase 5): diimpor jadi baris material_used bertanda "[kiosk#id]" di notes. Stok TIDAK berubah
+	// di sini — baru saat laporan disimpan, lewat blok pembaruan project_expenses + ledger yang sudah ada di bawah.
+	let pemakaianDiimpor = $state<number[]>([]);
+	function imporPemakaianKru(drafs: DrafPemakaian[]) {
+		reportData.material_used = gabungMaterialUsed(reportData.material_used, drafs) as typeof reportData.material_used;
+		pemakaianDiimpor = [...new Set([...pemakaianDiimpor, ...drafs.map((d) => d.id)])];
+	}
+	function imporMasukanKru(h: HasilImpor, ids: number[]) {
+		existingProgressPhotos = gabungFoto(existingProgressPhotos, h.fotoProgres);
+		existingIssuePhotos = gabungFoto(existingIssuePhotos, h.fotoKendala);
+		reportData.general_notes = tambahBaris(reportData.general_notes, h.teksProgres);
+		reportData.issues_general = tambahBaris(reportData.issues_general, h.teksKendala);
+		catatanDiimpor = [...new Set([...catatanDiimpor, ...ids])];
+	}
 	let existingToolboxPhotos = $state<string[]>([]);
 	let existingAreaKerjaPhotos = $state<string[]>([]);
 	let existingBudgetReceipt = $state<string | null>(null);
@@ -323,6 +373,25 @@
 
 	async function loadLossFactorPct() {
 		lossFactorPct = await getPlanningLossFactorPct();
+	}
+
+	// Arahan Briefing Pagi Manajemen (MoM) Terbaru — Fase 4
+	let latestBriefing = $state<any>(null);
+	let loadingBriefing = $state(false);
+
+	async function loadLatestBriefing() {
+		if (!projectId) return;
+		loadingBriefing = true;
+		try {
+			const meetings = await listToolboxMeetings(projectId, 1);
+			if (meetings && meetings.length > 0) {
+				latestBriefing = meetings[0];
+			}
+		} catch (err) {
+			console.warn('Gagal memuat arahan briefing terbaru:', err);
+		} finally {
+			loadingBriefing = false;
+		}
 	}
 
 	// Modal preview untuk nota/bukti pengeluaran
@@ -535,7 +604,7 @@
 			{ start_time: '22:00', end_time: '23:00', activity: '', status: 'pending' },
 			{ start_time: '23:00', end_time: '24:00', activity: '', status: 'pending' }
 		],
-		progress: [{ subtask_id: '', activity: '', progress_value: 0, unit: 'm²', notes: '', category: '', target_volume: 0, service_type: '', is_custom: false, existing_foto_bukti: [] as string[], foto_bukti: [] as { file: File; name: string; url: string; uploadedId?: string | null }[] }] as {
+		progress: [{ subtask_id: '', activity: '', progress_value: 0, unit: 'm²', notes: '', category: '', target_volume: 0, service_type: '', is_custom: false, existing_foto_bukti: [] as string[], foto_bukti: [] as { file: File; name: string; url: string; uploadedId?: string | null }[], existing_foto_before: null as string | null, foto_before: null as { file: File; name: string; url: string; uploadedId?: string | null; isLive?: boolean } | null, existing_foto_after: null as string | null, foto_after: null as { file: File; name: string; url: string; uploadedId?: string | null; isLive?: boolean } | null, existing_foto_during: null as string | null, foto_during: null as { file: File; name: string; url: string; uploadedId?: string | null; isLive?: boolean } | null }] as {
 			subtask_id: string;
 			activity: string;
 			progress_value: number;
@@ -552,6 +621,12 @@
 			qc_measured?: Record<string, any>;
 			existing_foto_bukti?: string[];
 			foto_bukti?: { file: File; name: string; url: string; uploadedId?: string | null }[];
+			existing_foto_before?: string | null;
+			foto_before?: { file: File; name: string; url: string; uploadedId?: string | null; isLive?: boolean } | null;
+			existing_foto_after?: string | null;
+			foto_after?: { file: File; name: string; url: string; uploadedId?: string | null; isLive?: boolean } | null;
+			existing_foto_during?: string | null;
+			foto_during?: { file: File; name: string; url: string; uploadedId?: string | null; isLive?: boolean } | null;
 			executor_type?: string | null;
 			executor_vendor_name?: string | null;
 			external_party?: string | null;
@@ -908,6 +983,25 @@
 		// Fire-and-forget: ringkasan QC Ambient (modul Inspection) & toleransi Rasio Material.
 		loadInspectionSummary();
 		loadLossFactorPct();
+		loadSopConfirmationStatus();
+		loadLatestBriefing();
+
+		// Muat dokumentasi foto Before/After per subtask dari SSOT Directus
+		getSubtaskDocumentationForProject(projectId).then((docs) => {
+			if (docs && docs.length) {
+				projectSubtaskDocs = docs;
+				const map = new Map<string, SubtaskDocumentationRow>();
+				for (const d of docs) {
+					if (d.task_index !== null && d.task_index !== undefined && d.subtask_index !== null && d.subtask_index !== undefined) {
+						map.set(`${d.task_index}_${d.subtask_index}`, d);
+					}
+					if (d.subtask_name) {
+						map.set(d.subtask_name.trim().toLowerCase(), d);
+					}
+				}
+				subtaskDocMap = map;
+			}
+		}).catch(() => {});
 
 		// 1. Offline-First: Muat data master dari cache IndexedDB perangkat terlebih dahulu
 		let hasCachedMaster = false;
@@ -1708,9 +1802,18 @@
 				// baru ada setelah loop upload di bawah). Placeholder non-kosong cukup untuk
 				// evaluasi isEmpty() di laporanHarianRules.ts.
 				const progressForGateCheck = cleanProgress.map((item, idx) => {
-					const row = reportData.progress[idx];
+					const row = reportData.progress[idx] as any;
 					const fotoCount = (row?.existing_foto_bukti?.length || 0) + (row?.foto_bukti?.length || 0);
-					return { ...item, foto_bukti: fotoCount > 0 ? ['ada-foto'] : [] };
+					const hasBefore = !!(row?.foto_before || row?.existing_foto_before);
+					const hasAfter = !!(row?.foto_after || row?.existing_foto_after);
+					return {
+						...item,
+						foto_bukti: (fotoCount > 0 || (hasBefore && hasAfter)) ? ['ada-foto'] : [],
+						foto_before: hasBefore ? 'ada' : null,
+						foto_after: hasAfter ? 'ada' : null,
+						has_foto_before: hasBefore,
+						has_foto_after: hasAfter
+					};
 				});
 				const rawGates = evaluateLaporanHarianGates({
 					cleanSchedule, cleanTomorrowPlan, cleanProgress: progressForGateCheck,
@@ -1741,7 +1844,9 @@
 					materialVariance: {
 						flagged: materialVarianceCheck.flagged,
 						note: reportData.material_variance_note
-					}
+					},
+					unconfirmedSopCount,
+					sopGateMode
 				});
 				// Seluruh gate foto & kelengkapan (HARD GATES) wajib lolos sebelum submit
 				const failedGates = rawGates.filter((g) => g.status === 'failed' && g.severity === 'WAJIB');
@@ -1806,6 +1911,37 @@
 							submitting = false;
 							return;
 						}
+					}
+				}
+			}
+
+			// Gate G_PROYEK_KOMPLAIN_LOCK: barang yang sedang dikomplain (salah spek/rusak) tidak boleh dilaporkan terpakai sebelum
+			// Admin memutuskan disposisinya. Hanya barang yang pemakaiannya BERTAMBAH di laporan ini yang dicek. Mode (warn/hard) diatur
+			// Superadmin; gangguan jaringan = dilewati (fail-open) supaya laporan tidak macet.
+			{
+				const sebelum: Record<string, number> = {};
+				for (const it of originalMaterialUsed) {
+					if (!it.is_manual && it.expense_id) sebelum[it.expense_id] = (sebelum[it.expense_id] || 0) + (Number(it.amount) || 0);
+				}
+				const sesudah: Record<string, number> = {};
+				for (const it of cleanMaterialUsed) {
+					if (!it.is_manual && it.expense_id) sesudah[it.expense_id] = (sesudah[it.expense_id] || 0) + (Number(it.amount) || 0);
+				}
+				const itemIdsDipakai = Object.keys(sesudah)
+					.filter((eid) => (sesudah[eid] || 0) > (sebelum[eid] || 0))
+					.map((eid) => Number(actualMaterials.find((m) => String(m.id) === String(eid))?.identitas_barang_id))
+					.filter((n) => Number.isFinite(n) && n > 0);
+				const lock = await checkKomplainLock(Number(projectId), itemIdsDipakai);
+				if (lock && lock.decision === 'block') {
+					alert(`${lock.message}\n\nHapus/kurangi barang tersebut dari laporan, atau minta Admin Gudang memutuskan komplainnya dulu.`);
+					submitting = false;
+					return;
+				}
+				if (lock && lock.decision === 'warn') {
+					const lanjut = confirm(`${lock.message}\n\nTetap kirim laporan dengan barang ini?`);
+					if (!lanjut) {
+						submitting = false;
+						return;
 					}
 				}
 			}
@@ -1937,12 +2073,40 @@
 				if (uploadedId) area_kerja_photos.push(uploadedId);
 			}
 
-			// Fase 2 Dokumentasi Foto (26 Sep 2026) — foto per baris progress (foto_bukti) &
-			// per baris kendala (foto_kendala), TAMBAHAN di luar foto_photos/issue_photos umum.
+			// Penajaman Dokumentasi Foto — Foto Before, After, During per baris progress
 			const progressFotoBuktiByRow: string[][] = [];
+			const progressFotoBeforeByRow: (string | null)[] = [];
+			const progressFotoAfterByRow: (string | null)[] = [];
+			const progressFotoDuringByRow: (string | null)[] = [];
+
 			for (let i = 0; i < reportData.progress.length; i++) {
 				const row = reportData.progress[i] as any;
+				let beforeId = row.existing_foto_before || null;
+				if (row.foto_before) {
+					const upId = await ensurePhotoUploaded(row.foto_before, `foto before baris ${i + 1}`);
+					if (upId) beforeId = upId;
+				}
+				progressFotoBeforeByRow.push(beforeId);
+
+				let afterId = row.existing_foto_after || null;
+				if (row.foto_after) {
+					const upId = await ensurePhotoUploaded(row.foto_after, `foto after baris ${i + 1}`);
+					if (upId) afterId = upId;
+				}
+				progressFotoAfterByRow.push(afterId);
+
+				let duringId = row.existing_foto_during || null;
+				if (row.foto_during) {
+					const upId = await ensurePhotoUploaded(row.foto_during, `foto during baris ${i + 1}`);
+					if (upId) duringId = upId;
+				}
+				progressFotoDuringByRow.push(duringId);
+
+				// Gabungkan ke foto_bukti agar backward compatible
 				const rowIds: string[] = [...(row.existing_foto_bukti || [])];
+				if (beforeId && !rowIds.includes(beforeId)) rowIds.push(beforeId);
+				if (duringId && !rowIds.includes(duringId)) rowIds.push(duringId);
+				if (afterId && !rowIds.includes(afterId)) rowIds.push(afterId);
 				for (let j = 0; j < (row.foto_bukti || []).length; j++) {
 					const uploadedId = await ensurePhotoUploaded(row.foto_bukti[j], `foto progress baris ${i + 1} (${j + 1}/${row.foto_bukti.length})`);
 					if (uploadedId) rowIds.push(uploadedId);
@@ -1985,6 +2149,11 @@
 						sisa: calc.remaining || 0,
 						qc_measured: item.qc_measured || null,
 						service_type: item.service_type || '',
+						foto_before: progressFotoBeforeByRow[idx] || null,
+						foto_after: progressFotoAfterByRow[idx] || null,
+						foto_during: progressFotoDuringByRow[idx] || null,
+						has_foto_before: !!progressFotoBeforeByRow[idx],
+						has_foto_after: !!progressFotoAfterByRow[idx],
 						foto_bukti: progressFotoBuktiByRow[idx] || [],
 						// Executor Partitioning Fase 3 — snapshot pelaksana ikut tersimpan per baris progres.
 						executor_type: item.executor_type || null, 
@@ -2240,6 +2409,30 @@
 				// Notifikasi Terpusat v2 — Fase 6 rollout Project. Fire-and-forget: kegagalan
 				// di sini tidak boleh menggagalkan laporan yang sudah tersimpan di atas.
 				const newReportId: number | string | undefined = created?.id;
+				// Sync otomatis ke koleksi subtask_documentation (SSOT Dokumentasi Proyek)
+				if (newReportId && Array.isArray(finalProgressWithFoto)) {
+					for (const p of finalProgressWithFoto) {
+						if (p.foto_before || p.foto_after || p.foto_during || p.existing_foto_before || p.existing_foto_after || p.existing_foto_during) {
+							try {
+								const { taskIndex, subtaskIndex } = findSubtaskIndices(p.subtask_id, p.activity);
+								await upsertSubtaskDocumentation({
+									project_id: Number(projectId),
+									report_id: Number(newReportId),
+									task_index: taskIndex ?? 0,
+									subtask_index: subtaskIndex,
+									subtask_name: p.activity || p.subtask_id || 'Subtask Proyek',
+									progress_snapshot: p.progress_value || 0,
+									foto_before: p.foto_before || p.existing_foto_before || null,
+									foto_after: p.foto_after || p.existing_foto_after || null,
+									foto_during: p.foto_during || p.existing_foto_during || null,
+									catatan: p.notes || ''
+								});
+							} catch (docErr) {
+								console.warn('[subtask_documentation] Fail-soft sync:', docErr);
+							}
+						}
+					}
+				}
 				if (newReportId) {
 					auth.currentUser
 						?.getIdToken()
@@ -2262,15 +2455,68 @@
 									// Fase 2 Laporan Lapangan & Paritas ERP (16 Okt 2026) — instruksi klien berpotensi
 									// VO di laporan ini memicu notifikasi ke Admin Project. Nama pengawas PERTAMA
 									// yang bertanda VO dipakai di pesan notifikasi (cukup untuk konteks awal).
-									clientInstructionVoPengawas: (reportData.client_instructions || []).find((ci: any) => ci.berpotensi_vo)?.pengawas_klien || ''
+									clientInstructionVoPengawas: (reportData.client_instructions || []).find((ci: any) => ci.berpotensi_vo)?.pengawas_klien || '',
+									// Fase 5 Penajaman Laporan Harian: Alert defect kritis & anomali ambient
+									defectItems: (reportData.issues || [])
+										.filter((it: any) => it && (it.kategori_defect || /gelembung|fish\s*eye|blister|peeling|retak|tacky/i.test(String(it.description || ''))))
+										.map((it: any) => ({
+											subtask: it.subtask_name || '',
+											defect: it.kategori_defect || 'Defect Lapangan',
+											notes: it.description || '',
+											action: it.tindakan_perbaikan || ''
+										})),
+									ambientAlertText: (() => {
+										const qcA = reportData.qc_ambient;
+										if (!qcA) return null;
+										const tStl = Number(qcA.steel_temp ?? 0);
+										const dp = Number(qcA.dew_point ?? 0);
+										const dlt = tStl - dp;
+										const moist = qcA.concrete_moisture != null ? Number(qcA.concrete_moisture) : null;
+										if (tStl && dp && dlt < 3.0) {
+											return `ΔT Substrat - Dew = +${dlt.toFixed(1)}°C (< 3°C, rawan gelembung/kondensasi)`;
+										}
+										if (moist !== null && moist > 5.0) {
+											return `Kadar Air Beton ${moist}% (> 5% batas aman)`;
+										}
+										return null;
+									})()
 								})
 							})
 						)
+						.then((res) => res?.json?.())
+						.then((j) => {
+							// Kebutuhan urgent yang diblokir gate (mode hard) tidak boleh hilang diam-diam: beri tahu leader.
+							if (j?.packing?.reason === 'diblokir_gate') {
+								alert(`Laporan tersimpan, tetapi kebutuhan urgent belum terkirim sebagai Packing List:\n${j.packing.error || ''}\n\nAjukan lewat menu Packing List setelah data barang dilengkapi.`);
+							}
+						})
 						.catch(() => {});
 				}
 				// UX-05: ganti auto-checkout diam-diam dengan prompt eksplisit (fail-soft, tidak
 				// pernah menggagalkan laporan yang sudah tersimpan).
 				cekPromptMasihDiLokasi(newReportId);
+			}
+
+			// Kiosk Proyek Fase 4: tandai catatan kru yang diimpor sebagai "dipakai". Fire-and-forget —
+			// kegagalan di sini tidak boleh menggagalkan laporan yang sudah tersimpan.
+			{
+				const ridPakai = Number((savedReportId ?? created?.id) as number | string | undefined);
+				if (catatanDiimpor.length && Number.isFinite(ridPakai) && ridPakai > 0) {
+					const ids = [...catatanDiimpor];
+					catatanDiimpor = [];
+					tandaiMasukanKruDipakai(Number(projectId), ids, ridPakai).catch((e) =>
+						console.warn('[laporan] gagal menandai masukan kru dipakai (diabaikan):', e?.message)
+					);
+				}
+				// Draf pemakaian: hanya yang barisnya MASIH ADA di material_used yang tersimpan yang ditandai "dipakai";
+				// draf yang barisnya dihapus leader sebelum simpan tetap "baru" (tidak hilang diam-diam).
+				const idsPemakaian = drafMasihAda(pemakaianDiimpor, cleanMaterialUsed);
+				if (idsPemakaian.length && Number.isFinite(ridPakai) && ridPakai > 0) {
+					pemakaianDiimpor = pemakaianDiimpor.filter((id) => !idsPemakaian.includes(id));
+					tandaiMasukanKruDipakai(Number(projectId), idsPemakaian, ridPakai, 'pemakaian').catch((e) =>
+						console.warn('[laporan] gagal menandai draf pemakaian dipakai (diabaikan):', e?.message)
+					);
+				}
 			}
 
 			// Update project_expenses quantities in the database.
@@ -2819,6 +3065,24 @@
 		return timelineCategories.flatMap((c: any) => c.subtasks || []).find((s: any) => s.id === id) || null;
 	}
 
+	function findSubtaskIndices(id: string | null | undefined, activityName?: string | null) {
+		if (!timelineCategories || !Array.isArray(timelineCategories)) return { taskIndex: null, subtaskIndex: null };
+		for (let cIdx = 0; cIdx < timelineCategories.length; cIdx++) {
+			const cat = timelineCategories[cIdx];
+			const subs = cat?.subtasks || [];
+			for (let sIdx = 0; sIdx < subs.length; sIdx++) {
+				const s = subs[sIdx];
+				if (id && (s.id === id || String(s.id) === String(id))) {
+					return { taskIndex: cIdx, subtaskIndex: sIdx };
+				}
+				if (activityName && s.name && s.name.trim().toLowerCase() === activityName.trim().toLowerCase()) {
+					return { taskIndex: cIdx, subtaskIndex: sIdx };
+				}
+			}
+		}
+		return { taskIndex: null, subtaskIndex: null };
+	}
+
 	function getSubtaskCalculation(item: any) {
 		const prev = getPreviousProgress(item.subtask_id, item.activity);
 		const today = Number(item.progress_value) || 0;
@@ -2996,6 +3260,24 @@
 				if (item.executor_type === 'external_prereq') {
 					item.progress_value = 0;
 				}
+
+				// Prefill foto Before/After dari dokumentasi yang sudah tersimpan sebelumnya
+				const { taskIndex, subtaskIndex } = findSubtaskIndices(selectedVal, selected.name);
+				const existingDoc = (taskIndex !== null && subtaskIndex !== null)
+					? subtaskDocMap.get(`${taskIndex}_${subtaskIndex}`)
+					: subtaskDocMap.get(selected.name?.trim().toLowerCase());
+
+				if (existingDoc) {
+					if (!item.existing_foto_before && !item.foto_before && existingDoc.foto_before) {
+						item.existing_foto_before = existingDoc.foto_before;
+					}
+					if (!item.existing_foto_after && !item.foto_after && existingDoc.foto_after) {
+						item.existing_foto_after = existingDoc.foto_after;
+					}
+					if (!item.existing_foto_during && !item.foto_during && existingDoc.foto_during) {
+						item.existing_foto_during = existingDoc.foto_during;
+					}
+				}
 			}
 		}
 
@@ -3111,6 +3393,69 @@
 	function removeProgressItemPhoto(rowIndex: number, photoIndex: number) {
 		const row = reportData.progress[rowIndex] as any;
 		row.foto_bukti = (row.foto_bukti || []).filter((_: any, idx: number) => idx !== photoIndex);
+	}
+
+	async function handleProgressBeforePhoto(rowIndex: number, event: Event, isLive = false) {
+		const target = event.target as HTMLInputElement;
+		if (target.files && target.files.length > 0) {
+			const file = await stampIfPositionAvailable(target.files[0]);
+			const url = URL.createObjectURL(file);
+			const row = reportData.progress[rowIndex] as any;
+			row.foto_before = { file, name: file.name, url, uploadedId: null, isLive };
+			row.existing_foto_before = null;
+			target.value = '';
+		}
+	}
+	function removeProgressBeforePhoto(rowIndex: number) {
+		const row = reportData.progress[rowIndex] as any;
+		row.foto_before = null;
+		row.existing_foto_before = null;
+	}
+
+	async function handleProgressAfterPhoto(rowIndex: number, event: Event, isLive = false) {
+		const target = event.target as HTMLInputElement;
+		if (target.files && target.files.length > 0) {
+			const file = await stampIfPositionAvailable(target.files[0]);
+			const url = URL.createObjectURL(file);
+			const row = reportData.progress[rowIndex] as any;
+			row.foto_after = { file, name: file.name, url, uploadedId: null, isLive };
+			row.existing_foto_after = null;
+			target.value = '';
+		}
+	}
+	function removeProgressAfterPhoto(rowIndex: number) {
+		const row = reportData.progress[rowIndex] as any;
+		row.foto_after = null;
+		row.existing_foto_after = null;
+	}
+
+	async function handleProgressDuringPhoto(rowIndex: number, event: Event, isLive = false) {
+		const target = event.target as HTMLInputElement;
+		if (target.files && target.files.length > 0) {
+			const file = await stampIfPositionAvailable(target.files[0]);
+			const url = URL.createObjectURL(file);
+			const row = reportData.progress[rowIndex] as any;
+			row.foto_during = { file, name: file.name, url, uploadedId: null, isLive };
+			row.existing_foto_during = null;
+			target.value = '';
+		}
+	}
+	function removeProgressDuringPhoto(rowIndex: number) {
+		const row = reportData.progress[rowIndex] as any;
+		row.foto_during = null;
+		row.existing_foto_during = null;
+	}
+
+	function hitungDewPointOtomatis() {
+		const t = Number(reportData.qc_ambient?.air_temp);
+		const rh = Number(reportData.qc_ambient?.relative_humidity);
+		if (!isNaN(t) && !isNaN(rh) && rh > 0) {
+			const a = 17.27;
+			const b = 237.7;
+			const alpha = ((a * t) / (b + t)) + Math.log(rh / 100);
+			const dp = (b * alpha) / (a - alpha);
+			reportData.qc_ambient.dew_point = Math.round(dp * 10) / 10;
+		}
 	}
 	function addMaterialUsed() {
 		reportData.material_used = [...reportData.material_used, { type: '', amount: 0, unit: 'kg', notes: '', expense_id: '', identitas_barang_id: null, is_manual: false }];
@@ -3818,27 +4163,28 @@
 		vibrateTap();
 	}
 
-	// Fase 2 — "Salin Roster & Alat Kemarin" (tab Tenaga), 0 API tambahan kalau history
-	// kemarin sudah termuat (historyReports), fallback 1 query ringan kalau belum.
+	// Penajaman Fase 4 — "Salin Tim & Alat Terakhir (H-1)"
+	// Otomatis mencari laporan terakhir sebelum tanggal saat ini (fleksibel jika kemarin hari libur/Minggu)
 	async function salinKomposisiKemarin() {
 		if (isLocked) return;
-		const kemarin = new Date(reportData.date);
-		kemarin.setDate(kemarin.getDate() - 1);
-		const tglKemarin = kemarin.toISOString().split('T')[0];
-		let sumber = (historyReports || []).find((r: any) => (r.date || '').split('T')[0] === tglKemarin);
+		let sumber = (historyReports || []).find((r: any) => {
+			const d = (r.date || '').split('T')[0];
+			return d < reportData.date;
+		});
 		if (!sumber) {
 			try {
-				const hasil = await getReports(projectId, { date: tglKemarin, limit: 1, fields: ['id', 'date', 'manpower', 'tools'] });
-				sumber = hasil?.[0];
+				const hasil = await getReports(projectId, { limit: 5, fields: ['id', 'date', 'manpower', 'tools'] });
+				sumber = (hasil || []).find((r: any) => (r.date || '').split('T')[0] < reportData.date) || hasil?.[0];
 			} catch (e) {
-				console.error('[salinKomposisiKemarin] gagal ambil laporan kemarin:', e);
+				console.error('[salinKomposisiKemarin] gagal ambil laporan sebelumnya:', e);
 			}
 		}
 		if (!sumber) {
-			alert(`Tidak ada laporan tersimpan untuk tanggal ${tglKemarin} (kemarin) di proyek ini.`);
+			alert('Belum ada laporan sebelumnya di proyek ini untuk disalin.');
 			return;
 		}
-		if (!confirm('Salin daftar Tenaga & Peralatan dari laporan kemarin? Isian Tenaga/Peralatan hari ini yang belum disimpan akan tertimpa.')) return;
+		const tglSumber = (sumber.date || '').split('T')[0];
+		if (!confirm(`Salin daftar Tim (Manpower) & Peralatan dari laporan tanggal ${tglSumber}? Isian yang belum disimpan akan diperbarui.`)) return;
 		const mp = parseField<any[]>((sumber as any).manpower, []);
 		reportData.manpower = mp.length ? mp.map((m: any) => ({
 			...freshManpowerGroup(m.role, m.notes),
@@ -4274,12 +4620,37 @@
 			<div class="p-4" style="background: var(--sys-bg); border-bottom: 1px solid var(--sys-sep)">
 				<div class="flex flex-col gap-3.5 max-w-5xl mx-auto">
 					<HseGateWarning projectId={projectId} />
+					{#if unconfirmedSopCount > 0}
+						<div class="p-3 px-4 rounded-xl border text-[12px] flex items-start gap-2.5 {sopGateMode === 'hard' ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-950 dark:text-rose-200' : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-950 dark:text-amber-200'}">
+							<span class="text-base leading-none">📋</span>
+							<div class="flex-1">
+								<div class="flex items-center gap-1.5 flex-wrap">
+									<p class="font-bold">Konfirmasi Pemahaman SOP &amp; Alur Kerja Diperlukan</p>
+									<span class="px-2 py-0.5 rounded-full text-[10px] font-bold {sopGateMode === 'hard' ? 'bg-rose-200 text-rose-900' : 'bg-amber-200 text-amber-900'}">
+										{sopGateMode === 'hard' ? 'WAJIB (BLOKIR SUBMIT)' : 'PERINGATAN'}
+									</span>
+								</div>
+								<p class="text-[11px] font-normal mt-0.5">
+									Terdapat <strong>{unconfirmedSopCount}</strong> SOP/Alur kerja lapangan yang belum Anda tandai paham ({unconfirmedSopItems[0]?.sop_code ? `[${unconfirmedSopItems[0].sop_code}] ` : ''}{unconfirmedSopItems[0]?.title || 'SOP Baru'}).
+									{sopGateMode === 'hard' ? 'Anda wajib membaca dan menandai paham sebelum laporan dapat dikirimkan.' : 'Pastikan Anda membaca alur kerja ini untuk mematuhi standar pelaksanaan proyek.'}
+								</p>
+								<a
+									href={unconfirmedSopItems[0]?.type === 'sop' && unconfirmedSopItems[0]?.sop_id ? `/ess/pelatihan/sop/${unconfirmedSopItems[0].sop_id}` : `/panduan/alur${unconfirmedSopItems[0]?.flow_key ? `?alur=${encodeURIComponent(unconfirmedSopItems[0].flow_key)}` : ''}`}
+									target="_blank"
+									class="inline-flex items-center gap-1 mt-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
+								>
+									Buka &amp; Tandai Paham di Alur Kerja →
+								</a>
+							</div>
+						</div>
+					{/if}
 					<SectionGuide
 						id="laporan.form.page"
 						title={h('laporan.page').sectionGuide?.title}
 						steps={h('laporan.page').sectionGuide?.steps ?? []}
 					/>
-					<div><ProcessGuideLink fokus="proyek_jalan" label="Lihat alur proyek" /></div>
+					<div><ProcessStepPeek fokus="proyek_jalan" label="Lihat alur proyek" /></div>
+					<StepChecklistBanner alur="project_field_execution" fokus="prj_daily_rep" judul="Syarat Laporan Harian" />
 					{#if isDemisioner}
 						<div class="p-3 px-4 rounded-xl border text-[12px] font-semibold flex items-start gap-2.5 bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-200">
 							<span class="text-base leading-none">📁</span>
@@ -4298,6 +4669,32 @@
 						<div class="p-2.5 px-3.5 rounded-xl border text-[12px] font-semibold flex items-center gap-2" style="background: #FEF3C7; border-color: #FDE68A; color: #92400E;">
 							<span>⚠️</span>
 							<span>Anda belum mengisi laporan harian untuk hari ini.</span>
+						</div>
+					{/if}
+
+					<!-- Arahan Briefing Pagi Manajemen (MoM) Terbaru — Fase 4 -->
+					{#if latestBriefing}
+						<div class="mb-4 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/80 dark:bg-blue-950/40 p-3.5 shadow-xs">
+							<div class="flex items-start justify-between gap-3">
+								<div class="flex items-start gap-2.5">
+									<span class="text-xl shrink-0">🎯</span>
+									<div>
+										<div class="flex items-center gap-2 flex-wrap">
+											<h4 class="text-xs font-bold uppercase tracking-wider text-blue-900 dark:text-blue-300">
+												Arahan Briefing Pagi Manajemen ({latestBriefing.tanggal})
+											</h4>
+											{#if latestBriefing.topik}
+												<span class="rounded bg-blue-200/80 dark:bg-blue-900 px-2 py-0.5 text-[10px] font-bold text-blue-800 dark:text-blue-200">
+													{latestBriefing.topik}
+												</span>
+											{/if}
+										</div>
+										<p class="mt-1 text-xs text-blue-950 dark:text-blue-100 whitespace-pre-line leading-relaxed">
+											{latestBriefing.catatan || 'Tidak ada catatan khusus.'}
+										</p>
+									</div>
+								</div>
+							</div>
 						</div>
 					{/if}
 
@@ -4344,6 +4741,17 @@
 								</div>
 							</div>
 							<div class="flex items-center gap-2 shrink-0 self-start sm:self-auto flex-wrap">
+								{#if !isLocked && !isHold}
+									<button 
+										type="button" 
+										class="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-purple-300 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900 active:scale-95 transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+										onclick={salinKomposisiKemarin}
+										title="Salin daftar tenaga & peralatan dari laporan terakhir di proyek ini"
+									>
+										<IconCopy size={13} />
+										<span>Salin Tim & Alat H-1</span>
+									</button>
+								{/if}
 								<button 
 									type="button" 
 									class="text-[11px] font-semibold px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 active:scale-95 transition-all shadow-xs cursor-pointer"
@@ -4514,6 +4922,10 @@
 											{/if}
 										</div>
 									</div>
+
+									{#if !isLocked}
+										<MasukanKruPanel projectId={Number(projectId)} tanggal={reportData.date} onImpor={imporMasukanKru} onImporPemakaian={imporPemakaianKru} />
+									{/if}
 
 									<div class="grid grid-cols-1 md:grid-cols-3 gap-3.5">
 										<div>
@@ -6294,34 +6706,145 @@
 										></textarea>
 									</div>
 
-									<!-- Fase 2 Dokumentasi Foto (26 Sep 2026) — foto bukti PER BARIS, tambahan di
-									     luar foto progress umum di tab Dokumentasi. Belum wajib. -->
-									<div class="border-t border-gray-100 dark:border-slate-800 pt-3">
-										<label class="f-label flex items-center gap-1.5"><IconCamera size={13} class="text-gray-400" /> Foto Bukti Baris Ini (opsional)</label>
-										<p class="text-[10.5px] text-gray-400 dark:text-slate-500 mb-2 m-0">Foto spesifik untuk pekerjaan baris ini (mis. hasil pasang pipa 20m), beda dari foto progress umum di tab Dokumentasi.</p>
-										{#if (item.existing_foto_bukti || []).length > 0 || (item.foto_bukti || []).length > 0}
-											<div class="grid grid-cols-3 gap-1.5 mb-2">
-												{#each item.existing_foto_bukti || [] as id}
-													<div class="aspect-square border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-														<img use:secureAssetSrc={id} alt="Foto bukti progress" class="w-full h-full object-cover" />
-													</div>
-												{/each}
-												{#each item.foto_bukti || [] as photo, pIdx}
-													<div class="relative aspect-square border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-														<img src={photo.url} alt="Foto bukti progress" class="w-full h-full object-cover" />
-														{#if !isLocked}
-															<button class="absolute top-1 right-1 w-6 h-6 bg-black/50 text-white rounded-full flex items-center justify-center hover:bg-red-500 transition-colors" onclick={() => removeProgressItemPhoto(i, pIdx)}>
-																<IconTrash size={12} />
-															</button>
+									<!-- Penajaman Dokumentasi Foto: Slot Wajib Before & After per Pekerjaan -->
+									<div class="border-t border-gray-200 dark:border-slate-800 pt-3.5 mt-2">
+										<div class="flex items-center justify-between mb-1.5">
+											<div class="flex items-center gap-1.5">
+												<IconCamera size={15} class="text-indigo-600 dark:text-indigo-400" />
+												<span class="text-xs font-bold text-gray-900 dark:text-white">Dokumentasi Foto Before & After Pekerjaan</span>
+												{#if Number(item.progress_value) > 0}
+													<span class="text-[10px] text-rose-500 font-extrabold">*Wajib</span>
+												{/if}
+											</div>
+											{#if (item.foto_before || item.existing_foto_before) && (item.foto_after || item.existing_foto_after)}
+												<span class="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+													✅ BA Lengkap
+												</span>
+											{:else if item.foto_before || item.existing_foto_before}
+												<span class="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+													⏳ Baru Before
+												</span>
+											{:else if Number(item.progress_value) > 0}
+												<span class="text-[10px] bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+													⚠️ Belum Ada Foto BA
+												</span>
+											{/if}
+										</div>
+										<p class="text-[11px] text-gray-500 dark:text-slate-400 mb-3 m-0 leading-normal">
+											Wajib lampirkan foto kondisi media sebelum dikerjakan (Before) dan hasil akhir setelah diaplikasikan (After) untuk bukti kepatuhan mutu dan garansi.
+										</p>
+
+										<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+											<!-- SLOT FOTO BEFORE -->
+											<div class="p-3 bg-slate-50/80 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+												<div>
+													<div class="flex items-center justify-between mb-1.5">
+														<span class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+															<span class="w-2 h-2 rounded-full bg-amber-500"></span> 1. Foto BEFORE (Pra-Aplikasi)
+														</span>
+														{#if item.foto_before?.isLive}
+															<span class="text-[9.5px] bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 px-1.5 py-0.2 rounded font-semibold">📸 Live Verified</span>
 														{/if}
 													</div>
-												{/each}
+													<p class="text-[10px] text-slate-400 dark:text-slate-500 m-0 mb-2">Foto substrat/beton/baja sebelum dicat (profil grinding, retakan, atau kebersihan).</p>
+
+													{#if item.existing_foto_before}
+														<div class="relative aspect-video rounded-lg overflow-hidden border border-slate-200 bg-black/5 mb-2">
+															<img use:secureAssetSrc={item.existing_foto_before} alt="Foto Before" class="w-full h-full object-cover" />
+														</div>
+													{:else if item.foto_before}
+														<div class="relative aspect-video rounded-lg overflow-hidden border border-indigo-200 bg-black/5 mb-2">
+															<img src={item.foto_before.url} alt="Foto Before" class="w-full h-full object-cover" />
+															{#if !isLocked}
+																<button type="button" class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-rose-600 text-white rounded-full flex items-center justify-center transition" onclick={() => removeProgressBeforePhoto(i)}>
+																	<IconTrash size={12} />
+																</button>
+															{/if}
+														</div>
+													{/if}
+												</div>
+
+												{#if !isLocked && !item.foto_before && !item.existing_foto_before}
+													<div class="grid grid-cols-2 gap-2 mt-1">
+														<label class="flex items-center justify-center gap-1.5 py-2 px-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-lg text-xs font-bold cursor-pointer transition shadow-xs text-center">
+															<input type="file" accept="image/*" capture="environment" class="hidden" onchange={(e) => handleProgressBeforePhoto(i, e, true)} />
+															<IconCamera size={14} /> <span>Kamera (Live)</span>
+														</label>
+														<label class="flex items-center justify-center gap-1.5 py-2 px-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-semibold cursor-pointer transition text-center">
+															<input type="file" accept="image/*" class="hidden" onchange={(e) => handleProgressBeforePhoto(i, e, false)} />
+															<IconPhoto size={14} /> <span>Galeri</span>
+														</label>
+													</div>
+												{/if}
 											</div>
-										{/if}
-										{#if !isLocked}
-											<div class="border border-dashed border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-center cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors relative">
-												<input type="file" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange={(e) => handleProgressItemPhoto(i, e)} />
-												<span class="text-[11px] text-gray-500 dark:text-slate-400 inline-flex items-center gap-1"><IconCamera size={13} /> Tap untuk memotret</span>
+
+											<!-- SLOT FOTO AFTER -->
+											<div class="p-3 bg-slate-50/80 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+												<div>
+													<div class="flex items-center justify-between mb-1.5">
+														<span class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+															<span class="w-2 h-2 rounded-full bg-emerald-500"></span> 2. Foto AFTER (Pasca-Aplikasi)
+														</span>
+														{#if item.foto_after?.isLive}
+															<span class="text-[9.5px] bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 px-1.5 py-0.2 rounded font-semibold">📸 Live Verified</span>
+														{/if}
+													</div>
+													<p class="text-[10px] text-slate-400 dark:text-slate-500 m-0 mb-2">Foto hasil akhir setelah aplikasi/kering (tebal seragam, kilau, bebas gelembung/defect).</p>
+
+													{#if item.existing_foto_after}
+														<div class="relative aspect-video rounded-lg overflow-hidden border border-slate-200 bg-black/5 mb-2">
+															<img use:secureAssetSrc={item.existing_foto_after} alt="Foto After" class="w-full h-full object-cover" />
+														</div>
+													{:else if item.foto_after}
+														<div class="relative aspect-video rounded-lg overflow-hidden border border-emerald-200 bg-black/5 mb-2">
+															<img src={item.foto_after.url} alt="Foto After" class="w-full h-full object-cover" />
+															{#if !isLocked}
+																<button type="button" class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-rose-600 text-white rounded-full flex items-center justify-center transition" onclick={() => removeProgressAfterPhoto(i)}>
+																	<IconTrash size={12} />
+																</button>
+															{/if}
+														</div>
+													{/if}
+												</div>
+
+												{#if !isLocked && !item.foto_after && !item.existing_foto_after}
+													<div class="grid grid-cols-2 gap-2 mt-1">
+														<label class="flex items-center justify-center gap-1.5 py-2 px-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-xs font-bold cursor-pointer transition shadow-xs text-center">
+															<input type="file" accept="image/*" capture="environment" class="hidden" onchange={(e) => handleProgressAfterPhoto(i, e, true)} />
+															<IconCamera size={14} /> <span>Kamera (Live)</span>
+														</label>
+														<label class="flex items-center justify-center gap-1.5 py-2 px-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-semibold cursor-pointer transition text-center">
+															<input type="file" accept="image/*" class="hidden" onchange={(e) => handleProgressAfterPhoto(i, e, false)} />
+															<IconPhoto size={14} /> <span>Galeri</span>
+														</label>
+													</div>
+												{/if}
+											</div>
+										</div>
+
+										<!-- Opsional: Foto Proses (During) -->
+										{#if item.foto_during || item.existing_foto_during}
+											<div class="mt-2.5 p-2.5 bg-slate-100/60 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+												<div class="flex items-center justify-between mb-1.5">
+													<span class="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Foto Proses Aplikasi (During)</span>
+													{#if !isLocked}
+														<button type="button" class="text-[10px] text-rose-500 hover:underline" onclick={() => removeProgressDuringPhoto(i)}>Hapus Foto Proses</button>
+													{/if}
+												</div>
+												<div class="aspect-video w-36 rounded-lg overflow-hidden border">
+													{#if item.existing_foto_during}
+														<img use:secureAssetSrc={item.existing_foto_during} alt="Foto During" class="w-full h-full object-cover" />
+													{:else if item.foto_during}
+														<img src={item.foto_during.url} alt="Foto During" class="w-full h-full object-cover" />
+													{/if}
+												</div>
+											</div>
+										{:else if !isLocked}
+											<div class="mt-2 flex items-center gap-2">
+												<label class="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1">
+													<input type="file" accept="image/*" class="hidden" onchange={(e) => handleProgressDuringPhoto(i, e, false)} />
+													<IconPlus size={12} /> <span>Tambah Foto Proses (During / Aplikasi)</span>
+												</label>
 											</div>
 										{/if}
 									</div>
@@ -8490,7 +9013,7 @@
 					{/if}
 
 					{#if reportData.qc_ambient.applicable}
-						<div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+						<div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
 							<div>
 								<label class="f-label">Suhu Udara (°C)</label>
 								{#if isLocked}
@@ -8500,11 +9023,11 @@
 								{/if}
 							</div>
 							<div>
-								<label class="f-label">Suhu Substrat / Baja (°C)</label>
+								<label class="f-label">Suhu Substrat (°C)</label>
 								{#if isLocked}
 									<p class="text-[13px] font-bold text-gray-800 dark:text-gray-200">{reportData.qc_ambient.steel_temp ?? '-'} °C</p>
 								{:else}
-									<input type="number" step="0.1" class="f-input" placeholder="°C" bind:value={reportData.qc_ambient.steel_temp} />
+									<input type="number" step="0.1" class="f-input" placeholder="Baja / Beton" bind:value={reportData.qc_ambient.steel_temp} />
 								{/if}
 							</div>
 							<div>
@@ -8516,11 +9039,24 @@
 								{/if}
 							</div>
 							<div>
-								<label class="f-label">Dew Point (°C)</label>
+								<div class="flex items-center justify-between">
+									<label class="f-label">Dew Point (°C)</label>
+									{#if !isLocked && reportData.qc_ambient?.air_temp && reportData.qc_ambient?.relative_humidity}
+										<button type="button" class="text-[9.5px] text-sky-600 dark:text-sky-400 font-bold hover:underline" onclick={hitungDewPointOtomatis}>⚡ Hitung</button>
+									{/if}
+								</div>
 								{#if isLocked}
 									<p class="text-[13px] font-bold text-gray-800 dark:text-gray-200">{reportData.qc_ambient.dew_point ?? '-'} °C</p>
 								{:else}
 									<input type="number" step="0.1" class="f-input" placeholder="°C" bind:value={reportData.qc_ambient.dew_point} />
+								{/if}
+							</div>
+							<div>
+								<label class="f-label">Kadar Air Beton (%)</label>
+								{#if isLocked}
+									<p class="text-[13px] font-bold text-gray-800 dark:text-gray-200">{reportData.qc_ambient.concrete_moisture ?? '-'} %</p>
+								{:else}
+									<input type="number" step="0.1" min="0" max="25" class="f-input" placeholder="Maks 4-5%" bind:value={reportData.qc_ambient.concrete_moisture} />
 								{/if}
 							</div>
 						</div>
@@ -8625,7 +9161,34 @@
 					{:else}
 						<!-- EDIT MODE -->
 						{#each reportData.issues as item, i}
-							<div class="mb-3"><label class="f-label">Deskripsi <span style="color: var(--re)">*</span></label><textarea bind:value={item.description} rows="3" class="f-textarea" placeholder="Tulis kendala..."></textarea></div>
+							<div class="mb-3 p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+								<div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+									<div>
+										<label class="f-label font-semibold">Klasifikasi Defect / Isu</label>
+										<select bind:value={item.kategori_defect} class="f-input text-xs font-medium">
+											<option value="">-- Kendala Umum / Non-Defect --</option>
+											<option value="blistering">⚠️ Gelembung / Blistering (Udara/Uap)</option>
+											<option value="fish_eye">⚠️ Fish Eye / Cratering (Minyak/Silikon)</option>
+											<option value="peeling">⚠️ Delaminasi / Peeling (Lepas Rekat)</option>
+											<option value="tacky">⚠️ Curing Lambat / Cat Lengket</option>
+											<option value="pinholing">⚠️ Pinholing / Porositas</option>
+											<option value="cracking">⚠️ Retak Substrat / Beton Rusak</option>
+											<option value="area_dihambat">⛔ Area Belum Siap / Dihambat Klien</option>
+											<option value="cuaca_hujan">🌧️ Cuaca Hujan / Bocor Atap</option>
+											<option value="alat_rusak">⚙️ Alat / Kompresor Rusak</option>
+											<option value="material_kurang">📦 Material Kurang / Terlambat Tiba</option>
+										</select>
+									</div>
+									<div class="sm:col-span-2">
+										<label class="f-label">Deskripsi Kendala <span style="color: var(--re)">*</span></label>
+										<textarea bind:value={item.description} rows="2" class="f-textarea text-xs" placeholder="Tuliskan detail kendala fisik/teknis di site..."></textarea>
+									</div>
+								</div>
+								<div>
+									<label class="f-label">Tindakan Korektif / Solusi Lapangan (opsional)</label>
+									<input type="text" bind:value={item.tindakan_perbaikan} class="f-input text-xs" placeholder="Contoh: Grinding ulang area terdampak gelembung, degassing dengan spike roller, atau re-coat..." />
+								</div>
+							</div>
 
 							<!-- Fase 2 Dokumentasi Foto (26 Sep 2026) — foto bukti PER kendala, tambahan di
 							     luar foto kendala umum di bawah. Belum wajib. -->

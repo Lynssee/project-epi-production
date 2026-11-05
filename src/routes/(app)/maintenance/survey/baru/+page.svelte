@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StepChecklistBanner from '$lib/components/help/StepChecklistBanner.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -270,6 +271,8 @@
 					Laporkan kendala alat operasional secara detail agar admin dapat segera menerbitkan Work Order penanganan.
 				</p>
 			</div>
+
+			<div class="mb-5"><StepChecklistBanner alur="maintenance_repair_lifecycle" fokus="maint_start" judul="Syarat Laporan Kerusakan" /></div>
 
 			<div class="flex flex-col gap-5">
 				<!-- Pilih Equipment / Unit -->

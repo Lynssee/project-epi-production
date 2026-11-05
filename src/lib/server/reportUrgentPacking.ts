@@ -13,11 +13,13 @@
 //  - Hanya pengirim laporan (reports.karyawan_id) yang boleh memicu pengajuan.
 //  - Idempoten: tiap item membawa penanda {ref:laporan:<id>:<idx>} di project_budgets.note; pemanggilan
 //    ulang (laporan dikirim ulang) tidak membuat baris dobel.
-//  - Item tanpa tautan barang master TETAP diajukan (gate G_PKL_INVENTORY_LINK hanya peringatan).
+//  - Item tanpa tautan barang master diajukan selama mode G_PKL_INVENTORY_LINK bukan hard (Kalibrasi Gate).
+//    Bila gate memblokir (mode hard, bukan super admin/GM), pengajuan TIDAK dibuat dan hasilnya
+//    reason='diblokir_gate' + pesan gate, supaya kegagalan terlihat (tidak hanya di log server).
 //  - Fail-soft: tidak pernah melempar ke pemanggil; hasilnya dikembalikan sebagai objek.
 
 import { directusServerJson } from './directus';
-import { createPackingItemsRequest, type NewPackingItem } from './packingListCreateItems';
+import { createPackingItemsRequest, GATE_BLOCKED_PREFIX, type NewPackingItem } from './packingListCreateItems';
 
 export const MAX_URGENT_ITEMS = 20;
 export const MAX_URGENT_QTY = 1_000_000;
@@ -123,7 +125,8 @@ export interface UrgentPackingResult {
 		| 'laporan_ditolak'
 		| 'tidak_ada_kebutuhan_urgent'
 		| 'semua_sudah_diajukan'
-		| 'proyek_tidak_valid';
+		| 'proyek_tidak_valid'
+		| 'diblokir_gate';
 	error?: string;
 }
 
@@ -181,6 +184,11 @@ export async function createUrgentPackingFromReport(
 		});
 		return { created: out.itemIds.length, itemIds: out.itemIds, approvalRequestId: out.approvalRequestId, skipped };
 	} catch (e: any) {
+		const msg = String(e?.message || '');
+		if (msg.startsWith(GATE_BLOCKED_PREFIX)) {
+			console.warn('[reportUrgentPacking] kebutuhan urgent diblokir gate', reportId, msg);
+			return { created: 0, reason: 'diblokir_gate', error: msg };
+		}
 		console.error('[reportUrgentPacking] gagal membuat pengajuan dari laporan', reportId, e?.message || e);
 		return { created: 0, error: e?.message || 'Gagal membuat pengajuan packing dari kebutuhan urgent' };
 	}

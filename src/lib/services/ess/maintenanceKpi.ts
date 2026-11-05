@@ -21,6 +21,14 @@ export interface MaintenanceKpiSummary {
 	total: number;
 	selesai: number;
 	pct: number | null;
+	selesaiTanpaTanggal: number;
+	/** MTTR pribadi (jam) -- null sampai cakupan tanggal selesai & jumlah sampel melewati ambang (app_settings kpi_engine ess_mttr_*). */
+	mttrJam: number | null;
+	mttrSample: number;
+	mttrCoveragePct: number | null;
+	mttrReady: boolean;
+	mttrMinSample: number;
+	mttrMinCoveragePct: number;
 	openList: MyWorkOrder[];
 }
 

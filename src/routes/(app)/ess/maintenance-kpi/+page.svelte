@@ -101,9 +101,32 @@
 			</div>
 		{/if}
 
+		{#if summary.mttrReady && summary.mttrJam !== null}
+			<div class="glass-panel rounded-2xl p-5 mb-6" data-testid="mttr-card">
+				<p class="text-xs font-bold" style="color: var(--sys-label3)">Rata-rata waktu penyelesaian WO (MTTR)</p>
+				<p class="text-3xl font-black gradient-text tracking-tight mt-1">{summary.mttrJam} jam</p>
+				<p class="text-[11px] mt-1" style="color: var(--sys-label4)">
+					Dari {summary.mttrSample} WO selesai yang tanggal selesainya terisi ({summary.mttrCoveragePct}% dari WO selesai Anda), dihitung sejak WO dibuat.
+				</p>
+			</div>
+		{/if}
+
+		{#if summary.selesaiTanpaTanggal > 0}
+			<div class="mt-6 rounded-xl p-4 text-xs" style="background: #fffbeb; border: 1px solid #fde68a; color: #92400e" data-testid="wo-tanggal-kosong">
+				<strong>{summary.selesaiTanpaTanggal} WO Anda</strong> berstatus selesai tetapi <strong>tanggal selesainya kosong</strong>.
+				Minta admin Maintenance melengkapinya — tanpa tanggal selesai, waktu respons (MTTR) tidak bisa dihitung.
+			</div>
+		{/if}
+
 		<div class="mt-6 rounded-xl p-4 text-xs" style="background: var(--bl, #eff6ff); border: 1px solid var(--bl2, #bfdbfe); color: var(--sys-label3)">
-			Halaman ini hanya menampilkan penyelesaian WO. Waktu respons rata-rata (MTTR) dan pengingat PM belum
-			tersedia — data pendukungnya (tanggal selesai WO, jadwal PM) belum terisi konsisten di sistem.
+			{#if summary.mttrReady}
+				Pengingat PM belum tersedia — jadwal PM belum pernah ditandai selesai di sistem sehingga angkanya akan menyesatkan.
+			{:else}
+				Waktu penyelesaian rata-rata (MTTR) akan tampil otomatis setelah minimal {summary.mttrMinSample} WO selesai Anda
+				punya tanggal selesai <em>dan</em> cakupannya minimal {summary.mttrMinCoveragePct}% (saat ini
+				{summary.mttrSample} WO / {summary.mttrCoveragePct ?? 0}%). Pengingat PM belum tersedia — jadwal PM belum
+				pernah ditandai selesai di sistem.
+			{/if}
 		</div>
 	{/if}
 </div>

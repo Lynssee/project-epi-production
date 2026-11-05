@@ -14,7 +14,7 @@
  * menyimpulkan 'hilang' dari qty diterima = 0 (lihat routes/api/goods-received/confirm),
  * jadi 'hilang' bukan pilihan user melainkan hasil turunan.
  */
-export type GRCondition = 'ok' | 'kurang' | 'rusak';
+export type GRCondition = 'ok' | 'kurang' | 'rusak' | 'salah_spek';
 
 /**
  * Nilai yang DISIMPAN SERVER ke `surat_jalan_items.gr_condition`. Berbeda dari
@@ -26,5 +26,8 @@ export type GRConditionTersimpan = 'ok' | 'rusak' | 'hilang';
 export const GR_CONDITION_OPTIONS: { value: GRCondition; label: string }[] = [
 	{ value: 'ok', label: 'Sesuai' },
 	{ value: 'kurang', label: 'Kurang' },
-	{ value: 'rusak', label: 'Rusak' }
+	{ value: 'rusak', label: 'Rusak' },
+	// Barang datang tapi bukan yang dipesan/diminta. Isi qty dengan jumlah yang DITERIMA BAIK (0 bila semua ditolak);
+	// selisihnya dicatat sebagai klaim 'salah_spek' + antrean Barang Bermasalah di Admin.
+	{ value: 'salah_spek', label: 'Salah Spek' }
 ];

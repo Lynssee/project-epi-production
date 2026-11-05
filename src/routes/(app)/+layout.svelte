@@ -92,6 +92,13 @@
 	import { initSessionCleanlinessTracking } from '$lib/utils/sessionCleanliness';
 	import { initGlobalAutoDraft } from '$lib/utils/autoDraftGlobal';
 	import * as Sentry from '@sentry/sveltekit';
+	import ServerQualityIndicator from './ServerQualityIndicator.svelte';
+	import VersionEnvBadge from './VersionEnvBadge.svelte';
+	import { installFetchProfiler } from './fetchProfiler';
+
+	// Rencana monitoring fetch Fase 2 -- perekam fetch /api/* (memori tab saja, dibaca tab "Fetch Halaman"
+	// di ServerQualityIndicator). Idempotent & aman SSR; tidak mengubah/meng-clone respons.
+	installFetchProfiler();
 
 	let { children } = $props();
 	let isFrame = $state(false);
@@ -361,13 +368,14 @@
 					title: 'Portal Karyawan',
 					icon: IconUserCircle,
 					href: '/ess',
-					activePrefixes: ['/ess', '/sji', '/sj-manual', '/site-checkin'],
+					activePrefixes: ['/ess', '/sji', '/sj-manual', '/site-checkin', '/spj-upah'],
 					permissions: ['access_ess'],
 					badge: pendingTraining + unreadPengumuman,
 					children: [
 						{ title: 'Beranda ESS', href: '/ess', exact: true },
 						{ title: 'Absensi Masuk / Pulang', href: '/ess/absen', permissions: ['access_ess'] },
 						{ title: 'Site Check-in Proyek', href: '/site-checkin', permissions: ['access_site_checkin'] },
+						{ title: 'SPJ Upah (Bukti Pembagian)', href: '/spj-upah', permissions: ['access_ess'] },
 						{ title: 'Cuti & Izin Saya', href: '/ess/cuti', permissions: ['access_ess'] },
 						{ title: 'Lembur & Shift', href: '/ess/lembur', permissions: ['access_ess'] },
 						{ title: 'Peminjaman Kendaraan', href: '/ess/kendaraan', permissions: ['access_fleet_booking'] },
@@ -954,6 +962,14 @@
 						<IconEye size={18} />
 					</button>
 				{/if}
+
+				<!-- Indikator Sinyal & Kualitas Server (Khusus Super Admin) -->
+				{#if $authStore.roleId === 'super_admin' || $authStore.roleIds?.includes('super_admin')}
+					<ServerQualityIndicator />
+				{/if}
+
+				<!-- Indikator Lingkungan & Versi Aplikasi Lapangan (Fase 1) -->
+				<VersionEnvBadge />
 
 				<!-- Theme Mode Toggle (Light/Dark) -->
 				<button

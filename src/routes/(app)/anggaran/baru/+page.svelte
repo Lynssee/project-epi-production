@@ -142,6 +142,10 @@
 	let pettyCashFundsLoading = $state(false);
 	let pettyCashFundsError = $state('');
 	let isPettyCashCategory = $derived(selectedCategoryKode === 'petty_cash');
+	// PCK-03 §4.2 — PA bersumbu PROYEK = belanja proyek: kategori "Isi Ulang Dana Kas Kecil" (+ pemilih dana) tidak ditawarkan.
+	// Yang sudah terpilih (prefill/revisi) tidak dicabut. Paritas dengan ERP (AjukanAnggaranModal.svelte).
+	let hideTopUpForProject = $derived(!!selectedProject && selectedCategoryKode !== 'petty_cash');
+	let pickerCategories = $derived(hideTopUpForProject ? categories.filter((c) => c.kode !== 'petty_cash') : categories);
 	$effect(() => {
 		// muat sekali saat kategori Petty Cash dipilih (bukan tiap form dibuka)
 		if (!isPettyCashCategory || pettyCashFunds.length > 0 || pettyCashFundsLoading) return;
@@ -1479,7 +1483,13 @@
 						{/each}
 					</div>
 				{/if}
-				<CategoryPicker {categories} bind:selectedKode={selectedCategoryKode} {departmentCode} onSelect={handleCategorySelect} />
+				<CategoryPicker categories={pickerCategories} bind:selectedKode={selectedCategoryKode} {departmentCode} onSelect={handleCategorySelect} />
+				{#if hideTopUpForProject}
+					<p class="mt-1 text-[11px] text-slate-500 leading-snug">
+						ℹ️ Dana operasional proyek (ops mingguan, transport manpower, kontrakan, reimburse) diajukan dengan kategori <strong>Operasional Proyek</strong>.
+						Biaya otomatis masuk RAP vs Aktual proyek. Pertanggungjawaban (SPJ) dilakukan setelah dana dipakai.
+					</p>
+				{/if}
 
 				{#if isPettyCashCategory}
 					<div class="mt-3">

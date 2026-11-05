@@ -14,6 +14,7 @@ import { watermarkPhoto } from '$lib/utils/photoWatermark';
 import { uploadEvidencePhoto } from './stockLapangan';
 import { confirmGoodsReceived, fetchInTransitShipments, type ConfirmGRItem, type GREvidence, type GRShipment } from './goodsReceived';
 import { enqueueGRSubmission, registerGRAutoFlush, type QueuedGRItem, type QueuedGRSubmission } from '$lib/utils/offlineGRQueue';
+import { buildInspectionPayload, clearInspection } from './inventoryCardApi';
 
 export type { GRShipment, GRItem } from './goodsReceived';
 
@@ -49,7 +50,7 @@ async function prepareAndUpload(file: File, gps: { lat: number; lng: number; acc
 async function sendQueuedGRSubmission(entry: QueuedGRSubmission): Promise<void> {
 	const fotoTerimaFileId = await uploadEvidencePhoto(entry.blobs.fotoTerima as File, 'goods-received:foto-terima (antrean)');
 	if (!fotoTerimaFileId) throw new Error('Gagal mengunggah foto bukti terima dari antrean.');
-	const evidence: GREvidence = { gps: entry.gps };
+	const evidence: GREvidence = { gps: entry.gps, inspeksi: entry.inspeksi, identitasBarangIds: entry.identitasBarangIds };
 	if (entry.blobs.scanSj) evidence.scanSjFileId = await uploadEvidencePhoto(entry.blobs.scanSj as File, 'goods-received:scan-sj-fisik (antrean)');
 	if (entry.blobs.ttdPenerima) evidence.ttdPenerimaFileId = await uploadEvidencePhoto(entry.blobs.ttdPenerima as File, 'goods-received:ttd-penerima (antrean)');
 	if (entry.blobs.ttdDriver) evidence.ttdDriverFileId = await uploadEvidencePhoto(entry.blobs.ttdDriver as File, 'goods-received:ttd-driver (antrean)');
@@ -86,13 +87,17 @@ export async function submitTerimaBarang(params: {
 		condition: it.condition
 	}));
 
+	// Inventory 360° Fase C: hasil checklist terima (jika ada) ikut dikirim; server merekam & menilai gate (shadow).
+	const insp = buildInspectionPayload(params.items.map((it) => it.identitasBarangId));
+
 	try {
 		const fotoTerimaFileId = await prepareAndUpload(params.fotoTerimaFile, params.gps, 'goods-received:foto-terima');
-		const evidence: GREvidence = { gps: params.gps };
+		const evidence: GREvidence = { gps: params.gps, inspeksi: insp.inspeksi, identitasBarangIds: insp.identitasBarangIds };
 		if (params.scanSjFisikFile) {
 			evidence.scanSjFileId = await prepareAndUpload(params.scanSjFisikFile, params.gps, 'goods-received:scan-sj-fisik');
 		}
 		const out = await confirmGoodsReceived(params.suratJalanId, confirmItems, fotoTerimaFileId, evidence);
+		insp.identitasBarangIds.forEach((id) => clearInspection(id));
 		return { queued: false, hasVariance: out.hasVariance };
 	} catch (e) {
 		if (!(e instanceof TypeError)) throw e; // bukan masalah jaringan -> tampilkan error, jangan antre diam-diam
@@ -122,8 +127,11 @@ export async function submitTerimaBarang(params: {
 				fotoTerima: params.fotoTerimaFile,
 				...(params.scanSjFisikFile ? { scanSj: params.scanSjFisikFile } : {})
 			},
-			createdAt: new Date().toISOString()
+			createdAt: new Date().toISOString(),
+			inspeksi: insp.inspeksi,
+			identitasBarangIds: insp.identitasBarangIds
 		});
+		insp.identitasBarangIds.forEach((id) => clearInspection(id)); // sudah ikut antrean offline
 		return { queued: true };
 	}
 }

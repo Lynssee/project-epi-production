@@ -17,6 +17,7 @@
 // ⇒ not_applicable (fail-open, dilog) — tidak pernah mengunci lapangan karena gangguan Directus.
 
 import { resolveGateMode, type GateMode } from '../gateDefinitionsMode';
+import { FIELD_COVERAGE_GATE_KEYS, loadFieldCoverage, resolveCoverageGateMode } from './plFieldCoverageLoader';
 import { DATA_DASAR_LABELS, DEFAULT_GATE_EXTRA_ITEMS, missingDataDasar } from '../../utils/dataDasarProyek';
 import {
 	evaluateFieldPLGatesFor,
@@ -421,19 +422,48 @@ export function mergeDisiplinIntoResult(base: FieldPLResult, info: DisiplinInfo[
 	}
 
 	const status = blocking.length ? 'blocked' : warnings.length ? 'soft_warning' : 'passed';
-	return { gates, status, blocking, warnings, overridden, override_allowed: overrideAllowed, disiplin: info };
+	return { gates, status, blocking, warnings, overridden, override_allowed: overrideAllowed, shadowed: base.shadowed, disiplin: info };
 }
 
 /**
  * Pengganti evaluateFieldPLGatesFor di titik pemanggil: gate lama + gate disiplin proyek.
  * Kegagalan evaluasi disiplin TIDAK melempar (fail-open); gate lama tetap melempar seperti sebelumnya.
  */
+let proposalCache: { at: number; value: boolean } | null = null;
+
+/**
+ * Apakah barang ber-usulan baru (menunggu Admin Logistik) boleh lolos G_PKL_INVENTORY_LINK walau mode hard?
+ * Dibaca dari gate_definitions.action_config.allow_pending_proposal (default true), cache 5 menit,
+ * supaya bisa diatur tanpa ubah kode (Aturan #11).
+ */
+export async function readAllowPendingProposal(dx: Dx): Promise<boolean> {
+	if (proposalCache && Date.now() - proposalCache.at < 5 * 60_000) return proposalCache.value;
+	let value = true;
+	try {
+		const res: any = await dx('/items/gate_definitions?filter[gate_key][_eq]=G_PKL_INVENTORY_LINK&fields=action_config&limit=1');
+		const cfg = res?.data?.[0]?.action_config;
+		if (cfg && typeof cfg === 'object' && cfg.allow_pending_proposal === false) value = false;
+	} catch (e: any) {
+		console.warn('[plDisiplinFieldGates] gagal baca allow_pending_proposal (default true):', e?.message || e);
+	}
+	proposalCache = { at: Date.now(), value };
+	return value;
+}
+
 export async function evaluateFieldPLGatesWithDisiplin(
 	rows: FieldPLRow[],
 	dx: Dx,
 	opts: { overrideAllowed?: boolean } = {}
 ): Promise<FieldPLResultWithDisiplin> {
-	const base = await evaluateFieldPLGatesFor(rows, dx, opts);
+	const allowProposal = rows.some((r) => r.usul_baru) ? await readAllowPendingProposal(dx) : false;
+	const base = await evaluateFieldPLGatesFor(rows, dx, {
+		...opts,
+		allowProposal,
+		// Gate rasionalitas qty yang belum di-seed = shadow (bukan 'soft' bawaan resolveGateMode) — lihat resolveCoverageGateMode.
+		resolveMode: (k) =>
+			(FIELD_COVERAGE_GATE_KEYS as readonly string[]).includes(k) ? resolveCoverageGateMode(k, dx) : resolveGateMode(k, 'PL'),
+		loadCoverage: (pid, itemIds) => loadFieldCoverage(pid, itemIds, dx)
+	});
 	const projectIds = [...new Set(rows.map((r) => r.project_id).filter(Boolean).map(Number))].filter((n) => Number.isFinite(n));
 	try {
 		const info = (await Promise.all(projectIds.map((pid) => evaluateDisiplinForProject(pid, dx)))).flat();

@@ -25,8 +25,9 @@ const cache = new Map<string, { at: number; mode: GateMode }>();
  * Mode efektif satu gate_key untuk documentType tertentu, dibaca dari
  * gate_definitions (default_mode) + gate_enforcement (override, spesifik menang
  * atas '*'), diklem ke 'shadow' bila enforce_from efektif masih di masa depan
- * (Aturan #3). Fallback 'soft' bila gate_definitions tidak ditemukan/gagal dibaca
- * (fail-safe: jangan pernah default ke 'hard' tanpa definisi eksplisit).
+ * (Aturan #3). Gate yang dinonaktifkan admin (is_active=false) = 'shadow'. Fallback 'soft'
+ * bila gate_definitions tidak ditemukan/gagal dibaca (fail-safe: jangan pernah default
+ * ke 'hard' tanpa definisi eksplisit).
  */
 export async function resolveGateMode(gateKey: string, documentType = 'pr'): Promise<GateMode> {
 	const cacheKey = `${gateKey}|${documentType}`;
@@ -38,7 +39,6 @@ export async function resolveGateMode(gateKey: string, documentType = 'pr'): Pro
 		const defRes: any = await directusServerJson(
 			`/items/gate_definitions?${new URLSearchParams({
 				'filter[gate_key][_eq]': gateKey,
-				'filter[is_active][_eq]': 'true',
 				fields: 'gate_key,default_mode,enforce_from,is_active',
 				limit: '1'
 			}).toString()}`
@@ -46,6 +46,11 @@ export async function resolveGateMode(gateKey: string, documentType = 'pr'): Pro
 		const def: GateDefRow | undefined = defRes?.data?.[0];
 		if (!def) {
 			// Gate belum/tidak terdaftar -> fallback aman 'soft', bukan error keras.
+			cache.set(cacheKey, { at: Date.now(), mode });
+			return mode;
+		}
+		if ((def.is_active as unknown) === false || (def.is_active as unknown) === 0) {
+			mode = 'shadow';
 			cache.set(cacheKey, { at: Date.now(), mode });
 			return mode;
 		}

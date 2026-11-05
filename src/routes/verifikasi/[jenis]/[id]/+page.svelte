@@ -4,7 +4,7 @@
 	// nomor, jenis, status, tanggal, nominal. Tanda tangan HMAC ada di URL (?s=) dan dicek server.
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { IconLoader2, IconShieldCheck, IconShieldX, IconAlertTriangle } from '@tabler/icons-svelte';
+	import { IconLoader2, IconShieldCheck, IconShieldX, IconAlertTriangle, IconClipboardList } from '@tabler/icons-svelte';
 
 	const jenis = $page.params.jenis;
 	const id = $page.params.id;
@@ -69,6 +69,17 @@
 				<div class="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
 					<strong>Cocokkan dengan kertas di tangan Anda:</strong> nomor dan <strong>nominal</strong> harus sama persis. Bila berbeda, dokumen kemungkinan diubah — jangan diproses dan laporkan ke Finance.
 				</div>
+				{#if view.jenis === 'grand_po'}
+					<div class="mt-3 pt-3 border-t border-slate-100">
+						<a
+							href="/proyek"
+							class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm transition-colors"
+						>
+							<IconClipboardList size={16} />
+							<span>Buka Dashboard Proyek Lapangan</span>
+						</a>
+					</div>
+				{/if}
 				{#if diperiksa}<p class="mt-3 text-[11px] text-slate-400 text-center">Diperiksa {new Date(diperiksa).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</p>{/if}
 			</div>
 		{:else if state === 'invalid'}

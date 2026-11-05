@@ -20,7 +20,7 @@
 	import { routeCheckpointScan } from '$lib/utils/checkpointScanRoute';
 	import { parseEpiQr, type ParsedEpiQr } from '$lib/utils/qrParse';
 	import { resolveServisLuarQr } from '$lib/services/servisLuar';
-	import { resolveSjQr, submitWorkshopSjkConfirmReceipt, SjkReasonRequiredError, resolveBatchQr, type ResolveSjResult, type ResolveCiketingSjkResult, type ResolveBatchResult } from '$lib/services/scanResolve';
+	import { resolveSjQr, submitWorkshopSjkConfirmReceipt, SjkReasonRequiredError, resolveBatchQr, mintaRetestBatch, type ResolveSjResult, type ResolveCiketingSjkResult, type ResolveBatchResult } from '$lib/services/scanResolve';
 	import { getSOForPO } from '$lib/services/salesPo';
 	import { authStore } from '$lib/stores/auth';
 	import { submitProofOfDelivery, submitProofOfDeliveryBlobs, dataUrlToBlob } from '$lib/services/proofOfDelivery';
@@ -45,6 +45,23 @@
 	// QR label kaleng cat (EPI:BATCH:<id>, Fase 4 QC Re-test): info batch + CoA + Re-QC + HOLD.
 	let batchInfo = $state<ResolveBatchResult | null>(null);
 	let batchLoadError = $state('');
+	// Expired Date v2 F5: tombol "Minta Uji Ulang Lab QC" pada banner kelayakan.
+	let retestBusy = $state(false);
+	let retestMsg = $state('');
+	let retestError = $state('');
+	async function mintaRetest() {
+		if (!batchInfo || retestBusy) return;
+		retestBusy = true;
+		retestError = '';
+		try {
+			const r = await mintaRetestBatch(batchInfo.batch.id);
+			retestMsg = r.pesan;
+		} catch (e: any) {
+			retestError = e?.message || 'Gagal meminta uji ulang.';
+		} finally {
+			retestBusy = false;
+		}
+	}
 
 	// R7 (24 Sep 2026) — serah-terima digital SJ Keluar Ciketing (QR CIK-SJK-V2).
 	let sjkResolved = $state<ResolveCiketingSjkResult | null>(null);
@@ -214,6 +231,15 @@
 		// tidak perlu verifikasi tanda tangan seperti dokumen transaksional SJ/PJM/SJI.
 		if (epi && epi.type === 'SOP') {
 			await goto(`/ess/pelatihan/sop/${epi.id}`, { replaceState: true });
+			return;
+		}
+
+		// Stiker QR SOP pada mesin/area kerja (EPI:FLOW:<flow_key>[:<node_id>], R-L3) — langsung buka panduan alur & fokus ke langkahnya.
+		// Tanpa token: panduan alur baca-saja di balik login biasa (guard layout sudah memastikan login).
+		if (epi && epi.type === 'FLOW') {
+			const q = new URLSearchParams({ alur: String(epi.id) });
+			if (epi.node) q.set('fokus', epi.node);
+			await goto(`/panduan/alur?${q.toString()}`, { replaceState: true });
 			return;
 		}
 
@@ -676,7 +702,28 @@
 					{#if epiParsed.type === 'BATCH'}
 					{#if batchInfo}
 						<div class="text-left rounded-lg p-3 mb-3 border" style="border-color: var(--sys-sep)">
-							{#if batchInfo.hold}
+							{#if batchInfo.kelayakan}
+								{@const kl = batchInfo.kelayakan}
+								{@const warna = { layak: ['#DCFCE7', '#166534', '🟢'], prioritas: ['#FEF9C3', '#854D0E', '🟡'], stop: ['#FEE2E2', '#B91C1C', '🔴'], tanpa_tanggal: ['#F3F4F6', '#374151', '⚪'] }[kl.status] || ['#F3F4F6', '#374151', '⚪']}
+								<div class="rounded-lg p-3 mb-3" style="background: {warna[0]}; color: {warna[1]}" role="status">
+									<p class="text-[14px] font-extrabold">{warna[2]} {kl.label}</p>
+									<p class="text-[12px] mt-0.5">{kl.pesan}</p>
+									{#if kl.bisaMintaRetest}
+										<button
+											type="button"
+											class="mt-2 w-full rounded-md py-2 text-[12px] font-bold text-white"
+											style="background: {warna[1]}"
+											disabled={retestBusy || !!retestMsg}
+											onclick={mintaRetest}
+											title="Mengirim permintaan uji ulang cepat ke Lab QC. Lab akan menguji batch ini; bila lulus tanggal kadaluarsa diperpanjang, bila gagal batch dikarantina."
+										>
+											{retestBusy ? 'Mengirim…' : retestMsg ? 'Terkirim ✓' : '🧪 Minta Uji Ulang Lab QC'}
+										</button>
+									{/if}
+									{#if retestMsg}<p class="text-[11px] mt-1">{retestMsg}</p>{/if}
+									{#if retestError}<p class="text-[11px] mt-1 font-semibold">{retestError}</p>{/if}
+								</div>
+							{:else if batchInfo.hold}
 								<p class="text-[12px] font-bold mb-2 rounded p-2" style="background: #FEE2E2; color: #B91C1C">
 									BATCH DITAHAN (HOLD) — ada komplain customer terbuka. Jangan dipakai/dikirim sebelum dikonfirmasi tim QC.
 								</p>

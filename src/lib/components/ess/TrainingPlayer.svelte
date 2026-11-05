@@ -16,6 +16,7 @@
 		type TrainingNoteRecord,
 		type TrainingDiskusiRecord
 	} from '$lib/services/ess/training';
+	import TeksModulViewer from '$lib/components/ess/TeksModulViewer.svelte';
 	import { formatCountdown, isReadTimeType, remainingReadSeconds } from '$lib/utils/trainingGuards';
 	import { IconCircleCheck, IconLock, IconPlayerPlay, IconArrowRight, IconNotes, IconFileText, IconInfoCircle, IconTrash, IconPencilPlus, IconMessageCircle, IconFlag, IconPin } from '@tabler/icons-svelte';
 
@@ -473,7 +474,7 @@
 	{:else if modul.tipe_konten === 'PDF'}
 		<iframe src={modul.konten_url || ''} title={modul.judul} class="w-full h-96 rounded-2xl glass-panel"></iframe>
 	{:else if modul.tipe_konten === 'Teks'}
-		<div class="glass-panel rounded-2xl p-5 whitespace-pre-wrap text-sm" style="color: var(--sys-label)">{modul.konten_teks}</div>
+		<TeksModulViewer {modul} />
 	{:else if modul.tipe_konten === 'Link'}
 		<a
 			href={modul.konten_url || '#'}

@@ -21,6 +21,7 @@
 		IconChartPie, IconChevronDown, IconChevronUp, IconBrandWhatsapp, IconDownload, IconInfoCircle
 	} from '@tabler/icons-svelte';
 	import PdfBlobViewer from '$lib/components/project/PdfBlobViewer.svelte';
+	import ProjectPreFlightWidget from '$lib/components/project/ProjectPreFlightWidget.svelte';
 
 	let projects = $state<any[]>([]);
 	let rawBatchedReports = $state<any[]>([]);
@@ -761,6 +762,9 @@
 					<IconChevronRight size={20} class="text-white" />
 				</div>
 			</a>
+
+			<!-- WIDGET KESIAPAN KERJA & PRASYARAT MUTLAK (PRE-FLIGHT READINESS CHECK) -->
+			<ProjectPreFlightWidget activeProjectsCount={requiredProjects.length} enforcementMode="warn" />
 
 			<div class="flex overflow-x-auto gap-3 mb-4 mt-2 pb-2 -mx-4 px-4 snap-x hide-scrollbar">
 				<!-- Total -->

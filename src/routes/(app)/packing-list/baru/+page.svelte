@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StepChecklistBanner from '$lib/components/help/StepChecklistBanner.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { DEFAULT_UNITS, normalizeUnitLabel, type UnitDef } from '$lib/shared/unitMaster';
 	import { guessPlCategory, DEFAULT_PL_CATEGORY_KEYWORDS, type PlCategoryKeywords } from '$lib/shared/plCategoryGuess';
@@ -15,10 +16,11 @@
 	import { getProjectsForCurrentUser } from '$lib/services/projectScope';
 	import {
 		getProjectBudgetItems, submitPackingRequest, createPackingListItems, fetchKodeItemMap,
-		checkStockAvailability, searchMasterCatalog, precheckPackingGate, getRequestedItemHistory, type MasterCatalogItem
+		checkStockAvailability, searchMasterCatalog, resolveCatalogExact, precheckPackingGate, getRequestedItemHistory, type MasterCatalogItem
 	} from '$lib/services/packingList';
 	import TemplateSelector from '$lib/components/packing-list/TemplateSelector.svelte';
 	import GateCompletionWizard from '$lib/components/shared/GateCompletionWizard.svelte';
+	import PlGateNotice from '$lib/components/packing-list/PlGateNotice.svelte';
 	import GateFixTautanBarang from '$lib/components/shared/GateFixTautanBarang.svelte';
 	import PlLampiranPreviewCard from '$lib/components/packing-list/PlLampiranPreviewCard.svelte';
 	import PlDisiplinBanner from '$lib/components/packing-list/PlDisiplinBanner.svelte';
@@ -32,6 +34,7 @@
 	import { createFormPersist, registerFormPersistSaveTriggers } from '$lib/utils/formPersist';
 	import { isPlanningDerived, plannedFirst } from '$lib/shared/planningRef';
 	import PlanningFieldPanels from '$lib/components/packing-list/PlanningFieldPanels.svelte';
+	import PlCoverageLivePanel from '$lib/components/packing-list/PlCoverageLivePanel.svelte';
 
 	interface PackingListBaruDraft {
 		selectedProject: string;
@@ -80,6 +83,11 @@
 
 	function handleWizardFixItem(gateKey: string, item: { id: number; label: string }) {
 		if (gateKey === 'G_PKL_INVENTORY_LINK') {
+			// Id negatif = draf yang belum tersimpan, belum bisa diusulkan tautannya.
+			if (item.id <= 0) {
+				alert(`"${item.label}" belum tersimpan. Pilih barangnya dari saran Master Katalog di daftar Barang Baru. Bila belum ada di katalog, minta Admin Logistik mendaftarkannya.`);
+				return;
+			}
 			fixTautanBudgetId = item.id;
 			fixTautanLabel = item.label;
 			fixTautanOpen = true;
@@ -168,6 +176,8 @@
 		forecast_id?: string;
 		/** PRJ-26: satuan dikunci mengikuti master barang (dipilih dari katalog). */
 		unit_locked?: boolean;
+		identitas_barang_id?: number | null;
+		usul_baru?: boolean;
 	}>>([]);
 
 	const categoryNames: Record<string, string> = {
@@ -221,6 +231,7 @@
 		if (!newItems[index]) return;
 		newItems[index].material_name = text;
 		newItems[index].unit_locked = false; // mengetik ulang nama = bukan lagi barang katalog
+		newItems[index].identitas_barang_id = null;
 		activeSuggestRow = index;
 		clearTimeout(searchDebounceTimer);
 		if (!text || text.trim().length < 2) {
@@ -244,6 +255,8 @@
 	function selectMasterItem(index: number, item: MasterCatalogItem) {
 		if (!newItems[index]) return;
 		newItems[index].material_name = item.nama_barang_lengkap;
+		newItems[index].identitas_barang_id = item.id;
+		newItems[index].usul_baru = false;
 		if (item.satuan) {
 			// Satuan katalog dipetakan lewat master (Meter→M, Lbr→Lembar); tak dikenal dipakai apa adanya.
 			const matchUnit = normalizeUnitLabel(item.satuan, unitMasterList);
@@ -325,13 +338,15 @@
 				unit_price: 0,
 				description: `Kebutuhan timeline: ${r.subtask_name || 'subtask'}${r.mob_stage ? ` — ${r.mob_stage}` : ''}`,
 				budget_category: guessPlCategory(r.ref_name, categoryKeywords) || '',
+				// ref_id baris material/consumable = identitas_barang.id (lihat crossDept registry erp-epi); equipment/bebas = tanpa tautan.
+				identitas_barang_id: (r.ref_type === 'material' || r.ref_type === 'consumable') && r.ref_id && /^d+$/.test(String(r.ref_id)) ? Number(r.ref_id) : null,
 				forecast_id: r.id
 			}))
 		];
 		forecastSelected = new Set();
 	}
 
-	function addQuickChip(chip: { name: string; category: string; unit: string }) {
+	async function addQuickChip(chip: { name: string; category: string; unit: string }) {
 		newItems = [
 			...newItems,
 			{
@@ -341,9 +356,20 @@
 				unit: chip.unit,
 				unit_price: 0,
 				description: 'Kebutuhan consumable operasional lapangan',
-				budget_category: chip.category
+				budget_category: chip.category,
+				identitas_barang_id: null
 			}
 		];
+		const idx = newItems.length - 1;
+		// Tautkan otomatis hanya bila nama chip persis ada di Master Katalog; selain itu label "Belum tertaut" tampil.
+		try {
+			const hit = await resolveCatalogExact(chip.name);
+			if (hit && newItems[idx]?.material_name === chip.name && !newItems[idx].identitas_barang_id) {
+				newItems[idx].identitas_barang_id = hit.id;
+			}
+		} catch (e) {
+			console.warn('[addQuickChip] Gagal mencocokkan katalog:', e);
+		}
 	}
 
 	function getDuplicateWarning(name?: string): { type: 'rap'; item: string; id: number } | null {
@@ -380,6 +406,29 @@
 		})),
 		...validNewItems.map((i) => ({ item_id: null, nama_barang: i.material_name, unit: i.unit, qty_required: Number(i.qty) || 0 }))
 	]);
+
+	// Gate Rasionalitas PL (Fase 4) — daftar item untuk kalkulator kewajaran qty (RAB terpilih + barang baru). key menunjuk balik ke baris form.
+	let coverageItems = $derived([
+		...existingItems.filter((i) => selectedExisting.has(i.id)).map((i) => ({
+			key: 'e:' + i.id,
+			item_id: i.identitas_barang_id ?? null,
+			nama_barang: i.material_name || i.description || '',
+			qty_required: Number(i.qty) || 0,
+			unit: i.unit || ''
+		})),
+		...newItems.map((i, idx) => ({
+			key: 'n:' + idx,
+			item_id: i.identitas_barang_id ?? null,
+			nama_barang: i.material_name || '',
+			qty_required: Number(i.qty) || 0,
+			unit: i.unit || ''
+		})).filter((x) => x.nama_barang.trim())
+	]);
+	function applyCoverageQty(key: string, qty: number) {
+		const [kind, ref] = key.split(':');
+		if (kind === 'e') existingItems = existingItems.map((i) => (String(i.id) === ref ? { ...i, qty } : i));
+		else newItems = newItems.map((it, idx) => (idx === Number(ref) ? { ...it, qty } : it));
+	}
 
 	function getDraftSnapshot(): PackingListBaruDraft {
 		const existingQtyOverrides: Record<number, number> = {};
@@ -574,7 +623,14 @@
 	async function runGatePrecheck(): Promise<{ ok: boolean; gates: any[] }> {
 		const gateItems = [
 			...existingItems.filter(i => selectedExisting.has(i.id)).map(i => ({ qty: i.qty, identitas_barang_id: i.identitas_barang_id, budgetItemId: i.id })),
-			...validNewItems.map(i => ({ qty: i.qty }))
+			...validNewItems.map(i => ({
+				qty: i.qty,
+				identitas_barang_id: i.identitas_barang_id ?? null,
+				material_name: i.material_name,
+				material_color: i.material_color || null,
+				budget_category: i.budget_category || null,
+				usul_baru: !!i.usul_baru
+			}))
 		];
 		const gate = await precheckPackingGate(Number(selectedProject), gateItems);
 		const gatesWithTab = (gate.gates || []).map((g: any) => ({ ...g, tab: GATE_SCROLL_TARGET[g.gate_key] ? g.gate_key : undefined }));
@@ -706,6 +762,8 @@
 				<h2 class="text-lg font-bold text-slate-900 dark:text-slate-100">Form Pembuatan Packing List</h2>
 			</div>
 
+			<div class="mb-4"><StepChecklistBanner alur="dispatch_and_shipping" fokus="sj_pkl" judul="Syarat Packing List" /></div>
+
 			<!-- Banner Pemulihan Draf -->
 			{#if draftRestoredNotice && (newItems.length > 0 || selectedExisting.size > 0)}
 				<div class="mb-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-emerald-800 dark:text-emerald-300 animate-in fade-in duration-200">
@@ -741,12 +799,13 @@
 				</div>
 				<!-- Penajaman Gate PL: ringkasan P2H alat & laporan harian proyek (semua pengaju). -->
 				<div class="mt-3"><PlDisiplinBanner projectId={selectedProject ? Number(selectedProject) : null} /></div>
+				<div class="mt-3 empty:hidden"><PlGateNotice /></div>
 			</div>
 
-			<!-- ====== SECTION 0: Load dari Template ====== -->
+			<!-- ====== SECTION 0: Smart Template Parametrik ====== -->
 			<div class="card-section">
-				<h4><IconTemplate size={16} class="text-[var(--g)]" /> Load dari Template</h4>
-				<p class="text-[11px] text-gray-400 -mt-1 mb-3">Muat item dari template yang sudah ada.</p>
+				<h4><IconTemplate size={16} class="text-[var(--g)]" /> Smart Template Parametrik</h4>
+				<p class="text-[11px] text-gray-400 -mt-1 mb-3">Kalkulasi otomatis kebutuhan alat dan bahan berdasarkan jenis pekerjaan & luas volume (m²).</p>
 
 				{#if selectedProject}
 					<TemplateSelector
@@ -1031,6 +1090,18 @@
 									placeholder="Contoh: CAT PRIMER EPOXY / THINNER PU"
 								/>
 								
+								{#if item.identitas_barang_id}
+									<p class="text-[10px] font-semibold text-emerald-600 mt-0.5">✓ Tertaut Master Barang</p>
+								{:else if item.material_name.trim()}
+									<p class="text-[10px] text-amber-600 mt-0.5">Belum tertaut. Pilih dari saran Master Katalog agar stok terpotong otomatis.</p>
+									{#if !item.identitas_barang_id}
+										<label class="flex items-start gap-1.5 mt-1 text-[10px] text-gray-600 cursor-pointer" title="Pakai bila barang ini benar-benar tidak ada di saran Master Katalog. Admin Logistik akan mendaftarkannya; PL Anda tetap bisa dikirim.">
+											<input type="checkbox" class="mt-0.5" bind:checked={item.usul_baru} />
+											<span>Barang belum ada di katalog — usulkan ke Admin Logistik</span>
+										</label>
+									{/if}
+								{/if}
+
 								<!-- Dropdown Saran -->
 								{#if activeSuggestRow === i && searchSuggestions.length > 0}
 									<div class="absolute z-30 left-0 right-0 top-[calc(100%+4px)] bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-56 overflow-y-auto divide-y divide-gray-100">
@@ -1169,6 +1240,8 @@
 					</div>
 				{/if}
 			</div>
+
+			<PlCoverageLivePanel projectId={selectedProject ? Number(selectedProject) : null} items={coverageItems} onApply={applyCoverageQty} />
 
 			<PlLampiranPreviewCard projectId={selectedProject ? Number(selectedProject) : null} items={lampiranPreviewItems} />
 

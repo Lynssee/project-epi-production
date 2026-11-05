@@ -46,6 +46,7 @@ export const DEFAULT_EXEMPT_KEYWORDS: readonly string[] = Object.freeze([
 	'pasir',
 	'silica',
 	'kuas',
+	'saringan',
 	'roll',
 	'cleaner',
 	'solvent',

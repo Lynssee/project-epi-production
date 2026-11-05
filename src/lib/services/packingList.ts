@@ -41,8 +41,8 @@ export interface PackingGatePrecheck {
 
 /**
  * F0 (Audit & Hardening Gate v2, Path A) — pra-cek gate Packing List sisi lapangan
- * sebelum membuat item. Menembak /api/packing-list/gate-precheck. Hanya G_PKL_PROJECT
- * yang bisa memblokir; G_PKL_STOK = peringatan. Gagal panggil endpoint → dianggap
+ * sebelum membuat item. Menembak /api/packing-list/gate-precheck. Hasil blokir/peringatan
+ * mengikuti mode di Kalibrasi Gate. Gagal panggil endpoint → dianggap
  * lolos (fail-open) supaya gangguan jaringan tidak mengunci lapangan.
  *
  * `budgetItemId` (Fase 5, Gate Transparan & Popup Benahi Data v2, 16 Sep 2026): isi bila
@@ -53,7 +53,16 @@ export interface PackingGatePrecheck {
  */
 export async function precheckPackingGate(
 	projectId: number,
-	items?: { qty?: number; identitas_barang_id?: number | null; budgetItemId?: number | null }[]
+	items?: {
+		qty?: number;
+		identitas_barang_id?: number | null;
+		budgetItemId?: number | null;
+		template_item_id?: number | null;
+		material_name?: string | null;
+		material_color?: string | null;
+		budget_category?: string | null;
+		usul_baru?: boolean | null;
+	}[]
 ): Promise<PackingGatePrecheck> {
 	const empty: PackingGatePrecheck = { ok: true, blocking: [], warnings: [], gates: [], blockingMessage: '', disiplin: [] };
 	try {
@@ -90,6 +99,7 @@ export interface PackingListItem {
 	unit_price: number;
 	description?: string;
 	budget_category?: string;
+	identitas_barang_id?: number | null;
 }
 
 // Template interfaces
@@ -104,6 +114,10 @@ export interface TemplateItem {
 	description?: string;
 	pic?: string;
 	date_created?: string;
+	koefisien?: number | null;
+	identitas_barang_id?: number | null;
+	no_item_needed?: boolean | number | null;
+	is_manpower?: boolean | number | null;
 }
 
 export interface Template {
@@ -112,6 +126,7 @@ export interface Template {
 	total_qty: number;
 	categories: string[];
 	date_created: string;
+	has_parametric?: boolean;
 }
 
 export interface TemplateItemInput {
@@ -122,6 +137,8 @@ export interface TemplateItemInput {
 	unit: string;
 	description?: string;
 	pic?: string;
+	koefisien?: number | null;
+	identitas_barang_id?: number | null;
 }
 
 export interface LoadTemplateResult {
@@ -151,7 +168,10 @@ export async function createPackingListItems(
 			qty: it.qty,
 			unit: it.unit,
 			description: it.description,
-			unit_price: (it as any).unit_price ?? 0
+			unit_price: (it as any).unit_price ?? 0,
+			identitas_barang_id: it.identitas_barang_id ?? null,
+			usul_baru: !it.identitas_barang_id && !!(it as any).usul_baru,
+			usul_catatan: (it as any).usul_catatan ?? null
 		})));
 		return true;
 	} catch (error) {
@@ -178,7 +198,9 @@ export async function submitPackingFromTemplate(
 			material_color: item.material_color,
 			qty,
 			unit: item.unit,
-			description: item.description || item.material_name
+			description: item.description || item.material_name,
+			template_item_id: item.id ?? null,
+			identitas_barang_id: item.identitas_barang_id ?? null
 		})));
 		return true;
 	} catch (error) {
@@ -198,7 +220,19 @@ async function postCreatePackingItems(
 	projectId: number,
 	pic: string,
 	projectName: string | undefined,
-	items: { budget_category?: string; material_name: string; material_color?: string; qty: number; unit: string; description?: string; unit_price?: number }[]
+	items: {
+		budget_category?: string;
+		material_name: string;
+		material_color?: string;
+		qty: number;
+		unit: string;
+		description?: string;
+		unit_price?: number;
+		identitas_barang_id?: number | null;
+		template_item_id?: number | null;
+		usul_baru?: boolean | null;
+		usul_catatan?: string | null;
+	}[]
 ) {
 	const token = await getIdToken();
 	const res = await fetch('/api/packing-list/create-items', {
@@ -300,6 +334,18 @@ export async function searchMasterCatalog(query: string): Promise<MasterCatalogI
 }
 
 /**
+ * Cocokkan satu nama (mis. tombol cepat) ke Master Katalog. Hanya cocok bila nama persis sama
+ * (tanpa beda huruf besar/spasi) dan hasilnya tunggal: salah tautan = salah potong stok.
+ */
+export async function resolveCatalogExact(name: string): Promise<MasterCatalogItem | null> {
+	const norm = (v: string) => v.toLowerCase().replace(/s+/g, ' ').trim();
+	const target = norm(name || '');
+	if (!target) return null;
+	const hits = (await searchMasterCatalog(name)).filter((r) => norm(r.nama_barang_lengkap || '') === target);
+	return hits.length === 1 ? hits[0] : null;
+}
+
+/**
  * §7 rekomendasi L1 — resolusi satu identitas_barang by id, dipakai saat leader memindai
  * label QR barang (EPI:ITEM:<id>) di form retur manual (menutup A1 di sumbernya: id dari
  * QR SUDAH id identitas_barang, tidak perlu pencarian nama). Satu query ringan by id.
@@ -354,6 +400,7 @@ export async function getProjectBudgetItems(projectId: number) {
 		await loadProjectSettings().catch(() => {});
 		const configured = getProjectSetting('project.pl.allowed_rap_categories');
 		const categories: string[] = Array.isArray(configured) && configured.length ? configured : ['supplier', 'consumable', 'safety', 'sewa_alat', 'material'];
+		const allCategories = [...new Set([...categories, ...categories.map((c) => c.startsWith('packing_') ? c : 'packing_' + c), ...categories.map((c) => c.replace('packing_', ''))])];
 		const rabIds = await getRabIdsForProject(projectId);
 
 		const result = await directus.request(
@@ -361,7 +408,7 @@ export async function getProjectBudgetItems(projectId: number) {
 				filter: {
 					_and: [
 						{ _or: [{ project_id: { _eq: projectId } }, ...(rabIds.length ? [{ so_rab_id: { _in: rabIds } }] : [])] },
-						{ budget_category: { _in: categories } },
+						{ budget_category: { _in: allCategories } },
 						{ _or: [{ is_category_header: { _null: true } }, { is_category_header: { _eq: false } }] },
 						{ _or: [{ packing_status: { _null: true } }, { packing_status: { _eq: 'draft' } }] }
 					]
@@ -1032,7 +1079,7 @@ export async function getPackingListTemplates(): Promise<Template[]> {
 				},
 				fields: [
 					'id', 'template_name', 'budget_category', 'material_name',
-					'qty', 'date_created'
+					'qty', 'koefisien', 'date_created'
 				],
 				sort: ['template_name', 'date_created'],
 				limit: -1
@@ -1041,19 +1088,23 @@ export async function getPackingListTemplates(): Promise<Template[]> {
 
 		// Group by template_name dan hitung metadata
 		const grouped: Record<string, any> = {};
-		for (const item of result) {
+		for (const item of (result as any[])) {
 			const name = item.template_name || 'Untitled';
 			if (!grouped[name]) {
 				grouped[name] = {
 					name,
 					item_count: 0,
 					total_qty: 0,
+					has_parametric: false,
 					categories: new Set<string>(),
 					date_created: item.date_created
 				};
 			}
 			grouped[name].item_count++;
-			grouped[name].total_qty += item.qty || 0;
+			grouped[name].total_qty += Number(item.qty) || 0;
+			if (item.koefisien != null && Number(item.koefisien) > 0) {
+				grouped[name].has_parametric = true;
+			}
 			if (item.budget_category) {
 				grouped[name].categories.add(item.budget_category);
 			}
@@ -1064,6 +1115,7 @@ export async function getPackingListTemplates(): Promise<Template[]> {
 			name: t.name,
 			item_count: t.item_count,
 			total_qty: t.total_qty,
+			has_parametric: t.has_parametric,
 			categories: Array.from(t.categories),
 			date_created: t.date_created
 		}));
@@ -1091,7 +1143,8 @@ export async function getTemplateItems(templateName: string): Promise<TemplateIt
 				},
 				fields: [
 					'id', 'template_name', 'budget_category', 'material_name',
-					'material_color', 'qty', 'unit', 'description', 'pic', 'date_created'
+					'material_color', 'qty', 'unit', 'description', 'pic',
+					'koefisien', 'identitas_barang_id', 'no_item_needed', 'is_manpower', 'date_created'
 				],
 				sort: ['budget_category', 'date_created'],
 				limit: -1
@@ -1124,6 +1177,8 @@ export async function createTemplateItem(
 				unit: itemData.unit,
 				description: itemData.description || itemData.material_name,
 				pic: itemData.pic || '',
+				koefisien: itemData.koefisien ?? null,
+				identitas_barang_id: itemData.identitas_barang_id ?? null,
 				unit_price: 0,
 				planned_amount: 0,
 				actual_amount: 0,
@@ -1252,6 +1307,9 @@ export async function checkDuplicateItems(
 	}
 }
 
+// Directus MCP/REST bisa mengembalikan boolean sebagai 1/0.
+const isFlagOn = (v: unknown) => v === true || v === 1 || v === '1' || v === 'true';
+
 /**
  * Load template items ke project.
  * 1. Fetch template items
@@ -1262,7 +1320,8 @@ export async function checkDuplicateItems(
 export async function loadTemplateToProject(
 	templateName: string,
 	projectId: number,
-	pic: string = 'Leader'
+	pic: string = 'Leader',
+	volumeMultiplier: number = 1
 ): Promise<LoadTemplateResult> {
 	try {
 		// 1. Fetch template items
@@ -1283,16 +1342,35 @@ export async function loadTemplateToProject(
 			return !duplicateSet.has(name);
 		});
 
-		// 4. Create new project items
-		const promises = itemsToAdd.map((item) =>
-			directus.request(
+		// 4. Create new project items (dengan kalkulasi parametrik & tautan master)
+		const vol = Math.max(0.01, Number(volumeMultiplier) || 1);
+		const promises = itemsToAdd.map((item) => {
+			const koef = item.koefisien != null && !isNaN(Number(item.koefisien)) && Number(item.koefisien) > 0
+				? Number(item.koefisien)
+				: null;
+			// Jika punya koefisien, kalkulasi qty = koef * volume, jika tidak gunakan qty tetap
+			const computedQty = koef !== null
+				? Math.round(koef * vol * 100) / 100
+				: (Number(item.qty) || 0);
+
+			let cleanCategory = item.budget_category || 'supplier';
+			if (cleanCategory.startsWith('packing_')) {
+				cleanCategory = cleanCategory.replace('packing_', '');
+			}
+
+			return directus.request(
 				createItem('project_budgets', {
 					project_id: projectId,
-					budget_category: item.budget_category,
+					budget_category: cleanCategory,
 					material_name: (item.material_name || item.description || '').trim(),
 					material_color: item.material_color || '',
-					qty: item.qty,
+					qty: computedQty,
 					unit: item.unit,
+					koefisien: koef,
+					identitas_barang_id: item.identitas_barang_id || null,
+					// Tanda non-stok dari baris template ikut dibawa agar tidak terbaca "belum tertaut" oleh G_PKL_INVENTORY_LINK.
+					...(isFlagOn(item.no_item_needed) ? { no_item_needed: true } : {}),
+					...(isFlagOn(item.is_manpower) ? { is_manpower: true } : {}),
 					description: item.description || item.material_name,
 					pic: pic,
 					unit_price: 0,
@@ -1302,8 +1380,8 @@ export async function loadTemplateToProject(
 					packing_status: null,
 					qty_sudah_dikirim: 0
 				})
-			)
-		);
+			);
+		});
 		await Promise.all(promises);
 
 		return {
@@ -1767,4 +1845,80 @@ export async function fetchReturTracking(projectId: number): Promise<import('$li
 		headers = new Map(hs.map((h) => [h.id, h]));
 	}
 	return buildReturTracking(rows, headers);
+}
+
+export interface ProjectAreaInfo {
+	id: number;
+	name: string;
+	lokasi?: string | null;
+	jenis_project?: string | null;
+	total_area_m2?: number | null;
+	objects?: Array<{
+		id: number;
+		nama_objek: string;
+		material?: string;
+		luas?: number;
+		satuan?: string;
+	}>;
+}
+
+/**
+ * Mengambil konteks luasan (m2), lokasi, jenis pekerjaan, dan objek proyek
+ * untuk kebutuhan Smart Template Parametrik Packing List.
+ */
+export async function getProjectAreaInfo(projectId: number): Promise<ProjectAreaInfo | null> {
+	if (!projectId) return null;
+	try {
+		const projectRes = await directus.request(
+			readItem('projects', projectId, {
+				fields: ['id', 'name', 'lokasi', 'jenis_project', 'total_area_m2']
+			})
+		) as any;
+
+		if (!projectRes) return null;
+
+		const areaInfo: ProjectAreaInfo = {
+			id: projectRes.id,
+			name: projectRes.name || '',
+			lokasi: projectRes.lokasi || null,
+			jenis_project: projectRes.jenis_project || null,
+			total_area_m2: projectRes.total_area_m2 ? parseFloat(projectRes.total_area_m2) : null,
+			objects: []
+		};
+
+		// Fetch charter untuk project ini (query terpisah)
+		const charterRes = await directus.request(
+			readItems('project_charters', {
+				filter: { project_id: { _eq: projectId } },
+				fields: ['id', 'nilai_luasan'],
+				limit: 1
+			})
+		) as any[];
+
+		if (charterRes && charterRes.length > 0) {
+			const charterId = charterRes[0].id;
+			const objectsRes = await directus.request(
+				readItems('project_objects', {
+					filter: { project_charter_id: { _eq: charterId } },
+					fields: ['id', 'nama_objek', 'material', 'luas', 'qty', 'satuan'],
+					limit: 50
+				})
+			) as any[];
+
+		if (objectsRes && objectsRes.length > 0) {
+				areaInfo.objects = objectsRes.map((o: any) => ({
+					id: o.id,
+					nama_objek: o.nama_objek || 'Objek',
+					material: o.material || '',
+					luas: o.luas ? parseFloat(o.luas) : undefined,
+					satuan: o.satuan || 'm²'
+				}));
+			}
+		}
+
+		return areaInfo;
+	} catch (e) {
+		console.warn('[getProjectAreaInfo] Gagal memuat info area proyek:', e);
+		return null;
+	}
 }

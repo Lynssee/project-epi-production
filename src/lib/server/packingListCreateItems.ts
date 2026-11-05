@@ -13,7 +13,9 @@ import { directusServerJson } from './directus';
 import { createApprovalRequest } from './approvalSubmit';
 import { createMasterPengajuanEntry } from './masterPengajuanSubmit';
 import { evaluateFieldPLGatesWithDisiplin } from './gates/plDisiplinFieldGates';
+import { loadTemplateFlags } from './gates/plFieldGates';
 import { recordFieldGateOverride } from './gates/plFieldOverride';
+import { notifyFieldAnomaly } from './gates/plFieldAnomalyNotify';
 import { resolvePackingModuleKey } from './packingListSubmit';
 import { formatPlTitle, resolveProjectTitleParts } from './approvalTitle';
 
@@ -32,6 +34,8 @@ async function readNonRapDirekturThreshold(): Promise<number | null> {
 	}
 }
 
+/** Awal pesan error saat gate memblokir; dipakai pemanggil otomatis (mis. laporan urgent) untuk mengenali kegagalan gate. */
+export const GATE_BLOCKED_PREFIX = 'Pengajuan packing list belum bisa dikirim:';
 const num = (v: any) => parseFloat(v || 0) || 0;
 const ERP_EPI_1_ORIGIN = env.ERP_EPI1_BASE_URL || (process.env.NODE_ENV === 'production' ? 'https://internal.eltamaprimaindo.com' : 'http://localhost:9390');
 
@@ -43,10 +47,15 @@ export interface NewPackingItem {
 	unit: string;
 	description?: string | null;
 	identitas_barang_id?: number | null;
+	/** Id baris template asal. Tautan master & flag non-barang dibaca ulang dari baris ini di server. */
+	template_item_id?: number | null;
 	/** Catatan baris project_budgets; dipakai sumber otomatis (mis. kebutuhan urgent laporan) sebagai penanda idempoten. */
 	note?: string | null;
 	/** PRJ-11: estimasi harga satuan barang di luar RAP (Rp). Tanpa ini nominal approval 0 dan approver buta nilainya. */
 	unit_price?: number | null;
+	/** Barang belum ada di Master Katalog: usulkan ke Admin Logistik (identitas_barang_usulan_baru). Diabaikan bila sudah tertaut. */
+	usul_baru?: boolean | null;
+	usul_catatan?: string | null;
 }
 
 export interface CreatePackingItemsInput {
@@ -72,7 +81,7 @@ export async function createPackingItemsRequest({
 }: CreatePackingItemsInput) {
 	if (!projectId) throw new Error('projectId wajib diisi');
 	if (!requesterId) throw new Error('requesterId wajib diisi');
-	const clean = (items || [])
+	const cleaned = (items || [])
 		.map((it) => {
 			const matName = (it?.material_name || it?.description || '').trim();
 			return {
@@ -82,7 +91,19 @@ export async function createPackingItemsRequest({
 			};
 		})
 		.filter((it) => it.material_name && num(it.qty) > 0);
-	if (!clean.length) throw new Error('Minimal 1 item wajib diisi');
+	if (!cleaned.length) throw new Error('Minimal 1 item wajib diisi');
+
+	// Flag non-barang hanya dari baris template di server. Nilai dari klien sengaja dibuang.
+	const tplFlags = await loadTemplateFlags(cleaned.map((it) => it.template_item_id), directusServerJson);
+	const clean = cleaned.map((it) => {
+		const f = it.template_item_id ? tplFlags.get(Number(it.template_item_id)) : undefined;
+		return {
+			...it,
+			identitas_barang_id: f?.identitas_barang_id ?? it.identitas_barang_id ?? null,
+			no_item_needed: !!f?.no_item_needed,
+			is_manpower: !!f?.is_manpower
+		};
+	});
 
 	// --- Gerbang gate PL lapangan (G_PKL_PROJECT hard; stok N/A utk item baru) ---
 	const gateRows = clean.map((it, i) => ({
@@ -91,7 +112,12 @@ export async function createPackingItemsRequest({
 		qty: num(it.qty),
 		identitas_barang_id: it.identitas_barang_id ?? null,
 		material_name: it.material_name,
-		material_color: it.material_color ?? null
+		material_color: it.material_color ?? null,
+		budget_category: it.budget_category ?? null,
+		unit: it.unit ?? null,
+		no_item_needed: it.no_item_needed,
+		is_manpower: it.is_manpower,
+		usul_baru: !!it.usul_baru && !it.identitas_barang_id
 	}));
 	const gateRes = await evaluateFieldPLGatesWithDisiplin(gateRows, directusServerJson, { overrideAllowed });
 	if (gateRes.blocking.length) {
@@ -99,8 +125,10 @@ export async function createPackingItemsRequest({
 			.filter((g) => g.status === 'failed' && g.severity === 'WAJIB')
 			.map((g) => `• ${g.label}: ${g.message}`)
 			.join('\n');
-		throw new Error(`Pengajuan packing list belum bisa dikirim:\n${detail}`);
+		throw new Error(`${GATE_BLOCKED_PREFIX}\n${detail}`);
 	}
+	// Early warning n8n bila qty ekstrem (best-effort, dedupe; biaya API nol bila webhook belum diset) — tidak menahan pengajuan.
+	void notifyFieldAnomaly(gateRows, directusServerJson, { source: 'field_create_items' });
 
 	// --- Buat baris project_budgets: SATU batch POST (array) — bukan satu POST per item (PRJ-11) ---
 	const now = new Date().toISOString();
@@ -143,7 +171,9 @@ export async function createPackingItemsRequest({
 		qty_sudah_dikirim: 0,
 		requested_at: now,
 		...(item.note ? { note: item.note } : {}),
-		...(item.identitas_barang_id ? { identitas_barang_id: item.identitas_barang_id } : {})
+		...(item.identitas_barang_id ? { identitas_barang_id: item.identitas_barang_id } : {}),
+		...(item.no_item_needed ? { no_item_needed: true } : {}),
+		...(item.is_manpower ? { is_manpower: true } : {})
 	}));
 	const createdRes: any = await directusServerJson('/items/project_budgets', { method: 'POST', body: JSON.stringify(rows) });
 	const created: any[] = Array.isArray(createdRes?.data) ? createdRes.data : createdRes?.data ? [createdRes.data] : [];
@@ -218,6 +248,8 @@ export async function createPackingItemsRequest({
 		sourceApp: 'field'
 	}).catch((e: any) => console.warn('[packingListCreateItems] gagal katalog PKL (diabaikan):', e?.message));
 
+	const usulanCount = await createNewItemProposals(clean, ids, requesterId);
+
 	if (gateRes.overridden.length && firebaseUid) {
 		void recordFieldGateOverride({
 			firebaseUid,
@@ -227,7 +259,38 @@ export async function createPackingItemsRequest({
 		});
 	}
 
-	return { itemIds: ids, approvalRequestId };
+	return { itemIds: ids, approvalRequestId, usulanCount };
+}
+
+/**
+ * Catat usulan barang baru (koleksi identitas_barang_usulan_baru) untuk baris yang ditandai leader dan belum tertaut.
+ * Fail-soft: pengajuan PL sudah sah, kegagalan hanya dilog agar leader tidak kehilangan PL-nya.
+ */
+async function createNewItemProposals(
+	clean: Array<NewPackingItem & { identitas_barang_id?: number | null; no_item_needed?: boolean; is_manpower?: boolean }>,
+	ids: Array<number | string>,
+	requesterId: number
+): Promise<number> {
+	const proposals = clean
+		.map((it, i) => ({ it, id: ids[i] }))
+		.filter(({ it, id }) => id && it.usul_baru && !it.identitas_barang_id && !it.no_item_needed && !it.is_manpower)
+		.map(({ it, id }) => ({
+			project_budget_id: id,
+			usulan_nama: String(it.material_name || '').trim().slice(0, 255),
+			usulan_satuan: String(it.unit || '').trim().slice(0, 50) || null,
+			usulan_kategori: String(it.budget_category || '').trim().slice(0, 50) || null,
+			catatan: it.usul_catatan ? String(it.usul_catatan).trim().slice(0, 1000) : null,
+			status: 'menunggu',
+			diusulkan_oleh_karyawan_id: requesterId
+		}));
+	if (!proposals.length) return 0;
+	try {
+		await directusServerJson('/items/identitas_barang_usulan_baru', { method: 'POST', body: JSON.stringify(proposals) });
+		return proposals.length;
+	} catch (e: any) {
+		console.error('[packingListCreateItems] gagal mencatat usulan barang baru (PL tetap terkirim):', e?.message || e);
+		return 0;
+	}
 }
 
 /** Hapus baris project_budgets yang baru dibuat di request ini (best-effort, dilog bila gagal). */

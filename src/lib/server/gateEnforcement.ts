@@ -45,7 +45,10 @@ export type FieldGateKey =
 	| 'G_INV_NON_ELTAMA_RETURN_BLOCK'
 	| 'G_PRJ_NON_ELTAMA_ASSET_CLOSEOUT'
 	| 'G_RTN_DOBEL'
-	| 'G_SJ_MUAT_DISCAN';
+	| 'G_SJ_MUAT_DISCAN'
+	| 'G_ESS_VISIT_PLAN_REQUIRED'
+	| 'G_ESS_VISIT_PLAN_VS_ACTUAL'
+	| 'G_ESS_CLOCKOUT_COMPLETE';
 
 const FIELD_GATE_KEYS: FieldGateKey[] = [
 	'G_RMR_VISIT',
@@ -60,14 +63,23 @@ const FIELD_GATE_KEYS: FieldGateKey[] = [
 	'G_INV_NON_ELTAMA_RETURN_BLOCK',
 	'G_PRJ_NON_ELTAMA_ASSET_CLOSEOUT',
 	'G_RTN_DOBEL',
-	'G_SJ_MUAT_DISCAN'
+	'G_SJ_MUAT_DISCAN',
+	'G_ESS_VISIT_PLAN_REQUIRED',
+	'G_ESS_VISIT_PLAN_VS_ACTUAL',
+	'G_ESS_CLOCKOUT_COMPLETE'
 ];
 
 let cache: { at: number; byGateKey: Map<string, GateEnforcementRow> } | null = null;
 
 // Revisi 4 (Aturan #11): gate BARU berikut juga mengikuti MODE UTAMA di /settings/gates (gate_definitions.default_mode)
 // bila belum ada baris override gate_enforcement '*'. Gate lama SENGAJA tidak ikut (nol perubahan perilaku — Aturan #3).
-const FALLBACK_DEFINISI = new Set<string>(['G_RTN_DOBEL', 'G_SJ_MUAT_DISCAN']);
+const FALLBACK_DEFINISI = new Set<string>([
+	'G_RTN_DOBEL',
+	'G_SJ_MUAT_DISCAN',
+	'G_ESS_VISIT_PLAN_REQUIRED',
+	'G_ESS_VISIT_PLAN_VS_ACTUAL',
+	'G_ESS_CLOCKOUT_COMPLETE'
+]);
 let defCache: { at: number; byGateKey: Map<string, { mode: GateMode; enforce_from: string | null }> } | null = null;
 
 async function loadDefinisi(): Promise<Map<string, { mode: GateMode; enforce_from: string | null }>> {

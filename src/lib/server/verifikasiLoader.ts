@@ -16,10 +16,11 @@ export interface VerifikasiView {
 	nominal_label: string;
 }
 
-const JENIS_LABEL: Record<JenisVerifikasi, string> = { pa: 'Pengajuan Anggaran', bdp: 'Voucher Pembayaran Kolektif' };
+const JENIS_LABEL: Record<JenisVerifikasi, string> = { pa: 'Pengajuan Anggaran', bdp: 'Voucher Pembayaran Kolektif', grand_po: 'Dossier Grand PO Konsolidasi' };
 
 const PA_FIELDS = 'id,nomor_pengajuan,status,date_created,jumlah_disetujui,total_amount';
 const BDP_FIELDS = 'id,nomor_voucher,status,tanggal_bayar,date_created,total_amount';
+const GRAND_PO_FIELDS = 'id,nomor_gpo,nama,status,date_created,total_nilai_kontrak,nilai_kontrak_total,total_amount';
 
 /** WHITELIST: hanya field publik yang dikembalikan. */
 export function toPublicView(jenis: JenisVerifikasi, raw: any): VerifikasiView | null {
@@ -36,20 +37,36 @@ export function toPublicView(jenis: JenisVerifikasi, raw: any): VerifikasiView |
 			nominal_label: disetujui > 0 ? 'Nominal disetujui' : 'Nominal diajukan'
 		};
 	}
+	if (jenis === 'bdp') {
+		return {
+			jenis,
+			jenis_label: JENIS_LABEL.bdp,
+			nomor: String(raw.nomor_voucher || `#${raw.id ?? ''}`),
+			status: String(raw.status || '-'),
+			tanggal: raw.tanggal_bayar ? String(raw.tanggal_bayar) : raw.date_created ? String(raw.date_created) : null,
+			nominal: Number(raw.total_amount) || 0,
+			nominal_label: 'Total terbayar'
+		};
+	}
 	return {
 		jenis,
-		jenis_label: JENIS_LABEL.bdp,
-		nomor: String(raw.nomor_voucher || `#${raw.id ?? ''}`),
-		status: String(raw.status || '-'),
-		tanggal: raw.tanggal_bayar ? String(raw.tanggal_bayar) : raw.date_created ? String(raw.date_created) : null,
-		nominal: Number(raw.total_amount) || 0,
-		nominal_label: 'Total terbayar'
+		jenis_label: JENIS_LABEL.grand_po,
+		nomor: String(raw.nomor_gpo || `#${raw.id ?? ''}`),
+		status: String(raw.status || 'AKTIF'),
+		tanggal: raw.date_created ? String(raw.date_created) : null,
+		nominal: Number(raw.total_nilai_kontrak || raw.nilai_kontrak_total || raw.total_amount) || 0,
+		nominal_label: 'Nilai Kontrak / PO'
 	};
 }
 
 /** @returns null bila dokumen tidak ada / gagal dimuat (pemanggil memberi respons seragam). */
 export async function loadVerifikasi(jenis: JenisVerifikasi, id: string): Promise<VerifikasiView | null> {
-	const path = jenis === 'pa' ? `/items/pengajuan_anggaran/${id}?fields=${PA_FIELDS}` : `/items/batch_disbursement/${id}?fields=${BDP_FIELDS}`;
+	const path =
+		jenis === 'pa'
+			? `/items/pengajuan_anggaran/${id}?fields=${PA_FIELDS}`
+			: jenis === 'bdp'
+			? `/items/batch_disbursement/${id}?fields=${BDP_FIELDS}`
+			: `/items/grand_po/${id}?fields=${GRAND_PO_FIELDS}`;
 	try {
 		const res = await directusServerJson<{ data: any }>(path);
 		return toPublicView(jenis, res?.data);

@@ -25,6 +25,9 @@ export interface ProjectCostPosition {
 	overhead_allocated: number; // dari project_cost_allocations (Fase 4)
 	contract_billed: number; // Σ invoices.paid_amount proyek ini
 	position_vs_bep: number | null; // (contract_billed - variable_realized) / overhead_allocated
+	net_cash: number; // contract_billed - variable_realized (minus = talangan kantor)
+	is_cash_deficit: boolean; // net_cash < 0
+	cash_deficit_amount: number; // Math.max(0, -net_cash)
 	// flag tampilan
 	show_rupiah: boolean;
 	show_overhead_nominal: boolean;
@@ -105,6 +108,10 @@ export async function getProjectCostPosition(projectId: number): Promise<Project
 	const positionVsBep =
 		overheadAllocated > 0 ? (contractBilled - variableRealized) / overheadAllocated : null;
 
+	const netCash = contractBilled - variableRealized;
+	const isCashDeficit = netCash < 0;
+	const cashDeficitAmount = Math.max(0, -netCash);
+
 	return {
 		project_id: Number(projectId),
 		variable_realized: variableRealized,
@@ -118,6 +125,9 @@ export async function getProjectCostPosition(projectId: number): Promise<Project
 		overhead_allocated: overheadAllocated,
 		contract_billed: contractBilled,
 		position_vs_bep: positionVsBep,
+		net_cash: netCash,
+		is_cash_deficit: isCashDeficit,
+		cash_deficit_amount: cashDeficitAmount,
 		show_rupiah: showRupiah,
 		show_overhead_nominal: showOverheadNominal,
 		has_overhead: overheadAllocated > 0

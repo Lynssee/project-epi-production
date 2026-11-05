@@ -4,12 +4,14 @@
 // ID berbeda (lihat catatan di grCondition.ts) — union, bukan satu bentuk gabungan.
 import { z } from 'zod';
 
-const grConditionSchema = z.enum(['ok', 'kurang', 'rusak']);
+const grConditionSchema = z.enum(['ok', 'kurang', 'rusak', 'salah_spek']);
 
 const grRabItemSchema = z.object({
 	project_expense_id: z.coerce.number().int().positive(),
 	qty_received: z.coerce.number().finite().nonnegative(),
-	condition: grConditionSchema
+	condition: grConditionSchema,
+	// "Titip balik ke supir" — hanya bermakna untuk condition 'salah_spek'; dicatat di antrean Barang Bermasalah.
+	backhaul: z.boolean().optional()
 });
 
 const grGenericItemSchema = z.object({

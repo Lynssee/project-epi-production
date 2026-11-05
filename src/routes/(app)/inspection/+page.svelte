@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PintasanBelajar from '$lib/components/ess/PintasanBelajar.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -7,6 +8,7 @@
 	import { hasPermission } from '$lib/constants/permissions';
 	import { fetchMyReports, type InspectionReport } from '$lib/services/inspectionApi';
 	import { IconClipboardCheck, IconPlus, IconChevronRight, IconLoader2, IconAlertTriangle } from '@tabler/icons-svelte';
+	import FloatingSopHint from '$lib/components/help/FloatingSopHint.svelte';
 
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -49,8 +51,17 @@
 </script>
 
 <div class="max-w-7xl mx-auto p-4 md:p-6 pb-20">
+	<PintasanBelajar konteks="inspection" />
 	<div class="flex items-center justify-between mb-1">
 		<h1 class="text-[18px] md:text-xl font-bold" style="color: var(--sys-label)">Inspection Report</h1>
+		<div class="flex items-center gap-2">
+			<a
+				href="/panduan/alur?alur=field_wet_film_thickness_wft_comb_gauge_monitoring"
+				class="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[12px] font-semibold border border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100 transition-colors"
+				title="Lihat Instruksi Kerja (IK) Pengukuran & Inspeksi Mutu QC"
+			>
+				<span>📄 IK Inspeksi QC</span>
+			</a>
 		<button
 			class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold text-white"
 			style="background: var(--g)"
@@ -58,6 +69,7 @@
 		>
 			<IconPlus size={14} /> Buat Baru
 		</button>
+		</div>
 	</div>
 	<p class="text-[12px] md:text-[14px] mb-4" style="color: var(--sys-label3)">Blasting & Painting Inspection Report (BPIR) — laporan Anda</p>
 
@@ -115,4 +127,6 @@
 			{/each}
 		</div>
 	{/if}
+
+	<FloatingSopHint stageId={3} activeGateKey="G_QC_HOLD_POINT" buttonLabel="SOP & Gate QC" />
 </div>

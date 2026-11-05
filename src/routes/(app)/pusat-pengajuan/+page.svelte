@@ -1,5 +1,7 @@
 <script lang="ts">
+	import PintasanBelajar from '$lib/components/ess/PintasanBelajar.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
+	import ProcessStepPeek from '$lib/components/help/ProcessStepPeek.svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { authStore } from '$lib/stores/auth';
@@ -159,10 +161,12 @@
 </script>
 
 <div class="w-full p-4 md:p-6 pb-28 max-w-4xl mx-auto">
+	<PintasanBelajar konteks="pengajuan" />
 	<!-- Header -->
 	<div class="flex items-center justify-between mb-6">
 		<div>
 			<h1 class="text-2xl md:text-3xl font-extrabold tracking-tight gradient-text">Pusat Pengajuan</h1>
+			<div class="mt-1"><ProcessStepPeek fokus="pengajuan" label="Lihat alur pengajuan &amp; gate" /></div>
 			<p class="text-sm mt-1 font-medium" style="color: var(--sys-label3)">
 				Semua jenis pengajuan dalam satu tempat
 			</p>

@@ -2,6 +2,7 @@
 <!-- Fase 3: halaman utama Site Check-in modern & terpadu. Cakupan: seluruh karyawan ber-access_ess
      (rollout penuh) — didukung validasi GPS, foto watermark, multi-site 1 hari, & laporan kunjungan. -->
 <script lang="ts">
+	import StepChecklistBanner from '$lib/components/help/StepChecklistBanner.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
@@ -24,6 +25,8 @@
 	import CheckinForm from '$lib/components/site-checkin/CheckinForm.svelte';
 	import CheckoutDialog from '$lib/components/site-checkin/CheckoutDialog.svelte';
 	import JourneyTimeline from '$lib/components/site-checkin/JourneyTimeline.svelte';
+	import VisitPlanningSection from '$lib/components/site-checkin/VisitPlanningSection.svelte';
+	import type { SiteVisitPlanRecord } from '$lib/services/siteCheckin';
 	import { SectionGuide } from '$lib/components/hints';
 	import { essHints } from '$lib/data/hints/ess';
 	import { getHint } from '$lib/data/hints/getHint';
@@ -42,6 +45,12 @@
 	let showLocalCheckout = $state(false);
 	let showSwitchCheckinForm = $state(false);
 	let refreshKey = $state(0);
+	let selectedPlan = $state<SiteVisitPlanRecord | null>(null);
+
+	function handleSelectPlanForCheckin(plan: SiteVisitPlanRecord) {
+		selectedPlan = plan;
+		showSwitchCheckinForm = true;
+	}
 	let elapsedString = $state('');
 	let timerInterval: ReturnType<typeof setInterval> | undefined;
 
@@ -212,6 +221,7 @@
 	});
 
 	function handleCheckinSuccess() {
+		selectedPlan = null;
 		refreshKey++;
 		showSwitchCheckinForm = false;
 		load();
@@ -272,6 +282,8 @@
 			<span>{todayFormatted}</span>
 		</div>
 	</div>
+
+	<StepChecklistBanner alur="project_field_execution" fokus="prj_mobilisasi" judul="Syarat Check-in Site" />
 
 	<!-- Main Page Title & Intro -->
 	<div class="flex flex-col gap-1">
@@ -443,13 +455,34 @@
 			</div>
 		{/if}
 
+		{#if selectedPlan}
+			<div class="p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-blue-900 dark:text-blue-200 text-xs flex items-center justify-between gap-3 mb-2" transition:slide={{ duration: 180 }}>
+				<div>
+					<p class="font-bold">Check-in Terjadwal: {selectedPlan.nama_lokasi}</p>
+					<p class="text-[11px] opacity-90">Rencana jam {selectedPlan.planned_start_time} - {selectedPlan.planned_end_time} WIB</p>
+				</div>
+				<button
+					type="button"
+					class="text-xs font-bold text-blue-800 dark:text-blue-300 underline shrink-0"
+					onclick={() => (selectedPlan = null)}
+				>
+					Lepas Tautan
+				</button>
+			</div>
+		{/if}
 		<CheckinForm
 			onSuccess={handleCheckinSuccess}
 			presetBookingId={siteVisitBookingId}
 			presetProjectId={siteVisitProjectId}
 			presetBookingCode={siteVisitBookingCode}
+			presetPlanId={selectedPlan?.id || null}
 		/>
 	{/if}
+
+	<!-- Rencana Kunjungan Lapangan (Planning Site Visit) -->
+	<div class="mt-2">
+		<VisitPlanningSection onSelectPlanForCheckin={handleSelectPlanForCheckin} />
+	</div>
 
 	<!-- Today's Journey Timeline -->
 	<div class="mt-4 pt-5 border-t border-slate-200/80 dark:border-slate-800">

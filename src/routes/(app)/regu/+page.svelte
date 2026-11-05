@@ -1,5 +1,8 @@
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
+	import KioskProyekTab from '$lib/components/regu/KioskProyekTab.svelte';
+	import { absensiNormal, alasanAnomali } from '$lib/shared/kioskFlags';
+	import { verifikasiMassal } from '$lib/services/kioskProyekLeader';
 	// Regu Saya — layar Manpower Leader (posisi tertinggi di lapangan).
 	// Dokumen: erp-epi-1/docs/rencana-manpower-leader.md
 	//
@@ -41,7 +44,7 @@
 
 	let loading = $state(true);
 	let busyId = $state<number | null>(null);
-	let tab = $state<'regu' | 'verifikasi' | 'lembur' | 'kesiapan'>('regu');
+	let tab = $state<'regu' | 'verifikasi' | 'lembur' | 'kesiapan' | 'kiosk'>('regu');
 	let gayaMap = $state<Record<number, { profil: string; tip: string }>>({});
 
 	let proyek = $state<ProyekDipimpin[]>([]);
@@ -77,6 +80,30 @@
 	const proyekAktif = $derived(proyek.find((p) => p.id === selectedProjectId) || null);
 
 	const mpIdOf = (v: any) => (v && typeof v === 'object' ? v.id : v);
+
+	// Verifikasi massal (Kiosk Proyek, Fase 2): baris anomali tampil dulu & wajib dilihat satu per satu;
+	// baris normal boleh disetujui sekali tekan. Server menilai ulang — klien hanya mengirim id.
+	let massalBusy = $state(false);
+	const antrianTerurut = $derived([...antrian].sort((a, b) => Number(absensiNormal(a)) - Number(absensiNormal(b))));
+	const normalIds = $derived(
+		antrian.filter((r) => absensiNormal(r) && bolehVerifikasi(manpowerId, Number(mpIdOf(r.manpower_id)))).map((r) => r.id)
+	);
+	const jumlahAnomali = $derived(antrian.filter((r) => !absensiNormal(r)).length);
+
+	async function setujuiMassal() {
+		if (!selectedProjectId || !normalIds.length || massalBusy) return;
+		if (!confirm(`Setujui ${normalIds.length} absensi normal (di dalam radius, tanpa penanda)?`)) return;
+		massalBusy = true;
+		try {
+			const r = await verifikasiMassal(selectedProjectId, normalIds);
+			if (r.dilewati.length) alert(`${r.disetujui} disetujui. ${r.dilewati.length} dilewati karena perlu diperiksa satu per satu.`);
+			await muatProyek();
+		} catch (e) {
+			alert((e as Error).message || 'Gagal menyetujui massal');
+		} finally {
+			massalBusy = false;
+		}
+	}
 
 	onMount(async () => {
 		getManpowerSetting('backfill_absensi_max_hari').then((v) => (maxBackfillHari = v)).catch(() => {});
@@ -440,6 +467,11 @@
 				onclick={bukaKesiapan}
 				class="px-3 py-2 text-sm font-semibold border-b-2 {tab === 'kesiapan' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-gray-500'}"
 			>Kesiapan</button>
+			<button
+				onclick={() => (tab = 'kiosk')}
+				title="Aktifkan HP/tablet kiosk agar kru bisa absen sendiri"
+				class="px-3 py-2 text-sm font-semibold border-b-2 {tab === 'kiosk' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-gray-500'}"
+			>Kiosk</button>
 		</div>
 
 		{#if tab === 'regu'}
@@ -520,6 +552,12 @@
 					{/each}
 				</div>
 			{/if}
+		{:else if tab === 'kiosk'}
+			{#if selectedProjectId}
+				{#key selectedProjectId}
+					<KioskProyekTab projectId={selectedProjectId} projectName={proyek.find((p) => Number(p.id) === Number(selectedProjectId))?.name ?? ''} />
+				{/key}
+			{/if}
 		{:else if tab === 'kesiapan'}
 			<div class="space-y-3">
 				<p class="text-xs text-gray-600">
@@ -575,18 +613,28 @@
 			{:else if antrian.length === 0}
 				<p class="text-sm text-gray-500 py-8 text-center">Tidak ada absensi yang menunggu verifikasi.</p>
 			{:else}
+				{#if normalIds.length > 0}
+					<div class="p-3 mb-3 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2">
+						<p class="text-xs text-emerald-900"><b>{normalIds.length}</b> absensi normal (di dalam radius, tanpa penanda){#if jumlahAnomali > 0} · <b class="text-amber-700">{jumlahAnomali} perlu diperiksa</b> (di atas){/if}</p>
+						<button onclick={setujuiMassal} disabled={massalBusy} class="shrink-0 px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold disabled:opacity-50" title="Setujui semua absensi yang normal sekaligus. Yang anomali tidak ikut.">{massalBusy ? 'Memproses…' : 'Setujui semua normal'}</button>
+					</div>
+				{/if}
 				<div class="space-y-2">
-					{#each antrian as row (row.id)}
+					{#each antrianTerurut as row (row.id)}
 						{@const bolehPutuskan = bolehVerifikasi(manpowerId, Number(mpIdOf(row.manpower_id)))}
-						<div class="p-3 rounded-lg border border-gray-200 bg-white">
+						{@const anomali = alasanAnomali(row)}
+						<div class="p-3 rounded-lg border bg-white {anomali.length ? 'border-amber-300' : 'border-gray-200'}">
 							<div class="flex items-center justify-between gap-2">
 								<div class="min-w-0">
 									<div class="font-semibold text-sm truncate">{row.manpower_id?.nama || `#${mpIdOf(row.manpower_id)}`}</div>
 									<div class="text-xs text-gray-500">
 										{row.tanggal} · {row.status}
 										{#if row.jam_kerja} · {row.jam_kerja} jam{/if}
-										{#if row.metode_catat === 'leader'} · dicatat leader{/if}
+										{#if row.metode_catat === 'leader'} · dicatat leader{:else if row.metode_catat === 'kiosk_rekan'} · via kiosk bersama{:else if row.metode_catat === 'kiosk_mandiri'} · via HP sendiri{/if}
 									</div>
+									{#if anomali.length}
+										<ul class="mt-1 text-[11px] text-amber-700 list-disc pl-4">{#each anomali as a}<li>{a}</li>{/each}</ul>
+									{/if}
 								</div>
 								{#if row.dikunci}
 									<span class="shrink-0 text-[11px] font-semibold text-gray-400">Terkunci</span>

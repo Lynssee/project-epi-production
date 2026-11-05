@@ -63,6 +63,7 @@ interface CheckinParams {
 	// SV-12 (skema disetujui Lead 26 Sep 2026): UUID dari antrean offline — server dedup exact-match
 	// terhadap site_checkin.client_txn_id (unique). Kosong untuk check-in online biasa.
 	clientTxnId?: string | null;
+	planId?: string | number | null;
 }
 
 /** Penajaman SDM v2 Fase 5 — navigator.connection tidak distandarkan semua browser (Safari/iOS
@@ -99,6 +100,7 @@ export async function submitCheckin(params: CheckinParams): Promise<{ record: Si
 	formData.append('foto', compressed, compressed.name || 'checkin.jpg');
 	if (params.catatan) formData.append('catatan', params.catatan);
 	if (params.bookingId) formData.append('booking_id', String(params.bookingId));
+	if (params.planId) formData.append('plan_id', String(params.planId));
 	if (params.tipeKeperluan) formData.append('tipe_keperluan', params.tipeKeperluan);
 	if (params.clientCreatedAt) formData.append('client_created_at', params.clientCreatedAt);
 	if (params.clientTxnId) formData.append('client_txn_id', params.clientTxnId);
@@ -218,6 +220,10 @@ export interface SiteCheckinProjectOption {
 	tier_absensi: string | null;
 	// Paket 04 §3.7 — untuk debugging: dari jalur mana proyek ini masuk daftar.
 	sumber_cocok?: 'leader_id' | 'nama' | 'manpower' | 'kunjungan';
+	// GPM-C11 — grup site (satu lokasi, banyak PO). Kosong/0 bila proyek tidak punya grup.
+	site_id?: number | null;
+	site_nama?: string | null;
+	site_jumlah?: number;
 }
 
 // Paket 04 §3.7 — q opsional: kotak cari "Cari proyek lain…" (>=2 huruf) untuk mencari proyek
@@ -441,6 +447,85 @@ export async function getSiteCheckinSettings(): Promise<{ settings: SiteCheckinS
 	const res = await fetchWithTimeout(
 		'/api/site-checkin/settings',
 		{ headers: { Authorization: `Bearer ${idToken}` } },
+		15_000
+	);
+	if (!res.ok) await throwHttpError(res);
+	return res.json();
+}
+
+export interface SiteVisitPlanRecord {
+	id: string | number;
+	karyawan_id: string;
+	tanggal_rencana: string;
+	planned_start_time: string;
+	planned_end_time: string;
+	planned_agenda: string;
+	nama_lokasi: string;
+	tipe_checkin: string;
+	referensi_id?: number | null;
+	is_planned: boolean;
+	plan_status: 'planned' | 'checked_in' | 'completed' | 'missed' | 'cancelled';
+	alasan_deviasi?: string | null;
+	check_in_at?: string | null;
+	check_out_at?: string | null;
+	durasi_menit?: number | null;
+	status?: string | null;
+}
+
+export async function getVisitPlans(tanggal?: string): Promise<{ plans: SiteVisitPlanRecord[] }> {
+	const idToken = await getIdToken();
+	const qs = tanggal ? `?tanggal=${encodeURIComponent(tanggal)}` : '';
+	const res = await fetchWithTimeout(
+		`/api/site-checkin/planning${qs}`,
+		{ headers: { Authorization: `Bearer ${idToken}` } },
+		15_000
+	);
+	if (!res.ok) await throwHttpError(res);
+	return res.json();
+}
+
+export async function createVisitPlan(input: {
+	tanggal_rencana?: string;
+	planned_start_time: string;
+	planned_end_time: string;
+	nama_lokasi: string;
+	planned_agenda: string;
+	tipe_checkin?: string;
+	referensi_id?: number | null;
+}): Promise<{ success: boolean; plan: SiteVisitPlanRecord }> {
+	const idToken = await getIdToken();
+	const res = await fetchWithTimeout(
+		'/api/site-checkin/planning',
+		{
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${idToken}`,
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(input)
+		},
+		15_000
+	);
+	if (!res.ok) await throwHttpError(res);
+	return res.json();
+}
+
+export async function updateVisitPlanStatus(
+	id: string | number,
+	action: 'cancel' | 'deviate',
+	alasan_deviasi: string
+): Promise<{ success: boolean; plan: SiteVisitPlanRecord }> {
+	const idToken = await getIdToken();
+	const res = await fetchWithTimeout(
+		'/api/site-checkin/planning',
+		{
+			method: 'PATCH',
+			headers: {
+				Authorization: `Bearer ${idToken}`,
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ id, action, alasan_deviasi })
+		},
 		15_000
 	);
 	if (!res.ok) await throwHttpError(res);

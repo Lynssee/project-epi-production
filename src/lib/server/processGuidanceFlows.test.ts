@@ -23,7 +23,7 @@ describe('loadPublishedFlowsForField', () => {
 		const flows = await loadPublishedFlowsForField();
 		expect(flows).toHaveLength(1);
 		expect(flows[0].nodes[0].actions).toEqual([{ label: 'L', href: '/x' }]);
-		expect((flows[0].nodes[0] as any).gates).toBeUndefined();
+		expect(flows[0].nodes[0].gates).toEqual([{ key: 'G', modul: 'm', documentType: 'd' }]);
 		expect(mock).toHaveBeenCalledTimes(1);
 		const url = mock.mock.calls[0][0] as string;
 		expect(url).toContain('filter[status][_eq]=published');

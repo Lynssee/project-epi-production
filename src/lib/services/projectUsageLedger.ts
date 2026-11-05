@@ -31,6 +31,36 @@ export interface UsageLedgerResult {
 	note?: string;
 }
 
+export interface KomplainLockVerdict {
+	mode: 'shadow' | 'soft' | 'warn' | 'hard';
+	decision: 'pass' | 'warn' | 'block';
+	locks: Array<{ itemId: number; namaBarang: string; logId: number; jenis: string; nomorSj: string | null }>;
+	message: string | null;
+}
+
+/**
+ * Pra-cek gate G_PROYEK_KOMPLAIN_LOCK sebelum laporan harian disimpan: adakah barang yang akan dilaporkan terpakai tetapi sedang
+ * dikomplain di proyek ini? Fail-open: gangguan jaringan/server => null (laporan tidak boleh macet karena gate), dicatat di console.
+ */
+export async function checkKomplainLock(projectId: number, itemIds: number[]): Promise<KomplainLockVerdict | null> {
+	const ids = [...new Set(itemIds.filter((n) => Number.isFinite(n) && n > 0))];
+	if (!ids.length) return null;
+	try {
+		const res = await authedFetch('/api/inventory-proyek/komplain-lock', {
+			method: 'POST',
+			body: JSON.stringify({ projectId, itemIds: ids })
+		});
+		if (!res.ok) {
+			console.warn('[komplain-lock] pra-cek gagal, dilewati:', res.status);
+			return null;
+		}
+		return (await res.json()) as KomplainLockVerdict;
+	} catch (e) {
+		console.warn('[komplain-lock] pra-cek gagal, dilewati:', e instanceof Error ? e.message : e);
+		return null;
+	}
+}
+
 /**
  * Kirim delta pemakaian material hasil laporan harian ke ledger. Aman dipanggil untuk proyek
  * mana pun -- server yang memutuskan apakah proyeknya pilot Fase 2 atau bukan (non-pilot

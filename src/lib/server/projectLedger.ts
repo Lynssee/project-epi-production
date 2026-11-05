@@ -157,13 +157,69 @@ interface BalanceGroup {
 }
 
 /**
+ * Pilih satu baris yang dipertahankan (id terkecil) per kunci; sisanya duplikat yang aman dihapus
+ * (project_stock_balance = cache turunan ledger, selalu bisa dibangun ulang). Murni — bisa dites tanpa Directus.
+ * Kunci null/undefined = baris diabaikan.
+ */
+export function splitBalanceDuplicates<T extends { id: number }>(
+	rows: T[] | null | undefined,
+	keyOf: (row: T) => string | number | null | undefined
+): { keep: Map<string | number, number>; extraIds: number[] } {
+	const keep = new Map<string | number, number>();
+	const extraIds: number[] = [];
+	for (const r of [...(rows || [])].sort((a, b) => Number(a.id) - Number(b.id))) {
+		const k = keyOf(r);
+		if (k === null || k === undefined) continue;
+		if (keep.has(k)) extraIds.push(r.id);
+		else keep.set(k, r.id);
+	}
+	return { keep, extraIds };
+}
+
+// Rebuild per proyek diserialkan: pemanggilan berulang/bersamaan sebelumnya berjalan tumpang-tindih, semuanya melihat
+// "belum ada baris saldo" lalu sama-sama POST → baris kembar. Satu rebuild berjalan; panggilan yang datang saat itu berbagi
+// SATU putaran lanjutan (agar ledger yang ditulis setelah rebuild berjalan membaca ledger tetap terhitung).
+const rebuildState = new Map<number, { running: Promise<RebuildResult> | null; pending: Promise<RebuildResult> | null }>();
+
+type RebuildResult = { groupsProcessed: number; ledgerRowsScanned: number; duplicatesRemoved: number; rebuiltAt: string };
+
+/**
  * Hitung ulang project_stock_balance dari project_stock_ledger. Aman dipanggil kapan saja —
  * cache boleh dianggap sampah dan dibangun ulang total (Bab 7.1). Dipanggil oleh cron n8n
  * harian (Bab 11, workflow #4) dan sekali manual saat inisialisasi Fase 2.
+ * Scope projectId: dipanggil bersamaan akan diserialkan dan baris saldo kembar otomatis dirapikan.
  *
  * @param scope kosongkan untuk rebuild semua proyek (bisa berat untuk ledger besar).
  */
-export async function rebuildProjectStockBalance(scope: { projectId?: number } = {}) {
+export function rebuildProjectStockBalance(scope: { projectId?: number } = {}): Promise<RebuildResult> {
+	const key = Number(scope?.projectId);
+	if (!key) return runRebuild(scope);
+
+	let st = rebuildState.get(key);
+	if (!st) {
+		st = { running: null, pending: null };
+		rebuildState.set(key, st);
+	}
+	const state = st;
+	if (!state.running) {
+		state.running = runRebuild(scope).finally(() => {
+			state.running = null;
+			if (!state.pending) rebuildState.delete(key);
+		});
+		return state.running;
+	}
+	if (!state.pending) {
+		state.pending = state.running
+			.catch(() => {})
+			.then(() => {
+				state.pending = null;
+				return rebuildProjectStockBalance(scope);
+			});
+	}
+	return state.pending;
+}
+
+async function runRebuild(scope: { projectId?: number } = {}): Promise<RebuildResult> {
 	const { projectId } = scope;
 
 	const filter = projectId ? { project_id: { _eq: projectId } } : {};
@@ -175,7 +231,7 @@ export async function rebuildProjectStockBalance(scope: { projectId?: number } =
 		const query = new URLSearchParams({
 			filter: JSON.stringify(filter),
 			fields: 'project_id,item_id,transaction_type,quantity,date_created,ownership_type,owner_name',
-			sort: 'date_created',
+			sort: 'date_created,id',
 			limit: String(pageSize),
 			page: String(page)
 		});
@@ -225,6 +281,33 @@ export async function rebuildProjectStockBalance(scope: { projectId?: number } =
 
 	const now = new Date().toISOString();
 	let upserted = 0;
+	let duplicatesRemoved = 0;
+
+	// Rapikan baris saldo kembar (project_id, item_id, ownership_type) yang tersisa dari rebuild tumpang-tindih lama.
+	// Scope proyek saja: sekali baca per proyek, lalu pencarian per grup di bawah memakai id yang dipertahankan.
+	let keptByKey: Map<string | number, number> | null = null;
+	if (projectId) {
+		const balRes = await directusServerJson<{ data: any[] }>(
+			`/items/project_stock_balance?filter[project_id][_eq]=${projectId}&fields=id,item_id,ownership_type&limit=-1`
+		).catch(() => null);
+		if (balRes) {
+			const { keep, extraIds } = splitBalanceDuplicates(balRes.data || [], (b) => {
+				const iId = typeof b.item_id === 'object' ? b.item_id?.id : b.item_id;
+				return iId ? `${iId}:${b.ownership_type || 'eltama'}` : null;
+			});
+			keptByKey = keep;
+			if (extraIds.length) {
+				try {
+					await directusServerJson('/items/project_stock_balance', { method: 'DELETE', body: JSON.stringify({ keys: extraIds }) });
+					duplicatesRemoved = extraIds.length;
+					console.warn(`[projectLedger] proyek ${projectId}: ${extraIds.length} baris project_stock_balance kembar dihapus (id ${extraIds.join(',')})`);
+				} catch (e) {
+					console.error(`[projectLedger] proyek ${projectId}: gagal menghapus baris saldo kembar:`, e instanceof Error ? e.message : e);
+				}
+			}
+		}
+	}
+
 	for (const g of groups.values()) {
 		const rabQtyRes = await directusServerJson<{ data: any[] }>(
 			`/items/project_budgets?filter[project_id][_eq]=${g.project_id}&filter[identitas_barang_id][_eq]=${g.item_id}&fields=qty&limit=-1`
@@ -238,10 +321,16 @@ export async function rebuildProjectStockBalance(scope: { projectId?: number } =
 		// bukan angka final. Dicatat di Bab 14 sebagai area yang belum punya definisi resmi.
 		else if (rabQty > 0 && g.qty_on_hand < rabQty * 0.1) status = 'low';
 
-		const existingRes = await directusServerJson<{ data: any[] }>(
-			`/items/project_stock_balance?filter[project_id][_eq]=${g.project_id}&filter[item_id][_eq]=${g.item_id}&filter[ownership_type][_eq]=${encodeURIComponent(g.ownership_type)}&limit=1`
-		).catch(() => null);
-		const existing = existingRes?.data?.[0];
+		let existing: { id: number } | undefined;
+		const keptId = keptByKey?.get(`${g.item_id}:${g.ownership_type}`);
+		if (keptId) {
+			existing = { id: keptId };
+		} else if (!keptByKey) {
+			const existingRes = await directusServerJson<{ data: any[] }>(
+				`/items/project_stock_balance?filter[project_id][_eq]=${g.project_id}&filter[item_id][_eq]=${g.item_id}&filter[ownership_type][_eq]=${encodeURIComponent(g.ownership_type)}&limit=1`
+			).catch(() => null);
+			existing = existingRes?.data?.[0];
+		}
 
 		const body = {
 			project_id: g.project_id,
@@ -267,5 +356,5 @@ export async function rebuildProjectStockBalance(scope: { projectId?: number } =
 		upserted++;
 	}
 
-	return { groupsProcessed: upserted, ledgerRowsScanned: ledgerRows.length, rebuiltAt: now };
+	return { groupsProcessed: upserted, ledgerRowsScanned: ledgerRows.length, duplicatesRemoved, rebuiltAt: now };
 }

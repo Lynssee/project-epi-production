@@ -6,7 +6,12 @@
 	import { getMySkillGap, type SkillGapResult } from '$lib/services/ess/skillGap';
 	import { IconLoader2, IconAlertTriangle, IconTrophy, IconClipboardCheck, IconGavel, IconSparkles, IconTargetArrow, IconFileExport } from '@tabler/icons-svelte';
 	import EssExportSheet from '$lib/components/ess/EssExportSheet.svelte';
+	import PdfFetchSheet from '$lib/components/shared/PdfFetchSheet.svelte';
 	import GateKpiSayaCard from '$lib/components/ess/GateKpiSayaCard.svelte';
+	import TugasSayaAlurCard from '$lib/components/ess/TugasSayaAlurCard.svelte';
+	import SopSayaCard from '$lib/components/ess/SopSayaCard.svelte';
+	import TimProyekSayaCard from '$lib/components/ess/TimProyekSayaCard.svelte';
+	import KinerjaTrenCard from '$lib/components/ess/KinerjaTrenCard.svelte';
 
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -19,6 +24,7 @@
 	let myDisputes = $state<KpiDispute[]>([]);
 	let skillGap = $state<SkillGapResult | null>(null);
 
+	let raporOpen = $state(false);
 	let showDisputeModal = $state(false);
 	let disputeSaving = $state(false);
 	let disputeScorecard = $state<KpiRecord | null>(null);
@@ -245,6 +251,17 @@
 			<h1 class="text-2xl md:text-3xl font-extrabold tracking-tight gradient-text">Kinerja Saya</h1>
 			<p class="text-sm md:text-base mt-1 font-medium" style="color: var(--sys-label3)">Skor KPI final & self-assessment</p>
 		</div>
+		<div class="flex shrink-0 items-center gap-2">
+		<button
+			class="h-11 shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 text-xs font-bold border border-emerald-300 bg-emerald-50 text-emerald-800 disabled:opacity-40"
+			onclick={() => (raporOpen = true)}
+			disabled={kpiList.length === 0}
+			aria-label="Cetak rapor kinerja pribadi"
+			title={kpiList.length === 0 ? 'Belum ada scorecard final untuk dicetak' : 'Rapor Kinerja Pribadi (PDF): skor, General vs Spesifik, rincian komponen. Hanya scorecard final milik Anda.'}
+			data-testid="btn-rapor-kinerja"
+		>
+			🖨️ Rapor PDF
+		</button>
 		<button
 			class="w-11 h-11 shrink-0 rounded-full flex items-center justify-center border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/70 text-slate-500 disabled:opacity-40 hover:scale-105 transition-transform"
 			onclick={() => (sheetOpen = true)}
@@ -254,6 +271,7 @@
 		>
 			<IconFileExport size={20} />
 		</button>
+		</div>
 	</div>
 
 	{#if loading}
@@ -316,6 +334,14 @@
 		{/if}
 
 		<GateKpiSayaCard />
+
+		<KinerjaTrenCard />
+
+		<TimProyekSayaCard />
+
+		<TugasSayaAlurCard />
+
+		<SopSayaCard variant="kesiapan" />
 
 		{#if liveKpiList.length > 0}
 			<div class="mb-8">
@@ -730,6 +756,14 @@
 		</div>
 	</div>
 {/if}
+
+<PdfFetchSheet
+	open={raporOpen}
+	url="/api/ess/kinerja-rapor-pdf"
+	title="Rapor Kinerja Pribadi"
+	filename="Rapor Kinerja Pribadi"
+	onClose={() => (raporOpen = false)}
+/>
 
 <EssExportSheet
 	open={sheetOpen}

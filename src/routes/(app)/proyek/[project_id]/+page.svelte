@@ -85,6 +85,7 @@
 	import SiteDemobSignalCard from '$lib/components/project/SiteDemobSignalCard.svelte';
 	import PaStatusCard from '$lib/components/project/PaStatusCard.svelte';
 	import ProjectHandoverBriefingCard from '$lib/components/leader/ProjectHandoverBriefingCard.svelte';
+	import FieldActionBanner from '$lib/components/project/FieldActionBanner.svelte';
 	import { printSuratTugas } from '$lib/utils/printSuratTugas';
 	import {
 		IconArrowLeft, IconBuilding, IconMapPin, IconUser,
@@ -144,6 +145,11 @@
 	type MainTab = 'informasi' | 'keuangan' | 'laporan' | 'progress' | 'manpower' | 'barang' | 'hse' | 'dokumen' | 'kirim';
 	let activeTab = $state<MainTab>('informasi');
 	let activeSubTab = $state<string>('charter');
+
+	let currentFieldActor = $derived({
+		id: $authStore.karyawanId ? String($authStore.karyawanId) : ($authStore.user?.uid || 'field-user'),
+		nama: $authStore.karyawanName || $authStore.manpowerNama || $authStore.user?.displayName || 'Project Leader'
+	});
 	let showManualAbsensi = $state(false);
 	let showExportSheet = $state(false);
 	let pendingGrShipments = $state<GRShipment[]>([]);
@@ -167,6 +173,7 @@
 			{ id: 'kontrak', label: 'Kontrak', emoji: '📄' }
 		],
 		laporan: [
+			{ id: 'instruksi-kendala', label: 'Instruksi & Kendala', emoji: '⚡' },
 			{ id: 'report', label: 'Report', emoji: '📋' },
 			{ id: 'laporan-harian', label: 'Laporan Harian', emoji: '📆' },
 			{ id: 'dokumentasi-ba', label: 'Dokumentasi Before/After', emoji: '📸' },
@@ -1259,6 +1266,12 @@
 				</button>
 			</div>
 
+			<!-- ── Hub Instruksi & Kendala Lapangan (Top Sticky Action Banner) ── -->
+			<FieldActionBanner
+				{projectId}
+				actor={currentFieldActor}
+			/>
+
 			<ProjectPhaseWizardCompact {project} />
 
 			<SiteDemobSignalCard
@@ -1719,10 +1732,44 @@
 							{/if}
 						</div>
 
-						<div class="card-section">
-							<p class="text-[12px] text-center py-2" style="color: var(--sys-label3)">
-								📈 Laporan HPP &amp; Laba Rugi lengkap (dalam Rupiah) tersedia di Admin ERP.
+						<!-- Akses Cepat Kas & Biaya Lapangan -->
+						<div class="card-section flex flex-col gap-2.5">
+							<div class="flex items-center justify-between">
+								<h4 class="text-[13px] font-bold flex items-center gap-1.5" style="color: var(--sys-label)">
+									<span>💵</span> Kas &amp; Biaya Operasional Lapangan
+								</h4>
+								<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+									Terhubung ke Admin ERP
+								</span>
+							</div>
+							<p class="text-[11px]" style="color: var(--sys-label3)">
+								Seluruh nota belanja BBM genset, tol armada, parkir, dan pembelian darurat site wajib dicatat real-time agar tersinkron dengan HPP kantor.
 							</p>
+							<div class="grid grid-cols-2 gap-2 mt-1">
+								<button
+									onclick={() => goto(`/biaya-lapangan?project_id=${projectId}&mode=proyek`)}
+									class="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[var(--g)] text-white text-[12px] font-bold shadow-sm active:scale-95 transition-all"
+								>
+									<span>➕</span> Catat Pengeluaran
+								</button>
+								<button
+									onclick={() => goto('/biaya-lapangan/rekap')}
+									class="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-[12px] font-semibold active:scale-95 transition-all"
+									style="color: var(--sys-label)"
+								>
+									<span>📋</span> Rekap Nota Saya
+								</button>
+							</div>
+						</div>
+
+						<div class="card-section">
+							<div class="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-900/40 text-[11px] text-blue-800 dark:text-blue-300 flex items-start gap-2">
+								<span class="text-sm">💡</span>
+								<div>
+									<strong class="font-semibold block">Panduan Keuangan Lapangan:</strong>
+									Laporan HPP, analisa margin, dan penerimaan pembayaran termin pelanggan dikelola terpusat di Dashboard Admin ERP (internal.eltamaprimaindo.com).
+								</div>
+							</div>
 						</div>
 					</div>
 
@@ -1785,8 +1832,17 @@
 			══════════════════════════════════════════════════ -->
 			{:else if activeTab === 'laporan'}
 
+				<!-- Sub: Instruksi & Kendala Lapangan -->
+				{#if activeSubTab === 'instruksi-kendala'}
+					<div class="px-4 py-4">
+						<FieldActionBanner
+							{projectId}
+							actor={currentFieldActor}
+						/>
+					</div>
+
 				<!-- Sub: Report -->
-				{#if activeSubTab === 'report'}
+				{:else if activeSubTab === 'report'}
 					<div class="px-4 py-4 flex flex-col gap-3">
 						<div class="card-section">
 							<h4 class="flex items-center gap-2 text-[13px] font-semibold mb-3" style="color: var(--sys-label)">

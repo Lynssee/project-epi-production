@@ -8,6 +8,8 @@
 import { error, json, type RequestEvent } from '@sveltejs/kit';
 import { requireUser } from '$lib/server/firebaseAuth';
 import { directusServerJson } from '$lib/server/directus';
+import { klasifikasiKelayakan } from '$lib/utils/batchKelayakan';
+import { getAgingHari } from '$lib/server/expiryLapangan';
 
 async function opt<T>(label: string, p: Promise<T>): Promise<T | null> {
 	try {
@@ -68,7 +70,19 @@ export async function GET(event: RequestEvent) {
 	const expMs = batch.tanggal_kadaluarsa ? new Date(batch.tanggal_kadaluarsa).getTime() : NaN;
 	const retestAktif = !!retest && (!retest.berlaku_sampai || new Date(`${String(retest.berlaku_sampai).slice(0, 10)}T23:59:59`).getTime() >= Date.now());
 
+	// Expired Date v2 F5: banner kelayakan pakai (LAYAK / PRIORITAS FEFO / STOP). Setelan gagal dibaca = ambang 30 hari.
+	const hold = (complaints?.length ?? 0) > 0;
+	const kelayakan = klasifikasiKelayakan({
+		tanggalKadaluarsa: batch.tanggal_kadaluarsa || null,
+		status: batch.status || null,
+		hold,
+		retestAktif,
+		retestBerlakuSampai: retest?.berlaku_sampai || null,
+		agingHari: await getAgingHari()
+	});
+
 	return json({
+		kelayakan,
 		batch: {
 			id: batch.id,
 			batchNo,
@@ -81,7 +95,7 @@ export async function GET(event: RequestEvent) {
 		},
 		coa: coa ? { kode: coa.kode, issuedAt: coa.issued_at } : null,
 		retest: { aktif: retestAktif, berlakuSampai: retest?.berlaku_sampai || null },
-		hold: (complaints?.length ?? 0) > 0,
+		hold,
 		panduan: spec
 			? {
 					thinnerType: spec.thinner_type || null,

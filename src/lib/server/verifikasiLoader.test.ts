@@ -29,6 +29,11 @@ describe('toPublicView — whitelist', () => {
 		const json = JSON.stringify(v);
 		for (const s of ['BCA', 'fin@x', 'PA-1', 'rahasia', 'f1']) expect(json).not.toContain(s);
 	});
+	it('Grand PO: nomor_gpo dan total_nilai_kontrak di whitelist dengan label sesuai', () => {
+		const v = toPublicView('grand_po', { id: 2, nomor_gpo: 'GPO-2610-2', status: 'AKTIF', date_created: '2026-10-01', total_nilai_kontrak: 1612756250, ...SENSITIF })!;
+		expect(Object.keys(v).sort()).toEqual(['jenis', 'jenis_label', 'nomor', 'nominal', 'nominal_label', 'status', 'tanggal'].sort());
+		expect(v).toMatchObject({ nomor: 'GPO-2610-2', status: 'AKTIF', nominal: 1612756250, nominal_label: 'Nilai Kontrak / PO' });
+	});
 	it('data kosong/bukan objek -> null; nomor cadangan memakai id', () => {
 		expect(toPublicView('pa', null)).toBeNull();
 		expect(toPublicView('bdp', 'x')).toBeNull();
@@ -44,6 +49,8 @@ describe('loadVerifikasi', () => {
 		expect(h.paths[0]).toBe('/items/pengajuan_anggaran/1?fields=id,nomor_pengajuan,status,date_created,jumlah_disetujui,total_amount');
 		await loadVerifikasi('bdp', '2');
 		expect(h.paths[1]).toBe('/items/batch_disbursement/2?fields=id,nomor_voucher,status,tanggal_bayar,date_created,total_amount');
+		await loadVerifikasi('grand_po', '3');
+		expect(h.paths[2]).toBe('/items/grand_po/3?fields=id,nomor_gpo,nama,status,date_created,total_nilai_kontrak,nilai_kontrak_total,total_amount');
 	});
 	it('Directus gagal / tidak ada -> null (tidak melempar)', async () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => {});

@@ -91,6 +91,14 @@ export const FIELD_NAV_ITEMS: FieldNavItem[] = [
 		keywords: 'site checkin check in lokasi proyek lapangan hadir kerja kunjungan site gps geofence'
 	},
 	{
+		id: 'spj-upah',
+		title: 'SPJ Upah (Bukti Pembagian)',
+		parent: 'Portal Karyawan',
+		href: '/spj-upah',
+		permissions: ['access_ess'],
+		keywords: 'spj upah bukti pembagian gaji koordinator leader pekerja tanda terima foto distribusi'
+	},
+	{
 		id: 'ess-cuti',
 		title: 'Cuti & Izin Saya',
 		parent: 'Portal Karyawan',

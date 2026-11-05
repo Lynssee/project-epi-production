@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FloatingSopHint from '$lib/components/help/FloatingSopHint.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -39,6 +40,7 @@
 			loading = false;
 		}
 	}
+
 </script>
 
 <div class="w-full p-4 pb-24">
@@ -99,4 +101,6 @@
 			{/each}
 		</div>
 	{/if}
+
+	<FloatingSopHint stageId={2} activeGateKey="G_SJ_BUKTI_KIRIM" buttonLabel="SOP Surat Jalan" />
 </div>

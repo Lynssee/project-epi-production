@@ -34,6 +34,9 @@ export interface QueuedGRSubmission {
 		extraPhotos?: Blob[];
 	};
 	createdAt: string;
+	/** Inventory 360° Fase C: hasil checklist terima + barang master yang diterima; ikut terkirim saat antrean di-flush. */
+	inspeksi?: Array<{ itemId: number; profileId: number | null; items: Array<{ id: string; text: string }>; checked: string[] }>;
+	identitasBarangIds?: number[];
 }
 
 const queue = createOfflineQueue<QueuedGRSubmission>({

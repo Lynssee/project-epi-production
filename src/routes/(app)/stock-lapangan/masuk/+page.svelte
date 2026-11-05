@@ -62,6 +62,8 @@
 	import { stockPenerimaanSchema } from '$lib/schemas/stockPenerimaan';
 	import { grItemsSchema } from '$lib/schemas/goodsReceived';
 	import KnowledgeCard from '$lib/components/inventory360/KnowledgeCard.svelte';
+	import { getInspectionLine, clearInspection, reportManualReceiptInspection, buildInspectionPayload } from '$lib/services/inventoryCardApi';
+	import { appendInspectionNote } from '$lib/services/inventory360/inventoryKnowledgeInspection.js';
 
 	$effect(() => {
 		const roleId = $authStore.roleId;
@@ -128,6 +130,7 @@
 	let grSelected = $state<GRShipment | null>(null);
 	let grQty = $state<Record<number, number>>({});
 	let grCondition = $state<Record<number, GRCondition>>({});
+	let grBackhaul = $state<Record<number, boolean>>({});
 	// Checklist visual kondisi cat (Fase 4 QC Re-test) per projectExpenseId — hanya untuk item bertipe cat.
 	let grCekCat = $state<Record<number, CekCatState>>({});
 	$effect(() => {
@@ -181,6 +184,7 @@
 		grSelected = shipment;
 		grQty = {};
 		grCondition = {};
+		grBackhaul = {};
 		grQtyGeneric = {};
 		grConditionGeneric = {};
 		for (const item of shipment.items) {
@@ -267,7 +271,8 @@
 			.map((item) => ({
 				project_expense_id: item.projectExpenseId as number,
 				qty_received: grQty[item.projectExpenseId as number] ?? 0,
-				condition: grCondition[item.projectExpenseId as number] ?? 'ok'
+				condition: grCondition[item.projectExpenseId as number] ?? 'ok',
+				...(grCondition[item.projectExpenseId as number] === 'salah_spek' ? { backhaul: !!grBackhaul[item.projectExpenseId as number] } : {})
 			}));
 		// Item non-RAB (generik, B9/K17) — server hanya izinkan Admin (lihat canConfirmGeneric).
 		const genericItems = canConfirmGeneric
@@ -339,7 +344,11 @@
 				}
 			}
 
+			// Inventory 360° Fase C: hasil checklist terima ikut dikirim; server merekam (rujukan [sj:<id>]) & menilai gate shadow.
+			const insp = buildInspectionPayload(grSelected.items.map((it) => it.identitasBarangId));
 			const result = await confirmGoodsReceived(grSelected.suratJalanId, items, fotoTerimaFileId, {
+				inspeksi: insp.inspeksi,
+				identitasBarangIds: insp.identitasBarangIds,
 				scanSjFileId,
 				ttdPenerimaFileId,
 				ttdDriverFileId,
@@ -366,7 +375,7 @@
 					await submitPenerimaan({
 						itemId: item.identitasBarangId,
 						quantity: qtyReceived,
-						notes: `GR Surat Jalan ${grSelected.nomorSJ}`,
+						notes: appendInspectionNote(`GR Surat Jalan ${grSelected.nomorSJ}`, getInspectionLine(item.identitasBarangId)),
 						karyawanName,
 						lat: gps?.lat ?? null,
 						lng: gps?.lng ?? null,
@@ -376,6 +385,7 @@
 						evidencePhotoFileId: fotoTerimaFileId,
 						gudangId: projectGudangId
 					});
+					clearInspection(item.identitasBarangId);
 				} catch (stockErr) {
 					console.error(`Gagal mencatat stok fisik untuk ${item.materialName}:`, stockErr);
 				}
@@ -421,7 +431,9 @@
 							ttdDriver: ttdDriverBlob,
 							extraPhotos: extraPhotoBlobs
 						},
-						createdAt: captureTimestamp
+						createdAt: captureTimestamp,
+						inspeksi: buildInspectionPayload(grSelected!.items.map((it) => it.identitasBarangId)).inspeksi,
+						identitasBarangIds: buildInspectionPayload(grSelected!.items.map((it) => it.identitasBarangId)).identitasBarangIds
 					});
 					grSuccess = { hasVariance: false, claimsCreated: [], queuedOffline: true };
 					grShipments = grShipments.filter((s) => s.suratJalanId !== grSelected!.suratJalanId);
@@ -535,7 +547,9 @@
 			ttdPenerimaFileId,
 			ttdDriverFileId,
 			evidencePhotoIds,
-			gps: entry.gps
+			gps: entry.gps,
+			inspeksi: entry.inspeksi,
+			identitasBarangIds: entry.identitasBarangIds
 		});
 
 		const karyawanName = $authStore.karyawanName;
@@ -619,7 +633,7 @@
 			const parsed = stockPenerimaanSchema.safeParse({
 				itemId: selectedItemId,
 				quantity,
-				notes,
+				notes: appendInspectionNote(notes, getInspectionLine(selectedItemId)),
 				karyawanName,
 				lat: gps?.lat ?? null,
 				lng: gps?.lng ?? null,
@@ -641,6 +655,7 @@
 			try {
 				const evidencePhotoFileId = await uploadEvidencePhoto(compressed, 'stock_lapangan:masuk');
 				const result = await submitPenerimaan({ ...basePayload, evidencePhotoFileId });
+				await reportManualReceiptInspection(selectedItemId, result.id, `Penerimaan manual ${result.reference_no}`);
 				successInfo = { referenceNo: result.reference_no };
 			} catch (err: any) {
 				if (err instanceof TypeError) {
@@ -668,6 +683,7 @@
 	}
 
 	function resetForm() {
+		clearInspection(selectedItemId);
 		selectedItemId = null;
 		quantity = null;
 		notes = '';
@@ -790,6 +806,16 @@
 							<p class="text-[10.5px] mt-1.5 flex items-center gap-1" style="color: #DC2626">
 								<IconAlertTriangle size={12} /> Selisih {item.qtySent - (grQty[item.projectExpenseId] ?? 0)} {item.unit} — otomatis dibuatkan klaim
 							</p>
+						{/if}
+						{#if grCondition[item.projectExpenseId] === 'salah_spek'}
+							<div class="mt-2 rounded-lg p-2.5 text-[10.5px]" style="background: var(--sys-fill); color: var(--sys-label3)">
+								<p>Isi kolom jumlah dengan barang yang <b>diterima baik</b> (0 bila semua ditolak). Selisihnya dicatat sebagai klaim <b>Salah Spek</b> dan masuk antrean Admin Gudang.</p>
+								<label class="flex items-center gap-2 mt-2 text-[11.5px] font-medium" style="color: var(--sys-label)">
+									<input type="checkbox" bind:checked={grBackhaul[item.projectExpenseId]} />
+									Titip balik ke supir yang sama
+								</label>
+								<p class="mt-1">Bila dicentang, Admin tahu barang ikut dibawa pulang dan menyiapkan dokumen retur — supaya supir tidak tertahan di Pos Satpam.</p>
+							</div>
 						{/if}
 					</div>
 				{/each}

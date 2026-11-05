@@ -22,21 +22,32 @@ export interface SopDocumentRecord {
 	target_roles: string[];
 	effective_date: string | null;
 	retraining_policy: string;
+	approval_status?: string | null;
+	sop_code?: string | null;
 	file: Array<{ id: number; directus_files_id: { id: string; filename_download: string } }>;
 }
 
 const SOP_FIELDS = [
 	'id', 'title', 'department', 'version', 'version_seq', 'last_updated', 'status',
 	'keterangan', 'content', 'content_source', 'requires_training', 'target_departments',
-	'target_roles', 'effective_date', 'retraining_policy',
+	'target_roles', 'effective_date', 'retraining_policy', 'approval_status', 'sop_code',
 	'file.id', 'file.directus_files_id.id', 'file.directus_files_id.filename_download'
 ].join(',');
 
-/** SOP published yang boleh dibaca siapa pun (baca = semua orang, sesuai rekomendasi gerbang 2.2). */
+/**
+ * SOP yang boleh dibaca & dikonfirmasi lapangan: sudah published, ATAU sedang masa sosialisasi
+ * (approval_status 'butuh_sosialisasi') — karena konfirmasi paham (G_FLD_SOP_READ_CONFIRMATION) justru diminta
+ * pada masa itu. Tanpa ini SOP sosialisasi tak bisa dibaca → gate tak mungkin dipenuhi.
+ */
+export function isReadableSop(sop: { status?: string | null; approval_status?: string | null } | null | undefined): boolean {
+	return Boolean(sop) && (sop!.status === 'published' || sop!.approval_status === 'butuh_sosialisasi');
+}
+
+/** SOP yang boleh dibaca siapa pun (baca = semua orang, sesuai rekomendasi gerbang 2.2). */
 export async function listPublishedSop(): Promise<SopDocumentRecord[]> {
 	const query = new URLSearchParams({
 		fields: SOP_FIELDS,
-		'filter[status][_eq]': 'published',
+		filter: JSON.stringify({ _or: [{ status: { _eq: 'published' } }, { approval_status: { _eq: 'butuh_sosialisasi' } }] }),
 		sort: '-last_updated',
 		limit: '200'
 	});

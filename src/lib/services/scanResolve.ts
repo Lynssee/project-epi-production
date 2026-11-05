@@ -94,6 +94,8 @@ export async function submitWorkshopSjkConfirmReceipt(p: {
 
 // Fase 4 QC Re-test Cat Keluar — QR label kaleng cat (EPI:BATCH:<id item_batch>).
 export interface ResolveBatchResult {
+	/** Expired Date v2 F5: status kelayakan pakai (dihitung server dari tanggal kadaluarsa, HOLD, karantina, Re-QC). */
+	kelayakan?: { status: 'layak' | 'prioritas' | 'stop' | 'tanpa_tanggal'; label: string; pesan: string; sisaHari: number | null; bisaMintaRetest: boolean };
 	batch: {
 		id: number;
 		batchNo: string | null;
@@ -127,6 +129,15 @@ export async function resolveBatchQr(batchId: number): Promise<ResolveBatchResul
 		throw new Error(err?.message || `Gagal membaca batch (HTTP ${res.status}).`);
 	}
 	return res.json();
+}
+
+/** Minta Uji Ulang Lab QC untuk satu batch (idempoten di server). Melempar Error berpesan jelas bila ditolak. */
+export async function mintaRetestBatch(batchId: number): Promise<{ dibuat: boolean; sudahAda: boolean; pesan: string }> {
+	const token = await getIdToken();
+	const res = await fetch(`/api/scan/batch/${encodeURIComponent(batchId)}/minta-retest`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+	const body = await res.json().catch(() => ({}));
+	if (!res.ok) throw new Error(body?.message || `Gagal meminta uji ulang (HTTP ${res.status}).`);
+	return body;
 }
 
 /** Alias lama (pemanggil Ciketing). */

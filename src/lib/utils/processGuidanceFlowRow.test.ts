@@ -1,6 +1,6 @@
 // src/lib/utils/processGuidanceFlowRow.test.ts
 import { describe, it, expect } from 'vitest';
-import { normalizeFlowRow } from './processGuidanceFlowRow';
+import { normalizeFlowRow, inferProcedureType } from './processGuidanceFlowRow';
 import { PROCESS_FLOWS } from '../data/processGuidance';
 import { buildLaneSections } from './processGuidance';
 
@@ -16,11 +16,11 @@ const def = (o: any = {}) => ({
 });
 
 describe('normalizeFlowRow (lapangan)', () => {
-	it('pintasan = actions_field (bukan actions admin); gates tidak dibawa; versi & metadata terbawa', () => {
+	it('pintasan = actions_field (bukan actions admin); gates disertakan read-only; versi & metadata terbawa', () => {
 		const r = normalizeFlowRow(base(def()))!;
 		const n1 = r.flow.nodes[0];
 		expect(n1.actions).toEqual([{ label: 'Lapangan', href: '/sales/po' }]);
-		expect((n1 as any).gates).toBeUndefined();
+		expect(n1.gates).toEqual([{ key: 'G_A', modul: 'm', documentType: 'd' }]);
 		expect(r.flow).toMatchObject({ id: 'f1', title: 'Alur', version: 3 });
 		expect(r.flow.nodes[1].actions).toEqual([]); // tanpa actions_field → kosong, bukan jatuh ke actions admin
 		expect(r.dropped).toEqual([]);
@@ -72,5 +72,70 @@ describe('normalizeFlowRow (lapangan)', () => {
 		expect(rebuilt.dropped).toEqual([]);
 		expect(rebuilt.flow.nodes.map((n) => n.id)).toEqual(local.nodes.map((n) => n.id));
 		expect(rebuilt.flow.nodes.map((n) => n.actions)).toEqual(local.nodes.map((n) => n.actions));
+	});
+});
+
+describe('normalizeFlowRow — field integrasi jobdesc/KPI (cermin erp-epi)', () => {
+	const row = (node: any) => ({
+		flow_key: 'k', title: 'T',
+		definition: { lanes: [{ key: 'a', label: 'A' }], nodes: [{ id: 'n1', type: 'task', lane: 'a', col: 0, label: 'L', ...node }], edges: [] }
+	});
+	it('meneruskan posisi_ids/sla_hours/kpi_code yang valid', () => {
+		const n = normalizeFlowRow(row({ posisi_ids: [30, '30', 58, 'x'], sla_hours: 4.256, kpi_code: ' K1 ' }))!.flow.nodes[0];
+		expect(n).toMatchObject({ posisi_ids: [30, 58], sla_hours: 4.26, kpi_code: 'K1' });
+	});
+	it('nilai rusak dibuang; node lama tidak mendapat kunci baru', () => {
+		const n = normalizeFlowRow(row({ posisi_ids: 'x', sla_hours: -1, kpi_code: 5 }))!.flow.nodes[0];
+		expect('posisi_ids' in n || 'sla_hours' in n || 'kpi_code' in n).toBe(false);
+	});
+});
+
+describe('normalizeFlowRow — tautan training (T5, cermin erp-epi)', () => {
+	const row = (def: any) => ({ flow_key: 'k', title: 'T', definition: { lanes: [{ key: 'a', label: 'A' }], nodes: [{ id: 'n1', type: 'task', lane: 'a', col: 0, label: 'L', training_ids: [13, '13', 14, 'x', 15, 16] }], edges: [], ...def } });
+	it('meneruskan training (alur) & training_ids (langkah, maks. 3); entri rusak/dobel dibuang; wajib boolean', () => {
+		const f = normalizeFlowRow(row({ training: [{ program_id: '13', wajib: 'true', catatan: ' K3 ' }, { program_id: 13 }, { program_id: 'x' }, { program_id: 18, wajib: 0 }, null] }))!.flow;
+		expect(f.training).toEqual([{ program_id: 13, wajib: true, catatan: 'K3' }, { program_id: 18, wajib: false }]);
+		expect(f.nodes[0].training_ids).toEqual([13, 14, 15]);
+	});
+	it('tanpa tautan → tidak ada kunci baru; maksimal 5 tautan alur', () => {
+		const f = normalizeFlowRow(row({}))!.flow;
+		expect('training' in f).toBe(false);
+		const many = normalizeFlowRow(row({ training: [1, 2, 3, 4, 5, 6, 7].map((program_id) => ({ program_id })) }))!.flow;
+		expect(many.training).toHaveLength(5);
+	});
+});
+
+describe('normalizeFlowRow & inferProcedureType — klasifikasi sifat prosedur (Fase 4)', () => {
+	it('meneruskan procedure_type eksplisit yang valid', () => {
+		const r = normalizeFlowRow(base(def(), { procedure_type: 'field_ops' }))!;
+		expect(r.flow.procedure_type).toBe('field_ops');
+	});
+
+	it('menginferensi field_ops untuk alur inspeksi/coating/spark tester lapangan', () => {
+		expect(inferProcedureType({ title: 'Inspeksi & Tes Holiday Detector Spark Tester', flow_key: 'field_holiday' })).toBe('field_ops');
+		expect(inferProcedureType({ title: 'Pemeriksaan Visual Blasting & Painting', flow_key: 'coating_blasting' })).toBe('field_ops');
+	});
+
+	it('menginferensi emergency_qhse untuk alur tanggap darurat & insiden', () => {
+		expect(inferProcedureType({ title: 'Prosedur Evakuasi dan Tanggap Darurat Kebakaran', flow_key: 'hse_emergency' })).toBe('emergency_qhse');
+	});
+
+	it('menginferensi management_gate untuk alur evaluasi & approval RAP', () => {
+		expect(inferProcedureType({ title: 'Evaluasi & Approval RAP Direksi', flow_key: 'approval_rap' })).toBe('management_gate');
+	});
+
+	it('menginferensi administrative untuk alur payroll & faktur invoice kantor', () => {
+		expect(inferProcedureType({ title: 'Penerbitan Invoice & Faktur Pajak', flow_key: 'invoice_ar' })).toBe('administrative');
+	});
+
+	it('membawa id baris Directus & id induk (untuk breadcrumb); nilai tak valid dibuang', () => {
+		const r = normalizeFlowRow(base(def(), { id: 7, parent_flow_id: 3 }))!;
+		expect(r.flow.row_id).toBe(7);
+		expect(r.flow.parent_row_id).toBe(3);
+		const t = normalizeFlowRow(base(def(), { id: 7, parent_flow_id: null }))!;
+		expect(t.flow.parent_row_id).toBeUndefined();
+		const x = normalizeFlowRow(base(def(), { id: 'abc', parent_flow_id: -2 }))!;
+		expect(x.flow.row_id).toBeUndefined();
+		expect(x.flow.parent_row_id).toBeUndefined();
 	});
 });

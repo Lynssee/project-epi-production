@@ -67,3 +67,9 @@ export async function confirmSopRead(id: number | string): Promise<{ ok: true }>
 	if (!res.ok) throw new Error(await parseErrorMessage(res));
 	return res.json();
 }
+
+export async function submitSopUsulan(id: number | string, input: { jenis: string; catatan: string }): Promise<{ success: true; id: number | null }> {
+	const res = await authedFetch(`/api/ess/sop/${id}/usulan`, { method: 'POST', body: JSON.stringify(input) });
+	if (!res.ok) throw new Error(await parseErrorMessage(res));
+	return res.json();
+}

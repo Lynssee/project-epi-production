@@ -18,6 +18,7 @@
 	} from '$lib/services/mobilizationChecklist';
 	import { fetchProjectFulfillment, type ChecklistSource, type ProjectFulfillment } from '$lib/services/projectFulfillment';
 	import { IconArrowLeft, IconLoader2, IconCheck } from '@tabler/icons-svelte';
+	import { fetchKesiapanDokumen, KESIAPAN_UI, type KesiapanDokumen } from '$lib/services/kesiapanDokumen';
 
 	const KATEGORI_LABEL: Record<string, string> = {
 		umum: 'Umum',
@@ -27,6 +28,7 @@
 	};
 
 	let projectId = $derived($page.params.project_id as string);
+	let kesiapan = $state<KesiapanDokumen | null>(null);
 	let loading = $state(true);
 	let saving = $state(false);
 	let saved = $state(false);
@@ -93,6 +95,8 @@
 				console.warn('[pra-mobilisasi] sinyal kesiapan tidak termuat:', e);
 			}
 			checked = initial;
+			// Expired Date v2 F5: kesiapan kalibrasi alat & sertifikasi personel — INFORMASIONAL, tidak mencentang/menghalangi apa pun.
+			fetchKesiapanDokumen(projectId).then((k) => (kesiapan = k));
 		} finally {
 			loading = false;
 		}
@@ -180,6 +184,28 @@
 					</span>
 				</div>
 			</div>
+
+			{#if kesiapan}
+				<div class="card-section">
+					<h4 class="text-[13px] font-semibold mb-1" style="color: var(--sys-label)">🔎 Masa Berlaku Alat &amp; Personel</h4>
+					<p class="text-[11px] mb-2" style="color: var(--sys-label3)">💡 Informasi dari data sistem — tidak mengubah centang di bawah. "Belum ada data" artinya kalibrasi/sertifikat belum dicatat, bukan berarti bermasalah.</p>
+					{#each [['🧰 Kalibrasi alat proyek', kesiapan.alat], ['👷 Sertifikasi personel proyek', kesiapan.personel]] as [judul, k] (judul)}
+						{@const ui = KESIAPAN_UI[(k as any).state as keyof typeof KESIAPAN_UI] || KESIAPAN_UI.na}
+						<div class="rounded-lg p-2.5 mb-2" style="background: {ui.bg}; color: {ui.fg}">
+							<p class="text-[12.5px] font-bold">{ui.ikon} {judul}: {ui.label}</p>
+							<p class="text-[11.5px] mt-0.5">{(k as any).detail}</p>
+							{#if (k as any).catatan}<p class="text-[10.5px] mt-0.5 opacity-80">ℹ️ {(k as any).catatan}</p>{/if}
+							{#if (k as any).items?.filter((i: any) => i.status === 'lewat' || i.status === 'segera').length}
+								<ul class="mt-1 text-[11px] list-disc pl-4">
+									{#each (k as any).items.filter((i: any) => i.status === 'lewat' || i.status === 'segera').slice(0, 6) as i (i.id)}
+										<li>{i.nama} — {i.tanggal} {i.status === 'lewat' ? '(LEWAT)' : '(segera)'}</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
 
 			{#each Object.entries(grouped) as [kategori, groupItems] (kategori)}
 				<div class="card-section">

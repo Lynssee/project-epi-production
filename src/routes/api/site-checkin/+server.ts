@@ -52,6 +52,7 @@ export const POST: RequestHandler = async (event) => {
 	const clientCreatedAt = form.get('client_created_at')?.toString() || null;
 	// SV-12 (skema disetujui Lead 26 Sep 2026): UUID dedup exact-match, dibuat klien saat masuk antrean offline.
 	const clientTxnId = form.get('client_txn_id')?.toString() || null;
+	const planId = form.get('plan_id')?.toString() || null;
 
 	const referensiIdValid = tipeKeperluan === 'maintenance' ? referensiId !== '' : Number.isFinite(referensiId) && (referensiId as number) > 0;
 	if (!referensiIdValid) {
@@ -78,7 +79,8 @@ export const POST: RequestHandler = async (event) => {
 			networkType,
 			tipeKeperluan,
 			clientCreatedAt,
-			clientTxnId
+			clientTxnId,
+			planId
 		});
 		return json({ record });
 	} catch (e) {

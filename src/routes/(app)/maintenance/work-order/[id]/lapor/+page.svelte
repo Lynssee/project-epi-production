@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StepChecklistBanner from '$lib/components/help/StepChecklistBanner.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -264,6 +265,8 @@
 			<p class="text-[11px]" style="color: var(--sys-label3)">{equipment?.name || ''}</p>
 			<DraftIndicator savedAt={draftSavedAt} hasPhotos={!!photoFile} />
 		</div>
+
+		<div class="mb-4"><StepChecklistBanner alur="maintenance_repair_lifecycle" fokus="maint_eksekusi" judul="Syarat Laporan Harian WO" /></div>
 
 		<div class="flex flex-col gap-4">
 			<div>

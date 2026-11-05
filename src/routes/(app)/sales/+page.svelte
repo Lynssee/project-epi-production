@@ -19,6 +19,7 @@
 	} from '$lib/services/sales';
 	import { getMyPoStatusSummary } from '$lib/services/salesPo';
 	import SalesNavTabs from '$lib/components/sales/SalesNavTabs.svelte';
+	import FloatingSopHint from '$lib/components/help/FloatingSopHint.svelte';
 	import {
 		IconPlus,
 		IconLoader2,
@@ -200,10 +201,10 @@
 
 	let rejectedCount = $derived(visits.filter((v) => v.verifikasi_status === 'rejected').length);
 	let draftCount = $derived(visits.filter((v) => v.verifikasi_status === 'draft').length);
-	// Paket 08e §7.4/§7.5 — auto-close menandai visit_sales.status (BUKAN verifikasi_status)
+	// Paket 08e Â§7.4/Â§7.5 â€” auto-close menandai visit_sales.status (BUKAN verifikasi_status)
 	// jadi 'belum_dilaporkan' saat sales lupa submit sampai cron tengah malam menutup paksa.
 	// Data LAMA (in_progress dari sebelum fitur ini ada) SENGAJA TIDAK diubah otomatis
-	// (Aturan #3 — tidak mengunci/mengubah transaksi lama secara retroaktif) — tapi tetap
+	// (Aturan #3 â€” tidak mengunci/mengubah transaksi lama secara retroaktif) â€” tapi tetap
 	// ditampilkan di sini (bukan diam-diam hilang) selama tanggal kunjungannya bukan hari ini,
 	// supaya sales bisa melengkapi laporan kapan saja.
 	let belumDilaporkanList = $derived(
@@ -346,10 +347,10 @@
 				</button>
 			</div>
 		{:else}
-			<!-- Paket 08e §7.4 — widget paling atas: kunjungan yang ditutup paksa cron tengah
+			<!-- Paket 08e Â§7.4 â€” widget paling atas: kunjungan yang ditutup paksa cron tengah
 			     malam karena sales lupa menekan "Kirim" di /sales/[id]. Data lama (status
 			     in_progress menggantung) SENGAJA TIDAK ikut di sini (Aturan #3, tidak diubah
-			     otomatis) — hanya baris yang memang sudah ditandai belum_dilaporkan. -->
+			     otomatis) â€” hanya baris yang memang sudah ditandai belum_dilaporkan. -->
 			{#if belumDilaporkanList.length > 0}
 				<button
 					type="button"
@@ -363,14 +364,14 @@
 					<div class="min-w-0 flex-1">
 						<div class="flex items-center justify-between gap-1">
 							<p class="text-[12px] font-bold" style="color: var(--red)">
-								⏳ {belumDilaporkanList.length} Kunjungan Belum Dilaporkan
+								â³ {belumDilaporkanList.length} Kunjungan Belum Dilaporkan
 							</p>
 							<span class="text-[11px] font-bold flex items-center gap-0.5" style="color: var(--red)">
 								Isi Sekarang <IconArrowRight size={12} />
 							</span>
 						</div>
 						<p class="text-[11px] mt-0.5 truncate" style="color: var(--red)">
-							Ditutup otomatis tengah malam karena belum di-submit — isi hasilnya supaya dicek SPV.
+							Ditutup otomatis tengah malam karena belum di-submit â€” isi hasilnya supaya dicek SPV.
 							{belumDilaporkanList.slice(0, 2).map((v) => v.customer_name || v.tujuan).filter(Boolean).join(', ')}
 						</p>
 					</div>
@@ -825,7 +826,7 @@
 								<!-- Customer PIC -->
 								{#if v.customer_pic}
 									<span class="flex items-center gap-1" style="color: var(--sys-label2)">
-										👤 PIC: <strong>{v.customer_pic}</strong>
+										ðŸ‘¤ PIC: <strong>{v.customer_pic}</strong>
 									</span>
 								{/if}
 							</div>
@@ -833,7 +834,7 @@
 							<!-- Customer Alamat if available -->
 							{#if v.customer_alamat}
 								<p class="text-[11px] mt-1.5 truncate" style="color: var(--sys-label3)">
-									📍 {v.customer_alamat}
+									ðŸ“ {v.customer_alamat}
 								</p>
 							{/if}
 
@@ -871,7 +872,7 @@
 										<span class="text-[10px] font-bold uppercase tracking-wider" style="color: var(--sys-label3)">Ringkasan Hasil Pertemuan:</span>
 										{#if v.follow_up_date}
 											<span class="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-												📅 Follow-up: {v.follow_up_date}
+												ðŸ“… Follow-up: {v.follow_up_date}
 											</span>
 										{/if}
 									</div>
@@ -1051,7 +1052,7 @@
 					disabled={isVerifying}
 					onclick={() => handleExecuteVerify('rejected')}
 				>
-					✕ Tolak Kunjungan
+					âœ• Tolak Kunjungan
 				</button>
 				<button
 					type="button"
@@ -1060,7 +1061,7 @@
 					onclick={() => handleExecuteVerify('verified')}
 				>
 					{#if isVerifying}<IconLoader2 size={14} class="animate-spin" />{/if}
-					<span>✓ Setujui Kunjungan</span>
+					<span>âœ“ Setujui Kunjungan</span>
 				</button>
 			</div>
 		</div>
@@ -1085,3 +1086,6 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Panduan SOP & Gate Mengambang Kontekstual -->
+<FloatingSopHint stageId={0} buttonLabel="SOP & Gate Sales" activeGateKey="G_SALES_VISIT_GEOTAG" />

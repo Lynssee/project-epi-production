@@ -2,7 +2,7 @@
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import ProcessGuideLink from '$lib/components/help/ProcessGuideLink.svelte';
+	import ProcessStepPeek from '$lib/components/help/ProcessStepPeek.svelte';
 	import { authStore } from '$lib/stores/auth';
 	import { rolesStore } from '$lib/stores/roles';
 	import { hasPermission } from '$lib/constants/permissions';
@@ -145,7 +145,7 @@
 				<p class="text-[11px] font-medium" style="color: var(--sys-label3)">
 					Foto PO dari customer, unggah langsung dari lokasi customer
 				</p>
-				<div class="mt-1.5"><ProcessGuideLink fokus="so" /></div>
+				<div class="mt-1.5"><ProcessStepPeek fokus="so" /></div>
 			</div>
 			<button
 				type="button"

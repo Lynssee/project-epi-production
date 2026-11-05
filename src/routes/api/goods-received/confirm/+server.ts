@@ -20,7 +20,10 @@ import { directusServerJson } from '$lib/server/directus';
 import { appendLedgerEntry, rebuildProjectStockBalance, TRANSACTION_TYPES } from '$lib/server/projectLedger';
 import { listRangkapForSj, advanceRangkapStatus } from '$lib/server/rangkap';
 import { resolvePilotProjectIds, isPilotProject } from '$lib/server/inventorySettings';
+import { recordInspectionsForDocument } from '$lib/server/inventoryInspectionRecorder';
+import { reportInventorySpecShadow } from '$lib/server/inventorySpecShadow';
 import type { GRCondition } from '$lib/constants/grCondition';
+import { buildSalahSpekLogPayload } from '$lib/server/goodsReceived/mismatchLog';
 
 // Fase 2 (Rencana Implementasi Inventory Proyek v2.0, 24 Juli 2026): tulis IN-RECEIPT ke
 // project_stock_ledger untuk GR di proyek pilot SAJA. Proyek lain terus jalan seperti biasa
@@ -46,6 +49,8 @@ interface ConfirmItem {
 	// Hanya 'rusak' yang dibaca langsung di bawah; 'ok'/'kurang' diperlakukan sama karena
 	// server menyimpulkan sendiri kekurangan/kehilangan dari perbandingan qty.
 	condition?: GRCondition;
+	// Skema Ketidaksesuaian F2: condition 'salah_spek' + backhaul=true = barang salah dibawa pulang supir yang sama.
+	backhaul?: boolean;
 }
 
 export const POST: RequestHandler = async (event) => {
@@ -65,6 +70,9 @@ export const POST: RequestHandler = async (event) => {
 	// menutup SJ atas nama penerima yang belum sempat konfirmasi sendiri -- wajib alasan tertulis,
 	// tercatat eksplisit sebagai received_by_proxy (bukan disamarkan sebagai konfirmasi lapangan).
 	const proxyReason: string | null = body?.proxyReason || null;
+	// Inventory 360° Fase C: hasil checklist terima per barang + daftar barang master yang diterima (untuk gate shadow). Opsional.
+	const inspeksi: unknown = body?.inspeksi ?? null;
+	const hintItemIds: unknown[] = Array.isArray(body?.identitasBarangIds) ? body.identitasBarangIds : [];
 
 	if (!Number.isFinite(suratJalanId)) throw error(400, 'suratJalanId tidak valid.');
 	if (items.length === 0) throw error(400, 'Tidak ada item untuk dikonfirmasi.');
@@ -124,6 +132,30 @@ export const POST: RequestHandler = async (event) => {
 	const claimsCreated: number[] = [];
 	const journalLines: Array<{ budgetCategory: string; amount: number; materialName: string }> = [];
 	const rabAccumulation = new Map<number, number>(); // rab_budget_id -> qty diterima batch ini
+
+	// Skema Ketidaksesuaian F2: baris 'salah_spek' masuk antrean Barang Bermasalah (Admin Gudang). Klaim & penerimaan sudah
+	// tersimpan, jadi kegagalan catat TIDAK menggagalkan konfirmasi — tetapi dilog jelas (tidak ditelan).
+	const catatSalahSpek = async (p: { namaBarang: string; itemId?: number | null; projectId?: number | null; qty: number; backhaul?: boolean }) => {
+		try {
+			await directusServerJson('/items/barang_bermasalah_log', {
+				method: 'POST',
+				body: JSON.stringify(
+					buildSalahSpekLogPayload({
+						nomorSj: sj.nomor_sj,
+						suratJalanId,
+						projectId: p.projectId ?? null,
+						reporter: karyawan.nama_karyawan,
+						namaBarang: p.namaBarang,
+						itemId: p.itemId ?? null,
+						qty: p.qty,
+						backhaul: p.backhaul
+					})
+				)
+			});
+		} catch (e) {
+			console.error(`[goods-received/confirm] gagal catat salah_spek ke barang_bermasalah_log (SJ ${sj.nomor_sj}, ${p.namaBarang}):`, e instanceof Error ? e.message : e);
+		}
+	};
 
 	for (const it of rabItems) {
 		const exp = expById.get(it.project_expense_id!);
@@ -200,7 +232,8 @@ export const POST: RequestHandler = async (event) => {
 
 		if (qtyLostDamaged > 0) {
 			hasVariance = true;
-			const jenis = it.condition === 'rusak' ? 'rusak' : qtyReceived === 0 ? 'hilang' : 'kurang';
+			const salahSpek = it.condition === 'salah_spek';
+			const jenis = salahSpek ? 'salah_spek' : it.condition === 'rusak' ? 'rusak' : qtyReceived === 0 ? 'hilang' : 'kurang';
 			const claim = await directusServerJson<{ data: any }>('/items/logistik_klaim', {
 				method: 'POST',
 				body: JSON.stringify({
@@ -208,15 +241,25 @@ export const POST: RequestHandler = async (event) => {
 					project_expense_id: exp.id,
 					project_id: exp.project_id,
 					jenis,
-					tipe_komplain: 'qty_short',
+					tipe_komplain: salahSpek ? 'wrong_item' : 'qty_short',
 					sumber: 'auto_qty',
 					qty_klaim: qtyLostDamaged,
 					nilai_klaim: qtyLostDamaged * unitPrice,
 					pihak: 'vendor',
 					status: 'diajukan',
-					diajukan_oleh: karyawan.nama_karyawan
+					diajukan_oleh: karyawan.nama_karyawan,
+					...(salahSpek ? { keterangan: `Salah spek saat terima${it.backhaul ? ' — TITIP BALIK ke supir' : ''}: ${exp.material_name || ''}`.trim() } : {})
 				})
 			}).catch(() => null);
+			if (salahSpek) {
+				await catatSalahSpek({
+					namaBarang: exp.material_name || '',
+					itemId: exp.identitas_barang_id ?? null,
+					projectId: Number(exp.project_id?.id ?? exp.project_id) || null,
+					qty: qtyLostDamaged,
+					backhaul: !!it.backhaul
+				});
+			}
 			if (claim?.data?.id) {
 				claimsCreated.push(claim.data.id);
 				await directusServerJson(`/items/project_expenses/${exp.id}`, {
@@ -278,13 +321,14 @@ export const POST: RequestHandler = async (event) => {
 			if (qtyLostDamaged > 0) {
 				hasVariance = true;
 				const unitPrice = parseFloat(sji.price) || 0;
-				const jenis = condition === 'rusak' ? 'rusak' : qtyReceived === 0 ? 'hilang' : 'kurang';
+				const salahSpek = it.condition === 'salah_spek';
+				const jenis = salahSpek ? 'salah_spek' : condition === 'rusak' ? 'rusak' : qtyReceived === 0 ? 'hilang' : 'kurang';
 				const claim = await directusServerJson<{ data: any }>('/items/logistik_klaim', {
 					method: 'POST',
 					body: JSON.stringify({
 						surat_jalan_id: suratJalanId,
 						jenis,
-						tipe_komplain: 'qty_short',
+						tipe_komplain: salahSpek ? 'wrong_item' : 'qty_short',
 						sumber: 'auto_qty',
 						qty_klaim: qtyLostDamaged,
 						nilai_klaim: qtyLostDamaged * unitPrice,
@@ -295,6 +339,14 @@ export const POST: RequestHandler = async (event) => {
 					})
 				}).catch(() => null);
 				if (claim?.data?.id) claimsCreated.push(claim.data.id);
+				if (salahSpek) {
+					await catatSalahSpek({
+						namaBarang: sji.nama_barang || '',
+						projectId: Number(sj.project_id?.id ?? sj.project_id) || null,
+						qty: qtyLostDamaged,
+						backhaul: !!it.backhaul
+					});
+				}
 			}
 		}
 	}
@@ -427,6 +479,22 @@ export const POST: RequestHandler = async (event) => {
 				}).catch(() => {})
 			)
 		);
+	}
+
+	// Inventory 360° Fase C — rekam checklist terima lalu relay gate G_INV_SPEC_RECEIVE (mode SHADOW di erp-epi).
+	// Best-effort mutlak: tidak melempar, tidak menahan respons, tidak menyentuh jurnal/stok/klaim di atas.
+	// Rekaman ditulis DULU supaya gate melihatnya; rujukan dokumen = token [sj:<id>] yang disusun di sini.
+	try {
+		const email = (karyawan as any)?.email_company ?? null;
+		await recordInspectionsForDocument({ inspeksi, collection: 'items/surat_jalan', recordId: suratJalanId, label: sj.nomor_sj ? `SJ ${sj.nomor_sj}` : '', userEmail: email });
+		const receivedExpenseIds = new Set(rabItems.filter((it) => (parseFloat(String(it.qty_received)) || 0) > 0).map((it) => it.project_expense_id));
+		const masterIds = [
+			...expenses.filter((e) => receivedExpenseIds.has(e.id)).map((e) => e.identitas_barang_id),
+			...hintItemIds
+		];
+		reportInventorySpecShadow({ kind: 'receive', collection: 'items/surat_jalan', recordId: suratJalanId, itemIds: masterIds as any[], userEmail: email });
+	} catch (e) {
+		console.error('[goods-received/confirm] rekaman checklist / relay gate gagal (GR sudah tersimpan):', e);
 	}
 
 	if (sj?.project_id) {
