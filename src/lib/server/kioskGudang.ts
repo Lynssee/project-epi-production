@@ -8,7 +8,7 @@ import { directusServerJson } from '$lib/server/directus';
 import { casPatchBody } from '$lib/server/directusCas';
 import { triggerN8nInventoryAlert } from '$lib/server/kioskAlert';
 import { parseStok, formatStok } from '$lib/utils/stokFormat';
-import { fetchLedgerQtyForGudang } from '$lib/server/kioskStok';
+import { fetchLedgerQtyForGudang, ledgerDelta } from '$lib/server/kioskStok';
 
 async function dget<T = any>(path: string): Promise<T[]> {
 	try {
@@ -970,5 +970,210 @@ export async function submitOpnameKiosk(
 		delta_pct: Math.round(deltaPct * 10) / 10,
 		reference_no: mv.reference_no,
 		already_done: mv.already_done
+	};
+}
+
+// ============================================================
+// Adjustment Opname per Rak — hitung fisik langsung menjadi stok sistem (tanpa approval)
+// ============================================================
+// Mayoritas stok tercatat di level gudang utama, sedangkan rak hanya punya baris penempatan
+// (saldo rak 0). Menjalankan opname biasa di rak seperti itu membaca seluruh hitungan sebagai
+// selisih dan menggandakan stok global. Jadi stok "belum teralokasi" dipindahkan dulu ke rak
+// (net-nol di stok global), baru sisa selisihnya dicatat sebagai OPNAME_ADJ.
+
+const bulat4 = (n: number) => Math.round(n * 10000) / 10000;
+
+/**
+ * Barang di satu rak: seluruh stok milik rak itu, sehingga stok global ikut menjadi `fisik`.
+ * Barang di beberapa rak: hanya ambil yang dibutuhkan rak ini; kekurangan belum tentu hilang
+ * (bisa ada di rak lain yang belum dihitung), jadi tidak mengurangi stok global.
+ */
+export function hitungAdjustmentRak(a: {
+	stokGlobal: number;
+	ledgerRak: number;
+	ledgerRakLain: number;
+	jumlahLokasi: number;
+	fisik: number;
+}): { alokasi: number; selisih: number } {
+	const belumAlokasi = a.stokGlobal - a.ledgerRak - a.ledgerRakLain;
+	const alokasi = bulat4(a.jumlahLokasi <= 1 ? belumAlokasi : Math.max(0, Math.min(a.fisik - a.ledgerRak, belumAlokasi)));
+	return { alokasi, selisih: bulat4(a.fisik - a.ledgerRak - alokasi) };
+}
+
+/** Boleh adjustment: PIC rak ini / rak induknya, atau punya centang menu Hitung Stok (selalu ditegakkan, bukan shadow). */
+export async function bolehAdjustRak(
+	karyawanId: number,
+	rak: { parent_gudang_id: number | null; pic_karyawan_ids: number[] | null }
+): Promise<boolean> {
+	const isPic = (ids: unknown) => Array.isArray(ids) && ids.map(Number).includes(karyawanId);
+	if (isPic(rak.pic_karyawan_ids)) return true;
+	const [karyawan, induk] = await Promise.all([
+		dgetStrict<any>(`/items/karyawan?filter[id][_eq]=${karyawanId}&fields=kiosk_menu_access&limit=1`),
+		rak.parent_gudang_id
+			? dgetStrict<any>(`/items/gudang?filter[id][_eq]=${rak.parent_gudang_id}&fields=pic_karyawan_ids&limit=1`)
+			: Promise.resolve([])
+	]);
+	const akses = karyawan[0]?.kiosk_menu_access;
+	return (Array.isArray(akses) && akses.includes('gudang_opname')) || isPic(induk[0]?.pic_karyawan_ids);
+}
+
+async function akarGudang(rak: any): Promise<{ id: number; nama_gudang: string }> {
+	let cur = rak;
+	for (let i = 0; i < 12 && cur.parent_gudang_id; i++) {
+		const rows = await dgetStrict<any>(`/items/gudang?filter[id][_eq]=${cur.parent_gudang_id}&fields=id,nama_gudang,parent_gudang_id&limit=1`);
+		if (!rows[0]) break;
+		cur = rows[0];
+	}
+	return { id: Number(cur.id), nama_gudang: cur.nama_gudang };
+}
+
+export interface AdjustRakHasil {
+	ok: true;
+	status: 'no_change' | 'auto_approved' | 'menunggu_approval';
+	alokasi: number;
+	selisih: number;
+	di_rak_baru: number;
+	stok_tersedia_baru: number;
+	terakhir_update: string;
+	reference_no: string | null;
+}
+
+/**
+ * Aman diulang: semua angka dihitung dari kondisi terkini, jadi kiriman kedua dengan hitungan
+ * yang sama menghasilkan alokasi & selisih 0 (tidak menulis stok lagi).
+ */
+export async function adjustOpnameRak(input: {
+	gudang_id: number;
+	placement_id: number;
+	hitung_fisik: number;
+	catatan: string;
+	client_txn_id: string;
+	karyawan_id: number;
+	karyawan_nama: string;
+}): Promise<AdjustRakHasil | { ok: false; error: string; status: number }> {
+	const { gudang_id, placement_id, hitung_fisik: fisik, client_txn_id: txn, karyawan_id, karyawan_nama } = input;
+
+	let itemId: number, stokGlobal: number, ledgerRak: number, ledgerRakLain: number, jumlahLokasi: number, rak: any;
+	try {
+		const [p] = await dgetStrict<any>(`/items/gudang_item_placement?filter[id][_eq]=${placement_id}&fields=gudang_id,identitas_barang_id&limit=1`);
+		if (!p || Number(p.gudang_id) !== gudang_id) return { ok: false, error: 'Barang tidak ditemukan di rak ini (mungkin sudah dipindah).', status: 404 };
+		itemId = Number(p.identitas_barang_id);
+
+		const [rakRows, itemRows, lokasi] = await Promise.all([
+			dgetStrict<any>(`/items/gudang?filter[id][_eq]=${gudang_id}&fields=id,nama_gudang,parent_gudang_id&limit=1`),
+			dgetStrict<any>(`/items/identitas_barang?filter[id][_eq]=${itemId}&fields=id,stok_tersedia&limit=1`),
+			dgetStrict<any>(`/items/gudang_item_placement?filter[identitas_barang_id][_eq]=${itemId}&fields=gudang_id&limit=-1`)
+		]);
+		rak = rakRows[0];
+		if (!rak?.parent_gudang_id) return { ok: false, error: 'Adjustment hanya untuk rak/zona, bukan gudang level teratas.', status: 400 };
+		if (!itemRows[0]) return { ok: false, error: 'Barang tidak ditemukan.', status: 404 };
+		stokGlobal = parseStok(itemRows[0].stok_tersedia);
+
+		const rakIds = [...new Set([gudang_id, ...lokasi.map((l) => Number(l.gudang_id))])];
+		jumlahLokasi = rakIds.length;
+		const tx = await dgetStrict<any>(
+			`/items/stock_transactions?filter[gudang_id][_in]=${rakIds.join(',')}&filter[item_id][_eq]=${itemId}` +
+				`&filter[status][_nin]=rejected,pending_approval` +
+				`&filter[_or][0][verification_status][_null]=true&filter[_or][1][verification_status][_neq]=pending` +
+				`&fields=gudang_id,previous_stock,new_stock,quantity,category_transaction&limit=-1`
+		);
+		ledgerRak = ledgerRakLain = 0;
+		for (const t of tx) {
+			if (Number(t.gudang_id) === gudang_id) ledgerRak += ledgerDelta(t);
+			else ledgerRakLain += ledgerDelta(t);
+		}
+	} catch (e) {
+		console.error('[kioskGudang] adjustOpnameRak gagal membaca data', e);
+		return { ok: false, error: 'Gagal membaca data stok. Coba lagi.', status: 503 };
+	}
+
+	const { alokasi, selisih } = hitungAdjustmentRak({ stokGlobal, ledgerRak, ledgerRakLain, jumlahLokasi, fisik });
+	const nowIso = new Date().toISOString();
+
+	if (Math.abs(alokasi) > 0.0001) {
+		try {
+			const akar = await akarGudang(rak);
+			const masukRak = alokasi > 0;
+			const umum = {
+				item_id: itemId,
+				quantity: Math.abs(alokasi),
+				previous_stock: stokGlobal,
+				new_stock: stokGlobal, // net-nol di stok global — hanya mengisi saldo rak
+				reference_no: refNo(),
+				status: 'published',
+				verification_status: 'verified',
+				verified_at: nowIso,
+				transaction_date: nowIso,
+				source: `kiosk:adjust-opname:${karyawan_nama} (#${karyawan_id})`,
+				reference_type: 'ALOKASI_OPNAME',
+				destination_type: 'gudang',
+				notes: `Alokasi saldo ${akar.nama_gudang} ↔ ${rak.nama_gudang} saat adjustment opname oleh ${karyawan_nama} (karyawan #${karyawan_id})`
+			};
+			// Satu POST array = satu transaksi DB: kedua baris tersimpan atau keduanya batal.
+			await directusServerJson('/items/stock_transactions', {
+				method: 'POST',
+				body: JSON.stringify([
+					{
+						...umum,
+						transaction_type: masukRak ? 'IN' : 'OUT',
+						category_transaction: masukRak ? 'TRANSFER-RAK-IN' : 'TRANSFER-RAK-OUT',
+						gudang_id,
+						destination_id: akar.id,
+						destination_name: akar.nama_gudang,
+						client_txn_id: `${txn}:alok-rak`
+					},
+					{
+						...umum,
+						transaction_type: masukRak ? 'OUT' : 'IN',
+						category_transaction: masukRak ? 'TRANSFER-RAK-OUT' : 'TRANSFER-RAK-IN',
+						gudang_id: akar.id,
+						destination_id: gudang_id,
+						destination_name: rak.nama_gudang,
+						client_txn_id: `${txn}:alok-induk`
+					}
+				])
+			});
+		} catch (e) {
+			console.error('[kioskGudang] adjustOpnameRak gagal menulis alokasi', e);
+			return { ok: false, error: 'Gagal menyimpan saldo rak. Coba lagi.', status: 502 };
+		}
+	}
+
+	const hasil = await submitOpnameKiosk(
+		{
+			item_id: itemId,
+			stok_sistem: bulat4(ledgerRak + alokasi),
+			hitung_fisik: fisik,
+			catatan: `[ADJUSTMENT RAK ${rak.nama_gudang}] ${input.catatan}`.trim(),
+			client_txn_id: `${txn}:adj`,
+			karyawan_id,
+			karyawan_nama,
+			rak_id: gudang_id
+		},
+		{ toleransiPct: 100, wajibApproval: false }
+	);
+	if (!hasil.ok) return { ok: false, error: hasil.error, status: hasil.status ?? 502 };
+
+	// Dicatat juga saat hitungan cocok: stok tetap terkonfirmasi per opname ini. Non-fatal.
+	let stokBaru = bulat4(stokGlobal + selisih);
+	try {
+		const r = await directusServerJson<{ data: any }>(`/items/identitas_barang/${itemId}?fields=stok_tersedia`, {
+			method: 'PATCH',
+			body: JSON.stringify({ last_stock_update: nowIso })
+		});
+		if (r?.data) stokBaru = parseStok(r.data.stok_tersedia);
+	} catch (e) {
+		console.warn('[kioskGudang] adjustOpnameRak gagal mencatat last_stock_update (non-fatal)', itemId, e);
+	}
+
+	return {
+		ok: true,
+		status: hasil.status,
+		alokasi,
+		selisih,
+		di_rak_baru: fisik,
+		stok_tersedia_baru: stokBaru,
+		terakhir_update: nowIso,
+		reference_no: hasil.reference_no ?? null
 	};
 }

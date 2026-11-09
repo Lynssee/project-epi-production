@@ -12,6 +12,7 @@ import { directusServerJson } from '$lib/server/directus';
 import { triggerN8nInventoryAlert } from '$lib/server/kioskAlert';
 import { resolveGateMode } from '$lib/server/gateDefinitionsMode';
 import { parseStok } from '$lib/utils/stokFormat';
+import { itemBlindKiosk } from '$lib/server/opnameSesi';
 
 export interface KioskGudangRow {
 	id: number;
@@ -32,6 +33,13 @@ export interface KioskPlacementRow {
 	expected_qty: number | null;
 	min_qty: number | null;
 	ledger_qty: number | null;
+	/** Stok seluruh lokasi (identitas_barang.stok_tersedia); null bila kosong atau sedang blind. */
+	stok_tersedia: number | null;
+	/** Barang sedang diopname dalam sesi blind: stok sengaja tidak dikirim ke layar kiosk. */
+	blind_sesi?: boolean;
+	/** Jumlah rak yang menempatkan barang ini; null kalau gagal dibaca. */
+	jumlah_lokasi: number | null;
+	terakhir_update: string | null;
 }
 
 export interface KioskPicRow {
@@ -172,12 +180,57 @@ export async function fetchLedgerQtyForGudang(gudangId: number, itemIds?: number
 	return map;
 }
 
+export interface KioskSubRakRow {
+	id: number;
+	kode_gudang: string | null;
+	nama_gudang: string;
+	jenis: string | null;
+	/** Jumlah baris penempatan di sub rak ini; null kalau hitungannya gagal dibaca. */
+	jumlah_item: number | null;
+}
+
 export interface KioskRakDetail {
 	gudang: KioskGudangRow;
 	parent_nama: string | null;
+	sub_rak: KioskSubRakRow[];
 	placements: KioskPlacementRow[];
 	pics: KioskPicRow[];
 	denah: KioskDenahContext | null;
+}
+
+/**
+ * Sub rak / pallet aktif langsung di bawah satu rak, urut alami (A2 sebelum A10).
+ * Maksimal 2 query: daftar anak + satu agregat jumlah item (bukan N query per anak).
+ */
+export async function fetchSubRak(parentId: number): Promise<KioskSubRakRow[]> {
+	const rows = await dget<any>(
+		`/items/gudang?filter[parent_gudang_id][_eq]=${parentId}&fields=id,kode_gudang,nama_gudang,jenis,is_active&limit=-1`
+	);
+	// is_active di data live bernilai 1/0, sebagian kode lama mengharapkan boolean.
+	const aktif = rows.filter((r) => r.is_active !== false && r.is_active !== 0);
+	if (!aktif.length) return [];
+
+	let jumlah: Map<number, number> | null = null;
+	try {
+		const counts = await dgetStrict<any>(
+			`/items/gudang_item_placement?filter[gudang_id][_in]=${aktif.map((r) => r.id).join(',')}` +
+				`&aggregate[count]=id&groupBy[]=gudang_id&limit=-1`
+		);
+		jumlah = new Map(counts.map((c: any) => [Number(c.gudang_id), Number(c.count?.id) || 0]));
+	} catch (e) {
+		// Tampilan saja: daftar sub rak tetap berguna walau jumlahnya tidak terbaca.
+		console.warn('[kioskStok] gagal menghitung isi sub rak', parentId, e);
+	}
+
+	return aktif
+		.map((r) => ({
+			id: Number(r.id),
+			kode_gudang: r.kode_gudang || null,
+			nama_gudang: r.nama_gudang || `#${r.id}`,
+			jenis: r.jenis || null,
+			jumlah_item: jumlah ? (jumlah.get(Number(r.id)) ?? 0) : null
+		}))
+		.sort((a, b) => a.nama_gudang.localeCompare(b.nama_gudang, 'id', { numeric: true, sensitivity: 'base' }));
 }
 
 /** Detail satu rak untuk kiosk: master rak + item ditempatkan + qty ledger + PIC + denah. */
@@ -203,21 +256,34 @@ export async function fetchRakDetail(gudangId: number): Promise<KioskRakDetail |
 		parentNama = parents[0]?.nama_gudang || null;
 	}
 
-	const rows = await dget<any>(
-		`/items/gudang_item_placement?filter[gudang_id][_eq]=${gudangId}&sort=urutan&limit=-1&fields=id,identitas_barang_id,expected_qty,min_qty`
-	);
+	const [rows, subRak] = await Promise.all([
+		dget<any>(
+			`/items/gudang_item_placement?filter[gudang_id][_eq]=${gudangId}&sort=urutan&limit=-1&fields=id,identitas_barang_id,expected_qty,min_qty`
+		),
+		fetchSubRak(gudangId)
+	]);
 	const itemIds = [...new Set(rows.map((r) => r.identitas_barang_id).filter(Boolean))];
 	const items = itemIds.length
 		? await dget<any>(
-				`/items/identitas_barang?filter[id][_in]=${itemIds.join(',')}&fields=id,nama_barang_lengkap,kode_item,satuan,parent_category&limit=-1`
+				`/items/identitas_barang?filter[id][_in]=${itemIds.join(',')}&fields=id,nama_barang_lengkap,kode_item,satuan,parent_category,stok_tersedia,last_stock_update&limit=-1`
 			)
 		: [];
 	const itemMap = new Map(items.map((i: any) => [i.id, i]));
 	const ledger = await fetchLedgerQtyForGudang(gudangId, itemIds);
+	const lokasiRows = itemIds.length
+		? await dget<any>(
+				`/items/gudang_item_placement?filter[identitas_barang_id][_in]=${itemIds.join(',')}&aggregate[count]=id&groupBy[]=identitas_barang_id&limit=-1`
+			)
+		: [];
+	const jumlahLokasi = new Map(lokasiRows.map((l: any) => [Number(l.identitas_barang_id), Number(l.count?.id) || 0]));
+
+	// Sesi opname blind: stok barang yang sedang dihitung tidak boleh tampil di layar kiosk.
+	const itemBlind = await itemBlindKiosk(itemIds.map(Number), gudangId);
 
 	const placements: KioskPlacementRow[] = rows.map((r) => {
 		const it = itemMap.get(r.identitas_barang_id) || {};
 		const pcId = normalizeParentCategory(it.parent_category);
+		const blind = itemBlind.has(Number(r.identitas_barang_id));
 		return {
 			placement_id: r.id,
 			identitas_barang_id: r.identitas_barang_id,
@@ -227,7 +293,11 @@ export async function fetchRakDetail(gudangId: number): Promise<KioskRakDetail |
 			kategori: classify(pcId, cfg),
 			expected_qty: r.expected_qty ?? null,
 			min_qty: r.min_qty ?? null,
-			ledger_qty: ledger.has(r.identitas_barang_id) ? ledger.get(r.identitas_barang_id)! : null
+			ledger_qty: ledger.has(r.identitas_barang_id) ? ledger.get(r.identitas_barang_id)! : null,
+			stok_tersedia: !blind && it.stok_tersedia != null && it.stok_tersedia !== '' ? parseStok(it.stok_tersedia) : null,
+			blind_sesi: blind,
+			jumlah_lokasi: jumlahLokasi.get(Number(r.identitas_barang_id)) ?? null,
+			terakhir_update: it.last_stock_update || null
 		};
 	});
 
@@ -252,7 +322,7 @@ export async function fetchRakDetail(gudangId: number): Promise<KioskRakDetail |
 		}
 	}
 
-	return { gudang, parent_nama: parentNama, placements, pics, denah };
+	return { gudang, parent_nama: parentNama, sub_rak: subRak, placements, pics, denah };
 }
 
 export interface KioskCariHit {
