@@ -1,6 +1,10 @@
 import directus, { handleDirectusError } from './directus';
 import { readItems, createItem, updateItem, deleteItem } from '@directus/sdk';
-import { getManpowerSetting } from './manpowerSettings';
+import { getManpowerSetting, loadManpowerSettings } from './manpowerSettings';
+import {
+	STATUS_PA_MENAGIH, KUNCI_PA_MODE_KEY, normKunciPaMode, cariBentrokPA, pesanKunciPA,
+	type KunciPA, type RincianPaAktif
+} from '$lib/shared/paKunciAbsensi';
 import { hitungBiayaHarian, pilihRate, rateKosong } from '$lib/shared/manpowerAccrualCalc';
 
 // ── Manpower Absensi (Timesheet origin) ────────────────────────────────────
@@ -11,6 +15,53 @@ import { hitungBiayaHarian, pilihRate, rateKosong } from '$lib/shared/manpowerAc
 // HADIR_FACTOR pindah ke $lib/shared/manpowerAccrualCalc (dipakai bersama server).
 
 const asId = (v: any) => (v && typeof v === 'object' ? v.id : v);
+
+/**
+ * Muat rincian PA aktif (belum ditolak/dibatalkan) yang meliputi assignment pada rentang tanggal — SEKALI untuk banyak baris
+ * (rekap/grid meneruskan hasilnya via `kunciPA`). Mode 'off' = tanpa query. Gagal baca TIDAK menghalangi edit absensi
+ * (fail-open + log): kunci ini pelindung, bukan syarat operasional. Aturan sama dengan erp-epi (shared/paKunciAbsensi).
+ */
+export async function muatKunciPA(assignmentIds: any[], dari: string, sampai: string): Promise<KunciPA> {
+	try { await loadManpowerSettings(); } catch { /* pakai default */ }
+	const mode = normKunciPaMode(getManpowerSetting(KUNCI_PA_MODE_KEY));
+	const ids = [...new Set((assignmentIds || []).filter(Boolean))];
+	if (mode === 'off' || !ids.length || !dari || !sampai) return { mode, rincian: [] };
+	try {
+		const pam = (await directus.request(
+			readItems('pengajuan_anggaran_manpower' as any, {
+				fields: ['id', 'assignment_id', 'pengajuan_anggaran_id', 'periode_dari', 'periode_sampai'],
+				filter: {
+					assignment_id: { _in: ids },
+					periode_dari: { _lte: sampai },
+					periode_sampai: { _gte: dari }
+				} as any,
+				limit: -1
+			})
+		)) as any[];
+		const paIds = [...new Set((pam || []).map((r) => asId(r.pengajuan_anggaran_id)).filter(Boolean))];
+		if (!paIds.length) return { mode, rincian: [] };
+		const pas = (await directus.request(
+			readItems('pengajuan_anggaran' as any, {
+				fields: ['id', 'nomor_pengajuan', 'status'],
+				filter: { id: { _in: paIds } } as any,
+				limit: -1
+			})
+		)) as any[];
+		const paMap = new Map((pas || []).map((p) => [String(p.id), p]));
+		const rincian = (pam || [])
+			.map((r): RincianPaAktif | null => {
+				const pa: any = paMap.get(String(asId(r.pengajuan_anggaran_id)));
+				return pa && STATUS_PA_MENAGIH.includes(pa.status)
+					? { assignmentId: asId(r.assignment_id), dari: String(r.periode_dari).slice(0, 10), sampai: String(r.periode_sampai).slice(0, 10), nomor: pa.nomor_pengajuan || `PA #${pa.id}`, status: pa.status }
+					: null;
+			})
+			.filter((x): x is RincianPaAktif => !!x);
+		return { mode, rincian };
+	} catch (e: any) {
+		console.warn('[muatKunciPA] gagal membaca PA aktif (kunci dilewati):', e?.message || e);
+		return { mode, rincian: [] };
+	}
+}
 
 /** Cari baris absensi assignment untuk tanggal tertentu (dari geofence ATAU timesheet). */
 export async function findAbsensiToday(assignmentId: number, tanggal: string) {
@@ -370,13 +421,31 @@ export async function upsertTimesheetAbsensi(p: {
 	dobelProyekProyekLainId?: number;
 	/** ID file Directus untuk foto dokumentasi / briefing site */
 	foto_masuk?: string | null;
+	foto_pulang?: string | null;
+	jam_masuk?: string | null;
+	jam_pulang?: string | null;
+	metode_catat?: string | null;
+	verifikasi_leader_status?: string | null;
+	verifikasi_oleh_user?: string | null;
+	masuk_valid?: boolean | null;
+	jarak_masuk_m?: number | null;
 	/** Fase 3 — konteks kerja. Default 'project' + id=projectId (timesheet = alat proyek). */
 	workContextType?: string;
 	workContextId?: number | null;
+	/** Hasil muatKunciPA dari pemanggil (rekap/grid) agar tak query PA per baris. Kosong = dimuat sendiri. */
+	kunciPA?: KunciPA;
 }) {
 	try {
 		const existing = await findAbsensiToday(p.assignmentId, p.tanggal);
 		const status = p.status || 'hadir';
+
+		// Kunci lunak selama PA upah berjalan (lihat muatKunciPA): block = tolak, warn = lanjut + kembalikan peringatan.
+		const kunci = p.kunciPA || (await muatKunciPA([p.assignmentId], p.tanggal, p.tanggal));
+		const bentrokPA = cariBentrokPA(kunci.rincian, p.assignmentId, p.tanggal);
+		if (bentrokPA && kunci.mode === 'block') {
+			return { data: null, success: false, lockedPA: true, error: pesanKunciPA(bentrokPA, p.tanggal, 'block') };
+		}
+		const peringatanPA = bentrokPA && kunci.mode === 'warn' ? pesanKunciPA(bentrokPA, p.tanggal, 'warn') : undefined;
 
 		const payload = {
 			assignment_id: p.assignmentId,
@@ -388,7 +457,15 @@ export async function upsertTimesheetAbsensi(p: {
 			status,
 			jam_kerja: p.jamKerja,
 			foto_masuk: p.foto_masuk || null,
+			foto_pulang: p.foto_pulang || null,
+			jam_masuk: p.jam_masuk || `${p.tanggal}T08:00:00.000Z`,
+			jam_pulang: p.jam_pulang || (p.jamKerja > 0 ? `${p.tanggal}T17:00:00.000Z` : null),
 			dicatat_oleh: p.dicatatOleh || '',
+			metode_catat: p.metode_catat || 'leader',
+			verifikasi_leader_status: p.verifikasi_leader_status || 'disetujui',
+			verifikasi_oleh_user: p.verifikasi_oleh_user || p.dicatatOleh || 'Leader Proyek',
+			masuk_valid: p.masuk_valid !== undefined ? p.masuk_valid : true,
+			jarak_masuk_m: p.jarak_masuk_m !== undefined ? p.jarak_masuk_m : 0,
 			report_id: p.reportId || null,
 			is_holiday: p.is_holiday || false,
 			ot_hours: p.ot_hours || 0,
@@ -420,19 +497,27 @@ export async function upsertTimesheetAbsensi(p: {
 				shift: payload.shift,
 				notes: p.notes || existing.notes,
 				...(p.foto_masuk ? { foto_masuk: p.foto_masuk } : {}),
+				...(p.jam_masuk ? { jam_masuk: p.jam_masuk } : {}),
+				...(p.jam_pulang ? { jam_pulang: p.jam_pulang } : {}),
+				...(p.metode_catat ? { metode_catat: p.metode_catat } : {}),
+				...(p.verifikasi_leader_status ? { verifikasi_leader_status: p.verifikasi_leader_status } : {}),
+				...(p.verifikasi_oleh_user || p.dicatatOleh ? { verifikasi_oleh_user: p.verifikasi_oleh_user || p.dicatatOleh } : {}),
+				...(p.masuk_valid !== undefined ? { masuk_valid: p.masuk_valid } : {}),
+				...(p.jarak_masuk_m !== undefined ? { jarak_masuk_m: p.jarak_masuk_m } : {}),
+				...(p.reportId ? { report_id: p.reportId } : {}),
 				// Hanya timpa flag dobel-proyek kalau kali ini memang override (jangan hapus
 				// jejak override sebelumnya hanya karena update biasa tanpa override baru).
 				...(payload.dobel_proyek_flag ? { dobel_proyek_flag: true, dobel_proyek_proyek_lain_id: payload.dobel_proyek_proyek_lain_id } : {})
 			}));
 			await postManpowerAccrual(existing.id);
-			return { data: existing, success: true, viaGeofence: !!existing.jam_masuk, created: false };
+			return { data: existing, success: true, viaGeofence: !!existing.jam_masuk, created: false, peringatanPA };
 		}
 
 		const created: any = await directus.request(
 			createItem('manpower_absensi', payload)
 		);
 		await postManpowerAccrual(created.id);
-		return { data: created, success: true, viaGeofence: false, created: true };
+		return { data: created, success: true, viaGeofence: false, created: true, peringatanPA };
 	} catch (error: any) {
 		console.error('upsertTimesheetAbsensi:', error);
 		return { data: null, success: false, error: error.message };
@@ -444,17 +529,22 @@ export async function upsertTimesheetAbsensi(p: {
  * IN/OT/SB semuanya 0 — untuk membatalkan entri yang salah). Ikut menghapus akrual biaya di
  * project_expenses yang tertaut, supaya tidak ada biaya hantu tersisa setelah absensi dibatalkan.
  */
-export async function deleteAbsensiEntry(assignmentId: number, tanggal: string) {
+export async function deleteAbsensiEntry(assignmentId: number, tanggal: string, kunciPA?: KunciPA) {
 	try {
 		const existing: any = await findAbsensiToday(assignmentId, tanggal);
 		if (!existing) return { success: true, deleted: false };
+		const kunci = kunciPA || (await muatKunciPA([assignmentId], tanggal, tanggal));
+		const bentrokPA = cariBentrokPA(kunci.rincian, assignmentId, tanggal);
+		if (bentrokPA && kunci.mode === 'block') {
+			return { success: false, deleted: false, lockedPA: true, error: pesanKunciPA(bentrokPA, tanggal, 'block') };
+		}
 
 		const expenseId = asId(existing.expense_id);
 		if (expenseId) {
 			await directus.request(deleteItem('project_expenses', expenseId));
 		}
 		await directus.request(deleteItem('manpower_absensi', existing.id));
-		return { success: true, deleted: true };
+		return { success: true, deleted: true, peringatanPA: bentrokPA && kunci.mode === 'warn' ? pesanKunciPA(bentrokPA, tanggal, 'warn') : undefined };
 	} catch (error: any) {
 		console.error('deleteAbsensiEntry:', error);
 		return { success: false, deleted: false, error: error.message };
@@ -491,7 +581,7 @@ export async function recapAbsensiFromReports(
 	endDate: string,
 	recordedBy = ''
 ) {
-	const result = { success: true, created: 0, updated: 0, skipped: [] as { tanggal: string; nama: string }[], error: undefined as string | undefined };
+	const result = { success: true, created: 0, updated: 0, skipped: [] as { tanggal: string; nama: string }[], terkunciPA: 0, peringatanPA: 0, error: undefined as string | undefined };
 	try {
 		let reports: any[] = [];
 		try {
@@ -595,13 +685,20 @@ export async function recapAbsensiFromReports(
 			}
 		}
 
+		// Kunci lunak selama PA berjalan: satu muat untuk seluruh antrean (hemat API), diteruskan ke tiap upsert.
+		const kunciPA: KunciPA = queue.length
+			? await muatKunciPA(queue.map((q) => q.assignmentId), startDate, endDate)
+			: { mode: 'off', rincian: [] };
+
 		await runConcurrent(queue, 6, async (item) => {
 			const existingKey = `${item.assignmentId}_${item.tanggal}`;
 			const existing = existingMap.get(existingKey) || existingMap.get(`m_${item.manpowerId}_${item.tanggal}`);
 			if (existing && (existing.dikunci || existing.payroll_id)) {
 				return;
 			}
-			const res = await upsertTimesheetAbsensi(item);
+			const res: any = await upsertTimesheetAbsensi({ ...item, kunciPA });
+			if (res.lockedPA) result.terkunciPA++;
+			if (res.peringatanPA) result.peringatanPA++;
 			if (res.success) {
 				if (existing) result.updated++;
 				else result.created++;

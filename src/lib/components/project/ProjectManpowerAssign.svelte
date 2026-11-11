@@ -13,10 +13,15 @@
   import SignaturePad from "$lib/components/shared/SignaturePad.svelte";
   import { getActiveSanctions } from "$lib/services/sanksi";
   import ReportViolationModal from "./ReportViolationModal.svelte";
+  import LaporKaburModal from "./LaporKaburModal.svelte";
+  import SmartReplacementModal from "./SmartReplacementModal.svelte";
   import { getProjects } from "$lib/services/projects";
   import ManpowerComplianceBoard from "./ManpowerComplianceBoard.svelte";
   import { uploadEvidencePhoto } from "$lib/services/stockLapangan";
   import { compressPhoto } from "$lib/utils/photoCompress";
+  import { pesanNilaiBorongan, rupiahBorongan, NILAI_BORONGAN_MIN_DEFAULT } from "$lib/shared/boronganNilai";
+  import { getManpowerSetting, loadManpowerSettings, manpowerSettingsStore } from "$lib/services/manpowerSettings";
+  import SpkTtdLinkModal from "$lib/components/project/SpkTtdLinkModal.svelte";
 
   const toast = { success: (m) => window.__showToast && window.__showToast(m, "success"), error: (m) => window.__showToast && window.__showToast(m, "error"), info: (m) => window.__showToast && window.__showToast(m, "info") };
 
@@ -32,6 +37,15 @@
   // ── Pelanggaran / Sanksi ──
   let showViolationModal = $state(false);
   let violationTarget = $state(null);
+
+  // ── Lapor Kabur / Anti-Desertion (Fase 2) ──
+  let showLaporKaburModal = $state(false);
+  let showSmartReplacementModal = $state(false);
+  let laporKaburTarget = $state(null);
+  function openLaporKabur(a) {
+    laporKaburTarget = a;
+    showLaporKaburModal = true;
+  }
 
   // ── Tambah penugasan ──
   let showModal = $state(false);
@@ -72,6 +86,27 @@
   // ── Tanda tangan ──
   let showSignModal = $state(false);
   let signTarget = $state(null);
+  // TTD via tautan (Fase 4): tombol tampil hanya bila fitur diaktifkan di setelan Dokumen SPK (HRD admin).
+  let ttdLinkTarget = $state(null);
+  // Anggota kru proyek yang sama (selain pemilik SPK & yang dibatalkan) — kandidat penerima pakta tanpa harga.
+  function kruDari(target) {
+    const idOf = (v) => (v && typeof v === "object" ? v.id : v);
+    const pid = String(idOf(target.project_id));
+    const pemilik = String(idOf(target.manpower_id));
+    const seen = new Set();
+    const out = [];
+    for (const x of assignments) {
+      if (x.id === target.id || x.status === "batal" || String(idOf(x.project_id)) !== pid) continue;
+      const mid = String(idOf(x.manpower_id));
+      if (!mid || mid === "undefined" || mid === "null" || mid === pemilik || seen.has(mid)) continue;
+      seen.add(mid);
+      out.push({ manpowerId: Number(mid), nama: nama(x) });
+    }
+    return out;
+  }
+  // Penugasan yang SPK-nya belum ditandatangani — pembayaran (DP/termin/upah) dapat tertahan gate G_SPK_MANPOWER_TTD.
+  const jumlahMenungguTtd = $derived(assignments.filter((a) => a.status === "menunggu_ttd").length);
+  const ttdLinkAktif = $derived($manpowerSettingsStore["manpower.spk_doc.ttd_link_aktif"] === true);
   let signNama = $state("");
   let signPad;
   let signing = $state(false);
@@ -180,7 +215,7 @@
         return;
       }
       if (form.rate_tipe === "harian" && !form.rate_harian) { toast.error("Isi rate harian"); return; }
-      if (form.rate_tipe === "borongan" && !form.nilai_borongan) { toast.error("Isi nilai borongan"); return; }
+      if (form.rate_tipe === "borongan") { const m = pesanNilaiBorongan(form.nilai_borongan, nilaiMinBorongan()); if (m) { toast.error(m); return; } }
       saving = true;
       try {
         const mpRes = await createManpower({
@@ -227,7 +262,7 @@
     } else {
       if (!form.manpower_id) { toast.error("Pilih manpower terlebih dahulu"); return; }
       if (form.rate_tipe === "harian" && !form.rate_harian) { toast.error("Isi rate harian"); return; }
-      if (form.rate_tipe === "borongan" && !form.nilai_borongan) { toast.error("Isi nilai borongan"); return; }
+      if (form.rate_tipe === "borongan") { const m = pesanNilaiBorongan(form.nilai_borongan, nilaiMinBorongan()); if (m) { toast.error(m); return; } }
       saving = true;
     }
     
@@ -300,11 +335,17 @@
     else toast.error(res.error || "Gagal menghapus");
   }
 
-  async function doPrint(a) {
-    await printSpkAssignment(a, project, typeof a.manpower_id === "object" ? a.manpower_id : null);
+  // tanpaHarga=true → versi Syarat Manpower (tanpa nominal, watermark)
+  async function doPrint(a, tanpaHarga = false) {
+    await printSpkAssignment(a, project, typeof a.manpower_id === "object" ? a.manpower_id : null, { tanpaHarga });
   }
 
   
+
+  // PDP-40: nilai borongan wajib nilai kontrak SPK yang riil (Rp1 = placeholder ditolak). Batas pembayaran PA borongan
+  // dihitung dari nilai ini (gate G_BORONGAN_BATAS_PROGRES). Minimum dari setelan manpower.borongan.nilai_min.
+  loadManpowerSettings();
+  const nilaiMinBorongan = () => Number(getManpowerSetting("manpower.borongan.nilai_min")) || NILAI_BORONGAN_MIN_DEFAULT;
 
   function openEditRate(a) {
     editRateTarget = a;
@@ -321,7 +362,14 @@
 
   async function handleEditRate() {
     if (editRateForm.rate_tipe === "harian" && !editRateForm.rate_harian) { toast.error("Isi rate harian"); return; }
-    if (editRateForm.rate_tipe === "borongan" && !editRateForm.nilai_borongan) { toast.error("Isi nilai borongan"); return; }
+    if (editRateForm.rate_tipe === "borongan") {
+      if (!editRateForm.nilai_borongan) { toast.error("Isi nilai borongan"); return; }
+      // Hanya ditegakkan bila nilai diubah / baru jadi borongan (Aturan #3: penugasan lama tidak dikunci untuk edit lain).
+      const berubah = editRateTarget?.rate_tipe !== "borongan" || Number(editRateForm.nilai_borongan) !== Number(editRateTarget?.nilai_borongan);
+      const m = pesanNilaiBorongan(editRateForm.nilai_borongan, nilaiMinBorongan());
+      if (m && berubah) { toast.error(m); return; }
+      if (m) toast.info("Nilai borongan penugasan ini belum riil — mohon lengkapi sesuai SPK.");
+    }
     editRateSaving = true;
     try {
       const res = await updateAssignment(editRateTarget.id, {
@@ -403,6 +451,7 @@
     menunggu_ttd: { l: "Menunggu TTD", c: "bg-yellow-100 text-yellow-800" },
     aktif: { l: "Aktif", c: "bg-green-100 text-green-700" },
     selesai: { l: "Selesai", c: "bg-blue-100 text-blue-700" },
+    kabur_mangkir: { l: "🚨 Kabur / Blacklist", c: "bg-rose-100 text-rose-700 border border-rose-300 font-bold" },
     batal: { l: "Batal", c: "bg-red-100 text-red-600" },
   };
 </script>
@@ -415,10 +464,16 @@
       <h2 class="text-xl font-bold text-gray-900">Penugasan & SPK</h2>
       <p class="text-sm text-gray-500">Delegasi manpower ke project ini dengan rate khusus + SPK bertanda tangan</p>
     </div>
-    <button on:click={openAdd}
-      class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-sm flex items-center gap-2">
-      ➕ Tambah Penugasan
-    </button>
+    <div class="flex items-center gap-2 flex-wrap">
+      <button on:click={() => (showSmartReplacementModal = true)}
+        class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition-all">
+        ⚡ Cari Pengganti Cepat
+      </button>
+      <button on:click={openAdd}
+        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-sm flex items-center gap-2">
+        ➕ Tambah Penugasan
+      </button>
+    </div>
   </div>
 
   {#if project?.id}
@@ -430,6 +485,12 @@
   {:else if error}
     <div class="py-12 text-center bg-white rounded-xl border border-gray-200"><p class="text-red-600 text-sm">{error}</p><button on:click={load} class="mt-3 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-semibold">Coba Lagi</button></div>
   {:else}
+    {#if jumlahMenungguTtd > 0}
+      <div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-xs p-3 flex items-start gap-2" role="status">
+        <span>✍️</span>
+        <span><strong>{jumlahMenungguTtd} SPK belum ditandatangani manpower.</strong> Pembayaran DP/termin/upah untuk penugasan ini dapat tertahan (gate "SPK manpower sudah ditandatangani"). Klik <b>🔗 Link TTD</b> atau <b>✍️ TTD</b> pada baris berstatus <em>Menunggu TTD</em>.</span>
+      </div>
+    {/if}
     <div class="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
       {#if assignments.length === 0}
         <div class="py-16 text-center"><div class="text-4xl mb-3">📋</div><h3 class="text-base font-semibold text-gray-700">Belum ada penugasan</h3><p class="text-sm text-gray-500 mt-1">Klik "Tambah Penugasan" untuk mendelegasikan manpower ke project ini.</p></div>
@@ -474,16 +535,21 @@
                   </td>
                   <td class="px-4 py-3">
                     <div class="flex items-center justify-center gap-1 flex-wrap">
+                      {#if a.status === "menunggu_ttd" && ttdLinkAktif}
+                        <button on:click={() => (ttdLinkTarget = a)} class="px-2 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded" title="Buat tautan agar mandor membaca dan menandatangani SPK dari HP-nya sendiri (bisa juga di perangkat Anda atau dispensasi).">🔗 Link TTD</button>
+                      {/if}
                       {#if a.status === "menunggu_ttd"}
                         <button on:click={() => openSign(a)} class="px-2 py-1 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded" title="Tanda tangani SPK">✍️ TTD</button>
                       {/if}
                       <button on:click={() => doPrint(a)} class="p-1.5 text-gray-600 hover:bg-gray-100 rounded" title="Cetak SPK">🖨️</button>
+                      <button on:click={() => doPrint(a, true)} class="px-1.5 py-1 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded" title="Cetak versi TANPA HARGA (syarat & ketentuan manpower): tanpa upah/nilai, ada watermark. Aman ditunjukkan di site; bukan SPK yang sah.">Tanpa Harga</button>
                       {#if a.status !== "batal"}
                         <button on:click={() => openEditRate(a)} class="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded" title="Edit Rate Gaji">✏️</button>
                       {/if}
                       {#if a.status === "aktif"}
                         <button on:click={() => openMutasi(a)} class="p-1.5 text-sky-600 hover:bg-sky-50 rounded" title="Mutasi ke project lain">🔀</button>
                         <button on:click={() => handleStatus(a, "selesai")} class="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Tandai selesai">✅</button>
+                        <button on:click={() => openLaporKabur(a)} class="p-1.5 text-rose-600 hover:bg-rose-50 rounded font-bold" title="Lapor Manpower Kabur / Fatal">🚨</button>
                       {/if}
                       {#if a.status === "aktif" || a.status === "menunggu_ttd"}
                         <button on:click={() => { violationTarget = typeof a.manpower_id === "object" ? a.manpower_id : { id: a.manpower_id, nama: nama(a) }; showViolationModal = true; }} class="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Laporkan Pelanggaran Lapangan">⚠️</button>
@@ -689,6 +755,7 @@
             <div>
               <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Nilai Borongan (Rp) *</label>
               <input type="number" bind:value={form.nilai_borongan} placeholder="5000000" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+              <p class="text-[11px] text-gray-500 mt-1">Isi nilai kontrak borongan sesuai SPK yang ditandatangani (minimal {rupiahBorongan(nilaiMinBorongan())}). Nilai ini menjadi batas pembayaran PA sesuai progres.</p>
             </div>
           {/if}
           <div>
@@ -709,6 +776,18 @@
         <div>
           <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Lokasi Kerja</label>
           <input bind:value={form.lokasi} placeholder="Lokasi proyek" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Mandor Penjamin (Opsional)</label>
+          <select bind:value={form.penjamin_mandor_id} class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500">
+            <option value="">-- Tanpa Penjamin / Mandor Mandiri --</option>
+            {#each registeredManpower as mandor}
+              {#if mandor.posisi?.toLowerCase().includes('mandor') || mandor.posisi?.toLowerCase().includes('leader') || mandor.layak_jadi_leader}
+                <option value={mandor.id}>{mandor.nama} ({mandor.posisi || 'Mandor/Leader'})</option>
+              {/if}
+            {/each}
+          </select>
+          <p class="text-[11px] text-gray-400 mt-0.5">Mandor yang bertanggung jawab membawa dan menjamin kehadiran pekerja ini di site.</p>
         </div>
         <div>
           <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Catatan</label>
@@ -753,6 +832,7 @@
           <div>
             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Nilai Borongan (Rp) *</label>
             <input type="number" bind:value={editRateForm.nilai_borongan} class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+            <p class="text-[11px] text-gray-500 mt-1">Nilai kontrak sesuai SPK (minimal {rupiahBorongan(nilaiMinBorongan())}). Menjadi batas pembayaran PA sesuai progres.</p>
           </div>
         {/if}
         <div class="grid grid-cols-3 gap-3">
@@ -782,6 +862,10 @@
 {/if}
 
 <!-- ── Tanda Tangan SPK Modal ── -->
+{#if ttdLinkTarget}
+  <SpkTtdLinkModal assignment={ttdLinkTarget} namaManpower={nama(ttdLinkTarget)} kruKandidat={kruDari(ttdLinkTarget)} on:close={() => (ttdLinkTarget = null)} on:changed={() => load()} />
+{/if}
+
 {#if showSignModal && signTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" in:fade={{ duration: 150 }}>
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" in:slide={{ duration: 200 }}>
@@ -807,7 +891,16 @@
           <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Tanda Tangan Manpower *</label>
           <SignaturePad bind:this={signPad} />
         </div>
-        <p class="text-xs text-gray-500">Dengan menandatangani, manpower menyetujui perintah kerja & rate di atas. Penugasan otomatis menjadi <strong>Aktif</strong>.</p>
+        <div class="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl text-xs space-y-1.5 text-amber-800 dark:text-amber-300">
+          <p class="font-bold flex items-center gap-1">
+            <span>📜</span>
+            <span>Klausul Komitmen & Anti-Kabur:</span>
+          </p>
+          <p class="text-[11px] leading-relaxed opacity-95">
+            Pekerja menyatakan bersedia menyelesaikan penugasan hingga tanggal berakhir ({fmtDate(signTarget.tanggal_selesai)}). Apabila meninggalkan site tanpa izin resmi (kabur), maka hak sisa upah/premi komitmen dinyatakan hangus, seluruh kewajiban kasbon wajib dikembalikan, dan NIK pekerja otomatis di-blacklist dari seluruh unit bisnis PT Eltama Prima Indo.
+          </p>
+        </div>
+        <p class="text-xs text-gray-500">Dengan menandatangani, manpower menyetujui perintah kerja, klausul anti-kabur, & rate di atas. Penugasan otomatis menjadi <strong>Aktif</strong>.</p>
       </div>
       <div class="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
         <button on:click={() => (showSignModal = false)} class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg">Batal</button>
@@ -874,3 +967,22 @@
     onSuccess={() => { showViolationModal = false; violationTarget = null; load(); }}
   />
 {/if}
+
+<LaporKaburModal
+  show={showLaporKaburModal}
+  assignment={laporKaburTarget}
+  pelaporNama={actorName || 'Project Leader'}
+  onSuccess={() => load()}
+  onClose={() => { showLaporKaburModal = false; laporKaburTarget = null; }}
+/>
+
+<SmartReplacementModal
+  isOpen={showSmartReplacementModal}
+  projectId={project?.id || null}
+  projectName={project?.name || ''}
+  onClose={() => (showSmartReplacementModal = false)}
+  onAssigned={() => {
+    showSmartReplacementModal = false;
+    load();
+  }}
+/>

@@ -6,6 +6,7 @@
 import { writable, get } from 'svelte/store';
 import directus from './directus';
 import { readItems } from '@directus/sdk';
+import { spkDocDefaultsFlat } from '$lib/utils/spkDocument.js';
 
 const NAMESPACE = 'manpower.';
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -24,6 +25,8 @@ export const MANPOWER_SETTINGS_DEFAULTS: ManpowerSettingsMap = {
 	// FASE 6 (Self-Service PL v2, K4): pekerja baru daftar-lapangan boleh diabsen
 	// N HARI KERJA sebelum SPK disetujui; lewat itu absensi dari layar regu terkunci.
 	'manpower.masa_sementara_hari': 3,
+	// PDP-40: nilai SPK borongan minimum (di bawahnya = placeholder, mis. Rp1). Batas pembayaran PA borongan dihitung dari nilai SPK.
+	'manpower.borongan.nilai_min': 100000,
 	// SPK borongan paralel: pekerja borongan boleh pegang >1 SPK aktif di proyek BERBEDA
 	// dengan rentang tanggal tumpang tindih (dibayar per hasil, bukan per hari).
 	'manpower.spk.izin_overlap_borongan': true,
@@ -35,7 +38,17 @@ export const MANPOWER_SETTINGS_DEFAULTS: ManpowerSettingsMap = {
 	'manpower.geofence.project': 'wajib',
 	'manpower.geofence.maintenance': 'wajib',
 	'manpower.geofence.csr': 'longgar',
-	'manpower.geofence.internal': 'longgar'
+	'manpower.geofence.internal': 'longgar',
+	// Kunci lunak absensi selama PA upah berjalan (SATU sumber dengan erp-epi): off | warn (default) | block.
+	'manpower.absensi.kunci_saat_pa_mode': 'warn',
+	// PDP-24: absen regu massal ("Hadir Semua"). Tombol muncul bila anggota >= min_anggota.
+	'manpower.absen_regu_massal.aktif': true,
+	'manpower.absen_regu_massal.min_anggota': 5,
+	'manpower.absen_regu_massal.maks_per_kirim': 60,
+	// Ambang defisit manpower lapangan (%) yang memicu alert notifikasi ke PM & HRD (default: 20%).
+	'manpower.deficit_alert_pct': 20,
+	// Dokumen SPK Harian / Surat Tugas Borongan (utils/spkDocument.js) — SATU sumber dengan admin.
+	...spkDocDefaultsFlat()
 };
 
 export const manpowerSettingsStore = writable<ManpowerSettingsMap>({ ...MANPOWER_SETTINGS_DEFAULTS });
