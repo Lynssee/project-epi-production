@@ -4,6 +4,35 @@
 	import { authStore } from '$lib/stores/auth';
 	import { submitShiftHandover, searchKaryawan } from '$lib/services/security';
 	import { IconArrowLeft, IconLoader2 } from '@tabler/icons-svelte';
+	import { fetchRekonsiliasiKunci, type RekonsiliasiKunci, type SlotKunci } from '$lib/services/kunci';
+
+	// Rekonsiliasi kotak kunci (G_SEC8): ditampilkan sebelum serah-terima; gagal memuat tidak memblokir form.
+	let rekon = $state<RekonsiliasiKunci | null>(null);
+	// Checklist per slot: id kunci berstatus `tersedia` yang dicentang satpam "ada di slotnya".
+	let dicekIds = $state<number[]>([]);
+	const slotTersedia = $derived((rekon?.slots || []).filter((k) => k.status === 'tersedia'));
+	const grupKotak = $derived.by(() => {
+		const m = new Map<string, SlotKunci[]>();
+		for (const k of rekon?.slots || []) {
+			const nama = (k.lokasi_kotak || '').trim() || 'Kotak belum ditentukan';
+			if (!m.has(nama)) m.set(nama, []);
+			m.get(nama)!.push(k);
+		}
+		return [...m.entries()].map(([nama, items]) => ({ nama, items }));
+	});
+	function toggleDicek(id: number) {
+		dicekIds = dicekIds.includes(id) ? dicekIds.filter((x) => x !== id) : [...dicekIds, id];
+	}
+	function centangSemua() {
+		dicekIds = slotTersedia.map((k) => k.id);
+	}
+	onMount(async () => {
+		try {
+			rekon = await fetchRekonsiliasiKunci();
+		} catch (err) {
+			console.warn('[serah-terima] rekonsiliasi kunci tidak dapat dimuat:', err);
+		}
+	});
 
 	let saving = $state(false);
 	let errorMsg = $state('');
@@ -38,6 +67,9 @@
 
 	// G_SEC7 (mode soft): alasan tetap menyerahkan walau belum lengkap, diminta setelah server menjawab 422.
 	let gateSec7Reason = '';
+	// G_SEC8 (mode soft): alasan tetap menyerahkan walau ada kunci belum kembali. Server hanya memakai
+	// alasan yang relevan dengan gate yang menolak, jadi alasan yang sama dikirim untuk keduanya.
+	let gateSec8Reason = '';
 
 	async function submitForm() {
 		errorMsg = ''; successMsg = '';
@@ -52,18 +84,32 @@
 				tanggal: form.tanggal,
 				catatan: form.catatan,
 				satpam_masuk_id: selectedMasuk.id,
-				gate_sec7_reason: gateSec7Reason.trim() || undefined
+				gate_sec7_reason: gateSec7Reason.trim() || undefined,
+				gate_sec8_reason: gateSec8Reason.trim() || undefined,
+				// Hanya dikirim bila kotak kunci terdaftar; klien tanpa data kunci tidak dikenai aturan cek fisik.
+				kunci_dicek_ids: rekon && rekon.total > 0 ? dicekIds : undefined
 			});
 			successMsg = 'Serah-terima shift tercatat. Menunggu konfirmasi satpam masuk-shift.';
 			form.catatan = '';
 			selectedMasuk = null;
 			masukQuery = '';
 			gateSec7Reason = '';
+			gateSec8Reason = '';
+			dicekIds = [];
+			try {
+				rekon = await fetchRekonsiliasiKunci();
+			} catch {
+				/* panel rekonsiliasi hanya informasi */
+			}
 		} catch (err) {
 			if (err instanceof Error && (err as any).isGateSec7) {
-				const alasan = window.prompt(`${err.message}\n\nAlasan tetap menyerahkan (min. 5 karakter):`, '');
-				if (alasan && alasan.trim().length >= 5) {
+				// Pesan G_SEC8 menyebut "kunci" dan meminta minimal 20 karakter; G_SEC7 cukup 5.
+				const kunci = /kunci/i.test(err.message);
+				const minLen = kunci ? 20 : 5;
+				const alasan = window.prompt(`${err.message}\n\nAlasan tetap menyerahkan (min. ${minLen} karakter):`, '');
+				if (alasan && alasan.trim().length >= minLen) {
 					gateSec7Reason = alasan.trim();
+					if (kunci) gateSec8Reason = alasan.trim();
 					saving = false;
 					await submitForm();
 					return;
@@ -88,6 +134,44 @@
 
 		{#if errorMsg}<div class="rounded-lg p-3 mb-3 text-[12px]" style="background: var(--rel); color: var(--red)">{errorMsg}</div>{/if}
 		{#if successMsg}<div class="rounded-lg p-3 mb-3 text-[12px]" style="background: var(--gg); color: var(--ggd)">{successMsg}</div>{/if}
+
+		{#if rekon && rekon.total > 0}
+			<div class="rounded-lg p-3 mb-3 text-[12px]" style="background: {rekon.cocok ? 'var(--gg)' : '#FEF3C7'}; color: {rekon.cocok ? 'var(--ggd)' : '#92400E'}">
+				<p class="font-semibold">
+					{rekon.cocok ? `Semua kunci operasional ada di slotnya (${rekon.di_slot}/${rekon.total} cocok)` : `${rekon.belum_kembali.length} kunci belum kembali ke slot`}
+				</p>
+				{#if !rekon.cocok}
+					<ul class="mt-1 list-disc pl-4">
+						{#each rekon.belum_kembali as k}<li>{k.kode} {k.nama} — dibawa {k.pemegang_nama ?? '-'}</li>{/each}
+					</ul>
+					<p class="mt-1">Terima kembali di menu <a class="underline font-semibold" href="/satpam/kunci">Kotak Kunci</a>, atau beri izin bawa pulang. Bila tetap diserahkan, alasan akan diminta.</p>
+				{/if}
+				{#if rekon.izin_bawa_pulang.length > 0}
+					<p class="mt-1">Izin bawa pulang: {rekon.izin_bawa_pulang.map((k) => `${k.kode} (${k.pemegang_nama ?? '-'})`).join(', ')}</p>
+				{/if}
+			</div>
+
+			<div class="rounded-lg p-3 mb-3 text-[12px]" style="background: var(--sys-fill); border: 1px solid var(--sys-sep)">
+				<div class="flex items-center justify-between mb-1">
+					<p class="font-semibold">Checklist kotak kunci ({dicekIds.length}/{slotTersedia.length} dicek)</p>
+					<button class="px-2 py-1 rounded-lg text-[11px] font-semibold" style="background: var(--g); color: white" onclick={centangSemua}>Centang semua</button>
+				</div>
+				<p class="mb-2" style="color: var(--sys-label3)">Lihat kotak kunci secara fisik, lalu centang kunci yang benar-benar tergantung di slotnya. Kunci yang sedang dipinjam tidak perlu dicentang.</p>
+				{#each grupKotak as g (g.nama)}
+					<p class="font-semibold mt-2">{g.nama}</p>
+					{#each g.items as k (k.id)}
+						{#if k.status === 'tersedia'}
+							<label class="flex items-center gap-2 py-1">
+								<input type="checkbox" checked={dicekIds.includes(k.id)} onchange={() => toggleDicek(k.id)} />
+								<span class="font-medium">{k.nomor_hook || '—'}</span> {k.kode} {k.nama}{k.is_restricted ? ' 🔒' : ''}
+							</label>
+						{:else}
+							<p class="py-1 pl-6" style="color: var(--sys-label3)">{k.nomor_hook || '—'} {k.kode} {k.nama} — {k.status === 'dipinjam' ? 'dibawa' : 'izin bawa pulang:'} {k.pemegang_nama ?? '-'}</p>
+						{/if}
+					{/each}
+				{/each}
+			</div>
+		{/if}
 
 		<input class="w-full rounded-lg px-3 py-2 text-[13px] mb-2" style="background: var(--sys-fill); border: 1px solid var(--sys-sep)" type="date" bind:value={form.tanggal} />
 		<select class="w-full rounded-lg px-3 py-2 text-[13px] mb-2" style="background: var(--sys-fill); border: 1px solid var(--sys-sep)" bind:value={form.shift}>

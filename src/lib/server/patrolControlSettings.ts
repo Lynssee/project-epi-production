@@ -44,6 +44,18 @@ export interface PatrolControlSettings {
 	secJamKerjaSelesai: number;
 	/** G_SEC2: karyawan keluar keperluan pribadi pada jam kerja wajib punya izin jam-jaman aktif. */
 	secWajibIzinPribadi: boolean;
+	/** G_SEC8: jam WIB (1-24) default batas kembali kunci bila peminjam tidak menentukan. */
+	secKeyJamKembaliDefault: number;
+	/** G_SEC8: tenggang (menit) setelah batas kembali sebelum kunci dianggap terlambat. */
+	secKeyTenggangMenit: number;
+	/** G_SEC8: panjang minimal alasan untuk kunci terbatas di luar jam kerja / bawa pulang (karakter). */
+	secKeyMinAlasan: number;
+	/** G_SEC8: serah-terima shift dievaluasi terhadap kunci yang masih dipinjam. */
+	secKeyWajibRekonSerahTerima: boolean;
+	/** G_SEC8: izin dari atasan langsung/fungsional peminjam diterima sebagai dispensasi (setara alasan). */
+	secKeyIzinAtasanAktif: boolean;
+	/** G_SEC8: serah-terima shift menghitung kunci di slot yang belum dicek fisik satpam sebagai pelanggaran (default mati; tetap dicatat). */
+	secKeyWajibCekFisik: boolean;
 }
 
 export const PATROL_CONTROL_DEFAULTS: PatrolControlSettings = {
@@ -62,7 +74,13 @@ export const PATROL_CONTROL_DEFAULTS: PatrolControlSettings = {
 	secHandoverWajibRonda: true,
 	secJamKerjaMulai: 8,
 	secJamKerjaSelesai: 17,
-	secWajibIzinPribadi: true
+	secWajibIzinPribadi: true,
+	secKeyJamKembaliDefault: 17,
+	secKeyTenggangMenit: 30,
+	secKeyMinAlasan: 20,
+	secKeyWajibRekonSerahTerima: true,
+	secKeyIzinAtasanAktif: true,
+	secKeyWajibCekFisik: false
 };
 
 const CACHE_TTL_MS = 300_000;
@@ -140,6 +158,30 @@ export async function getPatrolControlSettings(): Promise<PatrolControlSettings>
 				}
 				case 'sec_wajib_izin_pribadi':
 					value.secWajibIzinPribadi = asBool(row.setting_value, PATROL_CONTROL_DEFAULTS.secWajibIzinPribadi);
+					break;
+				case 'sec_key_jam_kembali_default': {
+					const n = Number(row.setting_value);
+					value.secKeyJamKembaliDefault = Number.isInteger(n) && n >= 1 && n <= 24 ? n : PATROL_CONTROL_DEFAULTS.secKeyJamKembaliDefault;
+					break;
+				}
+				case 'sec_key_tenggang_menit': {
+					const n = Number(row.setting_value);
+					value.secKeyTenggangMenit = Number.isFinite(n) && n >= 0 ? Math.round(n) : PATROL_CONTROL_DEFAULTS.secKeyTenggangMenit;
+					break;
+				}
+				case 'sec_key_min_alasan': {
+					const n = Number(row.setting_value);
+					value.secKeyMinAlasan = Number.isFinite(n) && n >= 0 ? Math.round(n) : PATROL_CONTROL_DEFAULTS.secKeyMinAlasan;
+					break;
+				}
+				case 'sec_key_wajib_rekon_serah_terima':
+					value.secKeyWajibRekonSerahTerima = asBool(row.setting_value, PATROL_CONTROL_DEFAULTS.secKeyWajibRekonSerahTerima);
+					break;
+				case 'sec_key_izin_atasan_aktif':
+					value.secKeyIzinAtasanAktif = asBool(row.setting_value, PATROL_CONTROL_DEFAULTS.secKeyIzinAtasanAktif);
+					break;
+				case 'sec_key_wajib_cek_fisik':
+					value.secKeyWajibCekFisik = asBool(row.setting_value, PATROL_CONTROL_DEFAULTS.secKeyWajibCekFisik);
 					break;
 				case 'sec_handover_wajib_ronda':
 					value.secHandoverWajibRonda = asBool(row.setting_value, PATROL_CONTROL_DEFAULTS.secHandoverWajibRonda);
