@@ -13,7 +13,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const baseUrl = env.ERP_EPI1_BASE_URL || 'https://internal.eltamaprimaindo.com';
-	const secret = env.AUTOMATION_SERVER_SECRET || 'd8426c834bf86df6363b655c10b8262dc8bbe5d48b512ced';
+	// Secret HANYA dari env (aturan proyek: token sensitif tidak boleh di kode). Sebelumnya ada literal fallback di sini —
+	// sudah terlanjur masuk riwayat git, jadi secret itu harus dianggap bocor dan dirotasi oleh Lead. Pola sama dgn hseNotify/fleetNotify:
+	// belum dikonfigurasi -> notifikasi dilewati (fail-soft), bukan memakai nilai bawaan.
+	const secret = env.AUTOMATION_SERVER_SECRET;
+	if (!secret) {
+		console.warn('[project-action-notify] AUTOMATION_SERVER_SECRET belum dikonfigurasi — notifikasi dilewati.');
+		return json({ sent: false, warning: 'Notifikasi belum dikonfigurasi di server.' });
+	}
 
 	try {
 		// Panggil relay di erp-epi

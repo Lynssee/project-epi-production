@@ -14,6 +14,28 @@ export interface FulfillmentSj {
 	tanggal: string | null;
 	received_at: string | null;
 	driver: string | null;
+	/** Estimasi tiba (SJ ekspedisi, diisi admin logistik). */
+	eta_tiba?: string | null;
+	mode_kirim?: string | null;
+	/** Tahap tracking: dimuat | diserahkan_ekspedisi | dalam_perjalanan | tiba_lokasi … */
+	track_stage?: string | null;
+	no_resi?: string | null;
+	ekspedisi?: string | null;
+}
+
+/** Sinkronisasi mobilisasi (gate G_MOB_SYNC) — dihitung server erp-epi; lapangan hanya menampilkan. */
+export interface FulfillmentMobSync {
+	status: 'waiting_material' | 'synchronized' | 'early_material' | 'waiting_manpower' | 'unknown';
+	reason?: string | null;
+	/** Tim mulai − ETA material (hari). Negatif = tim menunggu material. */
+	gap_days: number | null;
+	manpower_start: string | null;
+	material_eta: string | null;
+	eta_source?: string | null;
+	projected?: boolean;
+	estimated_idle_cost?: number;
+	blocking?: Array<{ ref_name: string; eta: string; source: string | null; nomor_sj: string | null }>;
+	at_risk_manpower?: Array<{ nama: string | null; jabatan: string; tanggal_mulai: string; idle_days: number }>;
 }
 
 export interface FulfillmentMaterial {
@@ -49,6 +71,8 @@ export interface ProjectFulfillment {
 	bySubtask: Record<string, { materials: FulfillmentMaterial[]; equipment: any[]; manpowerRoles: any[] }>;
 	subtasks: FulfillmentSubtask[];
 	manpowerToday: { roles: Array<{ role: string; need: number; present: number; shortage: number }> };
+	/** Tidak ada pada respons lama / proxy fallback → anggap belum dinilai. */
+	mobSync?: FulfillmentMobSync;
 	/** Konfigurasi dari server (setelan admin) — lapangan tak menyalin default setelan sendiri. */
 	config?: { notReadyDays: number; checklistAutocheck: Array<{ item_id: number; source: ChecklistSource }> };
 	/** L4: sinyal untuk centang otomatis Checklist Pra-Mobilisasi. 'na' = tak ada data, JANGAN dipakai mencentang. */
@@ -77,6 +101,34 @@ export function fetchProjectFulfillment(projectId: number | string, force = fals
 	});
 	cache.set(key, { at: Date.now(), promise });
 	return promise;
+}
+
+/**
+ * Status sinkronisasi mobilisasi untuk BANYAK proyek (kolom di Manpower Rencana vs Realisasi). Memakai cache modul
+ * fetchProjectFulfillment (60 dtk) + konkurensi dibatasi; proyek yang gagal → null (tampil "—"), tidak menggagalkan yang lain.
+ * Dibatasi `max` proyek pertama agar halaman tidak memicu puluhan request sekaligus.
+ */
+export async function fetchMobSyncForProjects(
+	projectIds: Array<number | string>,
+	{ max = 15, concurrency = 3 }: { max?: number; concurrency?: number } = {}
+): Promise<Map<string, FulfillmentMobSync | null>> {
+	const out = new Map<string, FulfillmentMobSync | null>();
+	const ids = [...new Set(projectIds.map(String))].slice(0, max);
+	let i = 0;
+	await Promise.all(
+		Array.from({ length: Math.min(concurrency, ids.length) }, async () => {
+			while (i < ids.length) {
+				const id = ids[i++];
+				try {
+					out.set(id, (await fetchProjectFulfillment(id)).mobSync ?? null);
+				} catch (e) {
+					console.warn(`[projectFulfillment] mobSync proyek ${id} tidak termuat:`, e);
+					out.set(id, null);
+				}
+			}
+		})
+	);
+	return out;
 }
 
 export interface ReportShortageResult {

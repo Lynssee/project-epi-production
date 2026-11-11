@@ -22,6 +22,8 @@ export interface ProjectActionItem {
 	pembuat_nama: string | null;
 	status: 'open' | 'acknowledged' | 'in_progress' | 'pending_verification' | 'closed' | 'cancelled';
 	is_gate_blocker: boolean;
+	scope_lock?: 'seluruh_proyek' | 'unit_spesifik';
+	target_unit_id?: number | null;
 	lampiran_masalah: string[] | null;
 	bukti_penyelesaian: string[] | null;
 	catatan_penyelesaian: string | null;
@@ -50,7 +52,7 @@ const ITEM_FIELDS = [
 	'id', 'project_id', 'nomor_dokumen', 'kategori', 'tingkat_urgensi',
 	'dampak', 'judul', 'deskripsi', 'target_selesai',
 	'pic_pelaksana_id', 'pic_pelaksana_nama', 'pembuat_id', 'pembuat_nama',
-	'status', 'is_gate_blocker', 'lampiran_masalah', 'bukti_penyelesaian',
+	'status', 'is_gate_blocker', 'scope_lock', 'target_unit_id', 'lampiran_masalah', 'bukti_penyelesaian',
 	'catatan_penyelesaian', 'verified_by', 'verified_at', 'date_created', 'date_updated'
 ];
 
