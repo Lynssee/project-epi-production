@@ -53,6 +53,7 @@ export const FIELD_PL_GATE_KEYS = [
 	'G_PKL_STOK',
 	'G_PKL_INVENTORY_LINK',
 	'G_PKL_CAT_WARNA',
+	'G_PKL_MASTER_PRICE',
 	'G_PKL_COVERAGE_M2',
 	'G_PKL_TIMELINE_RUNRATE',
 	'G_PKL_SITE_STOCK_RECON'
@@ -67,6 +68,7 @@ const FALLBACK_MODES: Record<FieldPLGateKey, GateMode> = {
 	G_PKL_STOK: 'soft',
 	G_PKL_INVENTORY_LINK: 'hard',
 	G_PKL_CAT_WARNA: 'hard',
+	G_PKL_MASTER_PRICE: 'soft',
 	// Gate baru lahir shadow (CLAUDE.md #3/#11) — naik lewat /settings/gates, bukan kode.
 	G_PKL_COVERAGE_M2: 'shadow',
 	G_PKL_TIMELINE_RUNRATE: 'shadow',
@@ -93,6 +95,9 @@ export interface FieldPLRow {
 	is_manpower?: boolean;
 	/** Leader menandai barang ini belum ada di Master Katalog dan mengusulkannya ke Admin Logistik (identitas_barang_usulan_baru). */
 	usul_baru?: boolean;
+	/** Harga satuan RAB/pengajuan baris project_budgets (G_PKL_MASTER_PRICE). Hanya dari server, bukan klien. */
+	unit_price?: number | null;
+	planned_amount?: number | null;
 }
 
 export interface FieldPLCtx {
@@ -101,6 +106,10 @@ export interface FieldPLCtx {
 	projectStatusById: Map<string, string | null | undefined>;
 	/** identitas_barang_id (string) -> stok_tersedia (number) */
 	stockById: Map<string, number>;
+	/** identitas_barang_id (string) -> harga master efektif (avg_cost → harga_beli → harga; 0 = kosong). `undefined` = tidak dimuat → G_PKL_MASTER_PRICE tidak dinilai. */
+	priceById?: Map<string, number>;
+	/** identitas_barang_id (string) yang alat/pinjaman (dinilai tarif sewa di admin, bukan harga master). */
+	equipmentById?: Set<string>;
 	modes?: FieldPLGateModes;
 	/** Baris ber-usulan barang baru tidak dihitung 'belum tertaut' (dibaca dari gate_definitions.action_config.allow_pending_proposal). */
 	allowProposal?: boolean;
@@ -147,8 +156,10 @@ export function evaluateFieldPLGates(
 	const modeOf = (key: FieldPLGateKey): GateMode => ctx.modes?.[key] ?? FALLBACK_MODES[key];
 
 	/** Satu pintu perlakuan gate gagal sesuai mode. */
-	function reportFailed(key: FieldPLGateKey, label: string, message: string, extra: Partial<FieldGate> = {}) {
-		const mode = modeOf(key);
+	function reportFailed(key: FieldPLGateKey, label: string, message: string, extra: Partial<FieldGate> = {}, opts: { capAtWarning?: boolean } = {}) {
+		const raw = modeOf(key);
+		// capAtWarning: gate yang tanggung jawabnya di Admin (mis. harga master) tidak boleh menahan Leader di lapangan, walau diset hard.
+		const mode: GateMode = opts.capAtWarning && raw === 'hard' ? 'soft' : raw;
 		if (mode === 'shadow') {
 			shadowed.push(key);
 			return;
@@ -298,6 +309,47 @@ export function evaluateFieldPLGates(
 		}
 	}
 
+	// ---------- G_PKL_MASTER_PRICE (Valuasi Siklus Penuh, Fase 3) ----------
+	// Barang material bertaut master yang harganya KOSONG di RAB maupun master → nilai komitmen/HPP-nya Rp 0. Harga adalah tanggung jawab
+	// Purchasing/Logistik, jadi dari lapangan HANYA peringatan (capAtWarning) — Leader tetap bisa mengajukan; sinyal ini menuntun Admin
+	// mengisi harga. Alat/pinjaman & item non-katalog tidak dinilai di sini. Tanpa data harga (peta tak dimuat) = tidak dinilai (D2).
+	{
+		if (ctx.priceById) {
+			const priceOf = (r: FieldPLRow) => {
+				const direct = num(r.unit_price) || (num(r.planned_amount) > 0 && num(r.qty) > 0 ? num(r.planned_amount) / num(r.qty) : 0);
+				return direct || (r.identitas_barang_id ? ctx.priceById!.get(String(r.identitas_barang_id)) ?? -1 : -1);
+			};
+			const evaluable = rows.filter(
+				(r) =>
+					r.identitas_barang_id &&
+					!isTruth(r.no_item_needed) &&
+					!isTruth(r.is_manpower) &&
+					!isNonBarangCategory(r.budget_category) &&
+					!ctx.equipmentById?.has(String(r.identitas_barang_id)) &&
+					priceOf(r) >= 0
+			);
+			const unpriced = evaluable.filter((r) => priceOf(r) === 0);
+			if (unpriced.length > 0) {
+				reportFailed(
+					'G_PKL_MASTER_PRICE',
+					'Harga master barang',
+					`${unpriced.length} item belum punya harga di master: ${unpriced.slice(0, 5).map((r) => r.material_name || `item #${r.id}`).join(', ')}${unpriced.length > 5 ? `, +${unpriced.length - 5} lainnya` : ''}. ` +
+						`Admin/Purchasing akan melengkapi harganya — pengajuan Anda tetap bisa dikirim.`,
+					{ affected_items: unpriced.map((r) => ({ id: r.id, label: r.material_name || `Item #${r.id}` })) },
+					{ capAtWarning: true }
+				);
+			} else if (evaluable.length > 0) {
+				gates.push({
+					gate_key: 'G_PKL_MASTER_PRICE',
+					label: 'Harga master barang',
+					severity: 'SEMI',
+					status: 'passed',
+					message: 'Semua barang bertaut master sudah punya harga'
+				});
+			}
+		}
+	}
+
 	// ---------- Rasionalitas qty (G_PKL_COVERAGE_M2 / G_PKL_TIMELINE_RUNRATE / G_PKL_SITE_STOCK_RECON) ----------
 	// Engine = salinan identik erp-epi (materialCoverageEngine). Data kurang (luasan kosong, barang belum terpetakan, satuan tak
 	// terkonversi, laju harian tak diketahui) => tidak dievaluasi (tidak muncul), BUKAN gagal.
@@ -329,7 +381,7 @@ export function evaluateFieldPLGates(
 					bucket.G_PKL_COVERAGE_M2.problems.push(`${r.nama_barang} (diminta ${r.qty} ${r.unit}, wajar maks ${r.suggestedQty} ${r.unit} untuk ${Math.round(cov.area.areaM2 * 10) / 10} m²)`);
 					note('G_PKL_COVERAGE_M2', r.key);
 				}
-				if (cov.dailyRate) {
+			if (cov.dailyRate) {
 					const rr = evaluateRunRate({ areaM2: cov.area.areaM2, dailyRate: cov.dailyRate, items, rates: cov.rates, siteStockByRateId: cov.siteStockByRateId, settings: cov.settings });
 					bucket.G_PKL_TIMELINE_RUNRATE.evaluated += rr.evaluatedCount;
 					for (const r of rr.items.filter((x: any) => x.status === 'over')) {
@@ -420,11 +472,13 @@ export async function evaluateFieldPLGatesFor(
 	//    sebenarnya. Pemanggil (submit/create-items) menerjemahkannya jadi error ke user; pra-cek
 	//    (gate-precheck) tetap fail-open di klien.
 	//  - stok (hanya peringatan): dilog jelas lalu dilewati — stok tak diketahui = tidak dicek.
+	const failedLookups = new Set<string>();
 	const lookup = async (label: string, path: string, fatal: boolean) => {
 		try {
 			return await directusServerJson(path);
 		} catch (e: any) {
 			console.error(`[plFieldGates] Gagal mengambil ${label} dari Directus:`, e);
+			failedLookups.add(label);
 			if (fatal) {
 				throw new Error(
 					`Gagal memverifikasi ${label} (gangguan koneksi/query Directus, bukan kesalahan data pengajuan): ${e?.message || e}. Coba lagi sebentar lagi.`
@@ -439,7 +493,7 @@ export async function evaluateFieldPLGatesFor(
 			? lookup('status proyek', `/items/projects?filter[id][_in]=${projIds.join(',')}&fields=id,status&limit=-1`, true)
 			: Promise.resolve({ data: [] }),
 		idbIds.length
-			? lookup('stok barang', `/items/identitas_barang?filter[id][_in]=${idbIds.join(',')}&fields=id,stok_tersedia&limit=-1`, false)
+			? lookup('stok barang', `/items/identitas_barang?filter[id][_in]=${idbIds.join(',')}&fields=id,stok_tersedia,avg_cost,harga_beli,harga,is_borrowable,id_equipment&limit=-1`, false)
 			: Promise.resolve({ data: [] })
 	]);
 
@@ -448,6 +502,17 @@ export async function evaluateFieldPLGatesFor(
 
 	const stockById = new Map<string, number>();
 	for (const it of stockRes?.data || []) stockById.set(String(it.id), parseFloat(it.stok_tersedia) || 0);
+
+	// Harga master dari query stok yang sama. Kolom harga tidak ada di respons (mis. mock lama) / lookup gagal → peta tidak diisi.
+	let priceById: Map<string, number> | undefined;
+	const equipmentById = new Set<string>();
+	if (idbIds.length && !failedLookups.has('stok barang')) {
+		for (const it of stockRes?.data || []) {
+			if (isTruth(it.is_borrowable) || it.id_equipment) equipmentById.add(String(it.id));
+			if (it.avg_cost === undefined && it.harga_beli === undefined && it.harga === undefined) continue;
+			(priceById ??= new Map()).set(String(it.id), num(it.avg_cost) || num(it.harga_beli) || num(it.harga) || 0);
+		}
+	}
 
 	const modes: FieldPLGateModes = {};
 	if (opts.resolveMode) {
@@ -472,5 +537,5 @@ export async function evaluateFieldPLGatesFor(
 		}
 	}
 
-	return evaluateFieldPLGates({ rows, projectStatusById, stockById, modes, allowProposal: !!opts.allowProposal, coverageByProject }, opts);
+	return evaluateFieldPLGates({ rows, projectStatusById, stockById, priceById, equipmentById, modes, allowProposal: !!opts.allowProposal, coverageByProject }, opts);
 }

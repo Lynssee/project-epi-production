@@ -58,6 +58,11 @@
 	let showCamera = $state(false);
 	let busyAksi = $state(false);
 
+	// Deep-link dari tautan pelacakan (/lacak/mutasi/<id> -> /mutasi-barang?doc=<id>): pilih tab yang memuatnya, gulirkan & sorot kartunya.
+	const docDeepLink = Number(page.url.searchParams.get('doc')) || null;
+	let docFokus = $state<number | null>(null);
+	let docTidakAda = $state(false);
+
 	const perluTindakan = $derived(daftar.filter((m) => perluTindakanSaya(m, me)));
 	const tampil = $derived(tab === 'tindakan' ? perluTindakan : daftar);
 
@@ -69,6 +74,15 @@
 			if (!tersedia) return;
 			await Promise.all([muat(), muatProyek()]);
 			const q = page.url.searchParams;
+			if (docDeepLink) {
+				if (daftar.some((m) => m.id === docDeepLink)) {
+					tab = perluTindakan.some((m) => m.id === docDeepLink) ? 'tindakan' : 'semua';
+					docFokus = docDeepLink;
+					setTimeout(() => document.getElementById(`mut-${docDeepLink}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+				} else {
+					docTidakAda = true; // sudah selesai/ditolak/dibatalkan, atau bukan milik/tujuan Anda
+				}
+			}
 			if (q.get('asal')) {
 				tab = 'ajukan';
 				asal = Number(q.get('asal')) || '';
@@ -233,9 +247,12 @@
 			{#if tab === 'tindakan'}
 				<p class="text-[11px] text-slate-500">Setujui hanya bila barang memang dibutuhkan proyek Anda — nilainya akan masuk realisasi proyek Anda.</p>
 			{/if}
+			{#if docTidakAda}
+				<p class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800" role="status">Mutasi dari tautan tidak ada di daftar aktif Anda — mungkin sudah selesai/ditolak/dibatalkan, atau bukan milik/tujuan proyek Anda. Lihat posisinya lewat halaman lacak publik.</p>
+			{/if}
 			{#each tampil as m (m.id)}
 				{@const aksi = aksiUntukSaya(m, me)}
-				<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs space-y-1.5">
+				<div id="mut-{m.id}" class="rounded-xl border bg-white dark:bg-slate-900 p-3 text-xs space-y-1.5 {docFokus === m.id ? 'border-indigo-500 ring-2 ring-indigo-300' : 'border-slate-200 dark:border-slate-700'}">
 					<div class="flex items-start justify-between gap-2">
 						<p class="font-bold text-slate-800 dark:text-slate-100 break-all">{m.nomor_mutasi}</p>
 						<span class="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full {WARNA[m.status] || 'bg-slate-100 text-slate-600'}">{LABEL_STATUS[m.status] || m.status}</span>

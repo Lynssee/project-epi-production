@@ -53,7 +53,7 @@ describe('helper', () => {
 		expect(() => signDokumen(SECRET, 'pa', '0')).toThrow();
 	});
 	it('buildVerifyUrl & isJenisVerifikasi', () => {
-		expect(buildVerifyUrl('https://project.eltamaprimaindo.com/', 'pa', 9, 'abc_-')).toBe('https://project.eltamaprimaindo.com/verifikasi/pa/9?s=abc_-');
+		expect(buildVerifyUrl('https://dev-project.eltamaprimaindo.com/', 'pa', 9, 'abc_-')).toBe('https://dev-project.eltamaprimaindo.com/verifikasi/pa/9?s=abc_-');
 		expect(isJenisVerifikasi('pa')).toBe(true);
 		expect(isJenisVerifikasi('grand_po')).toBe(true);
 		expect(isJenisVerifikasi('pr')).toBe(false);

@@ -12,9 +12,11 @@
 		setPhaseCheck,
 		type PhaseDefinition
 	} from '$lib/services/projectPhaseApi';
-	import { loadProjectSettings } from '$lib/services/projectSettings';
+	import { loadProjectSettings, getProjectSetting } from '$lib/services/projectSettings';
+	import { phaseTiming, phaseTimingText } from '$lib/utils/phaseTiming';
+	import { goto } from '$app/navigation';
 
-	let { project }: { project: { id: number; status?: string; so_customer_id?: number | string | null } } = $props();
+	let { project }: { project: { id: number; status?: string; so_customer_id?: number | string | null; workshop?: string | null } } = $props();
 
 	let enabled = $state(false);
 	let loading = $state(true);
@@ -22,7 +24,7 @@
 	let phaseRows = $state<Record<string, any>>({});
 	let activeKey = $state('inisiasi');
 	let selectedKey = $state('inisiasi');
-	let checklist = $state<{ items: any[]; pct: number; passed: boolean; readOnly: boolean }>({ items: [], pct: 0, passed: false, readOnly: true });
+	let checklist = $state<{ items: any[]; pct: number; passed: boolean; readOnly: boolean; informational?: boolean }>({ items: [], pct: 0, passed: false, readOnly: true });
 	let checklistLoading = $state(false);
 	let savingItem = $state<string | null>(null);
 	let loadedFor = $state<number | null>(null);
@@ -40,6 +42,28 @@
 		return 'upcoming';
 	}
 
+	// Fase 2: durasi fase vs target + status gate (tampilan saja; data dari project_phase_progress yang ditulis Admin).
+	let timing = $derived(
+		phaseTiming(
+			defs.find((d) => d.phase_key === selectedKey),
+			phaseRows[selectedKey],
+			Date.now(),
+			Number(getProjectSetting('project.wizard.timing_warn_pct')) || 80
+		)
+	);
+	let timingText = $derived(phaseTimingText(timing));
+	let gateRow = $derived(phaseRows[selectedKey]);
+	const TIMING_STYLE: Record<string, string> = {
+		ok: 'background:#f0fdf4;color:#166534;border-color:#bbf7d0;',
+		warn: 'background:#fffbeb;color:#92400e;border-color:#fde68a;',
+		over: 'background:#fef2f2;color:#991b1b;border-color:#fecaca;',
+		none: 'background:#f9fafb;color:#374151;border-color:#e5e7eb;'
+	};
+
+	function bukaMulaiBekerja() {
+		goto(`/proyek/${project.id}?tab=progress`);
+	}
+
 	async function load() {
 		if (!project?.id) return;
 		loading = true;
@@ -47,7 +71,7 @@
 			await loadProjectSettings();
 			enabled = isWizardEnabled();
 			if (!enabled) return;
-			defs = await getPhaseDefinitions();
+			defs = await getPhaseDefinitions(project);
 			const [rows, current] = await Promise.all([getProjectPhases(project.id), computeCurrentPhase(project)]);
 			phaseRows = rows;
 			activeKey = current;
@@ -61,7 +85,7 @@
 	async function loadChecklist(phaseKey: string) {
 		checklistLoading = true;
 		try {
-			checklist = await getPhaseChecklist(project.id, phaseKey);
+			checklist = await getPhaseChecklist(project.id, phaseKey, project);
 		} finally {
 			checklistLoading = false;
 		}
@@ -76,7 +100,7 @@
 		if (checklist.readOnly) return;
 		savingItem = item.id;
 		try {
-			await setPhaseCheck(project.id, selectedKey, item.id, !item.checked, $authStore.karyawanName || 'lapangan');
+			await setPhaseCheck(project.id, selectedKey, item.id, !item.checked, $authStore.karyawanName || 'lapangan', project);
 			await loadChecklist(selectedKey);
 			showToast(`Item "${item.label}" diperbarui`);
 		} catch (e: any) {
@@ -116,12 +140,40 @@
 			<div class="phase-detail">
 				<p class="phase-hint">💡 {selectedDef.hint_text}</p>
 
-				{#if !checklistLoading}
-					<div class="phase-progress-bar">
-						<div class="phase-progress-fill" style="width:{checklist.pct}%; background:{checklist.passed ? '#16a34a' : checklist.pct >= 50 ? '#d97706' : '#dc2626'};"></div>
-					</div>
+				{#if timingText}
+					<p class="phase-timing" style={TIMING_STYLE[timing.level]} data-testid="phase-timing" title="Target durasi diatur Admin di Settings > Project Management. Hanya penanda, tidak memblokir pekerjaan.">
+						⏱️ {timingText}
+					</p>
+				{/if}
+				{#if gateRow?.gate_override}
+					<p class="phase-timing" style={TIMING_STYLE.warn} data-testid="phase-gate-override" title="Admin melewati syarat gate fase ini secara manual.">
+						🔓 Gate fase ini dilewati manual oleh Admin{gateRow.gate_override_by ? ` (${gateRow.gate_override_by})` : ''}
+					</p>
+				{:else if gateRow?.gate_passed}
+					<p class="phase-timing" style={TIMING_STYLE.ok} data-testid="phase-gate-passed">✅ Syarat gate fase ini sudah terpenuhi</p>
+				{/if}
+				{#if selectedKey === activeKey && selectedDef.gate_type === 'mobilization' && project.status !== 'on progress'}
+					<p class="phase-timing" style={TIMING_STYLE.none} data-testid="phase-kickoff-hint">
+						▶️ Setelah checklist siap, Anda sendiri yang memulai proyek — tidak perlu menunggu persetujuan kantor.
+						<button class="phase-link" onclick={bukaMulaiBekerja}>Buka panel "Mulai Bekerja"</button>
+					</p>
+				{/if}
 
-					{#if checklist.items.length > 0}
+				{#if !checklistLoading}
+					{#if !checklist.informational}
+						<div class="phase-progress-bar">
+							<div class="phase-progress-fill" style="width:{checklist.pct}%; background:{checklist.passed ? '#16a34a' : checklist.pct >= 50 ? '#d97706' : '#dc2626'};"></div>
+						</div>
+					{/if}
+
+					{#if checklist.informational && checklist.items.length > 0}
+						<p class="phase-readonly-note">Syarat fase ini dicek otomatis oleh sistem / Admin — tidak perlu dicentang. Pastikan datanya terisi lewat menu terkait.</p>
+						<ul class="phase-info-list">
+							{#each checklist.items as item (item.id)}
+								<li>{item.label}{item.wajib ? ' *' : ''}</li>
+							{/each}
+						</ul>
+					{:else if checklist.items.length > 0}
 						<div class="phase-checklist">
 							{#each checklist.items as item (item.id)}
 								<button
@@ -242,6 +294,26 @@
 		border-color: #bbf7d0;
 	}
 	.check-label {
+		font-size: 12px;
+		color: #374151;
+	}
+	.phase-timing {
+		font-size: 11px;
+		font-weight: 600;
+		border: 1px solid;
+		border-radius: 8px;
+		padding: 6px 8px;
+		margin: 0 0 8px;
+	}
+	.phase-link {
+		margin-left: 4px;
+		font-weight: 700;
+		text-decoration: underline;
+		color: #1d4ed8;
+	}
+	.phase-info-list {
+		margin: 4px 0 0;
+		padding-left: 18px;
 		font-size: 12px;
 		color: #374151;
 	}

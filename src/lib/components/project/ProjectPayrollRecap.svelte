@@ -4,7 +4,7 @@
 	import Tooltip from '$lib/components/ui/Tooltip.svelte';
 	import { IconCalendar, IconLoader2, IconRefresh, IconFileExport, IconPhoto, IconHistory, IconCash, IconX, IconCheck } from '@tabler/icons-svelte';
 	import { getAssignments, updateAssignment } from '$lib/services/manpowerAssignment';
-	import { recapAbsensiFromReports, upsertTimesheetAbsensi, deleteAbsensiEntry } from '$lib/services/manpowerAbsensi';
+	import { recapAbsensiFromReports, upsertTimesheetAbsensi, deleteAbsensiEntry, muatKunciPA } from '$lib/services/manpowerAbsensi';
 	import { createPengajuanAnggaran } from '$lib/services/finance';
 	import RekeningSelect from '$lib/components/anggaran/RekeningSelect.svelte';
 	import { ajukanKasbonManpower } from '$lib/services/ess/manpowerKasbon';
@@ -228,7 +228,9 @@
 				const skippedNote = res.skipped.length > 0
 					? `\n${res.skipped.length} entri dilewati (belum ada SPK/penugasan aktif): ${[...new Set(res.skipped.map(s => s.nama))].join(', ')}`
 					: '';
-				alert(`Rekap selesai. ${res.created} absensi baru dibuat, ${res.updated} diperbarui.${skippedNote}`);
+				const kunciNote = (res.terkunciPA ? `\n${res.terkunciPA} entri TIDAK diperbarui karena harinya sudah ditagih di PA yang berjalan — tolak/revisi PA-nya dulu.` : '')
+					+ (res.peringatanPA ? `\n${res.peringatanPA} entri yang diperbarui sudah ditagih di PA yang berjalan — pastikan PA direvisi.` : '');
+				alert(`Rekap selesai. ${res.created} absensi baru dibuat, ${res.updated} diperbarui.${skippedNote}${kunciNote}`);
 				await loadData();
 			} else {
 				alert(res.error || 'Gagal merekap absensi dari laporan harian');
@@ -260,6 +262,17 @@
 			const userName = getUserDisplay(get(authStore).user);
 			let success = 0;
 			const failedNames = new Set<string>();
+			// Kunci lunak selama PA berjalan: muat SEKALI untuk semua sel yang diubah (hemat API).
+			const kunciPesan = new Set<string>();
+			const dirtyInfo = [...dirtyKeys].map((k) => {
+				const sep = k.indexOf('_');
+				const w = workers.find((x) => String(x.id) === k.slice(0, sep));
+				return { assignmentId: w?.assignmentId, dateStr: k.slice(sep + 1) };
+			}).filter((x) => x.assignmentId);
+			const tglDirty = dirtyInfo.map((x) => x.dateStr).sort();
+			const kunciPA = dirtyInfo.length
+				? await muatKunciPA(dirtyInfo.map((x) => x.assignmentId), tglDirty[0], tglDirty[tglDirty.length - 1])
+				: undefined;
 
 			for (const key of dirtyKeys) {
 				const sep = key.indexOf('_');
@@ -278,7 +291,9 @@
 					// pernah tersimpan, supaya tidak "muncul lagi" setelah reload. Kalau memang belum
 					// pernah ada baris, tidak perlu melakukan apa-apa.
 					if (existingAbsensiKeys.has(key)) {
-						const res = await deleteAbsensiEntry(worker.assignmentId, dateStr);
+						const res: any = await deleteAbsensiEntry(worker.assignmentId, dateStr, kunciPA);
+						if (res.lockedPA) kunciPesan.add(res.error);
+						if (res.peringatanPA) kunciPesan.add(res.peringatanPA);
 						if (res.success) success++;
 						else failedNames.add(worker.nama);
 					} else {
@@ -294,7 +309,8 @@
 				// (status alpha) supaya kolom IN tidak "kembali" ke hadir setelah reload.
 				const status = isStandby ? 'hadir' : (cell.in_val > 0 ? 'hadir' : 'alpha');
 
-				const res = await upsertTimesheetAbsensi({
+				const res: any = await upsertTimesheetAbsensi({
+					kunciPA,
 					assignmentId: worker.assignmentId,
 					manpowerId: worker.id,
 					projectId: Number(projectId),
@@ -308,13 +324,16 @@
 					uang_makan: !!cell.um_val,
 					kasbonAmount: cell.kasbon_val || 0
 				});
+				if (res.lockedPA) kunciPesan.add(res.error);
+				if (res.peringatanPA) kunciPesan.add(res.peringatanPA);
 				if (res.success) success++;
 				else failedNames.add(worker.nama);
 			}
 
 			dirtyKeys = new Set();
 			const failNote = failedNames.size > 0 ? `\nGagal: ${[...failedNames].join(', ')}` : '';
-			alert(`${success} sel absensi tersimpan.${failNote}`);
+			const kunciNote = kunciPesan.size > 0 ? `\n\nPerhatian — ${kunciPesan.size} sel menyangkut hari yang sudah ditagih di PA yang berjalan. ${[...kunciPesan][0]}` : '';
+			alert(`${success} sel absensi tersimpan.${failNote}${kunciNote}`);
 			await loadData();
 		} finally {
 			savingAbsensi = false;

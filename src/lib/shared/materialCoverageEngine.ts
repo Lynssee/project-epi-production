@@ -554,7 +554,7 @@ export function evaluateSiteStockRecon({ items, rates, rateByItemId, dailyRate, 
  * @param {{ areaM2:number|null, usedRows:Array<{type?:string, amount?:any, unit?:string}>, rates:Array<object>, settings?:object }} p
  * @returns {{ status:'over'|'near'|'ok'|'not_applicable', products:Array<object>, unmatched:Array<{type:string, amount:number, unit:string, reason:string}>, matchedCount:number }}
  */
-export function evaluateUsageEfficiency({ areaM2, usedRows, rates, settings } = {}) {
+export function evaluateUsageEfficiency({ areaM2, usedRows, rates, settings, progressFraction } = {}) {
   const cfg = settings || resolvePklCoverageSettings([]);
   const area = num(areaM2);
   const list = Array.isArray(usedRows) ? usedRows : [];
@@ -581,21 +581,37 @@ export function evaluateUsageEfficiency({ areaM2, usedRows, rates, settings } = 
   if (!(area > 0)) return { status: 'not_applicable', products: [], unmatched, matchedCount: groups.size };
 
   const warn = Math.min(100, Math.max(1, num(cfg.efficiency_warn_pct) || 80));
+  // Progres pekerjaan pelapisan (0..1) dari laporan harian. Hanya dipakai bila ≥ efficiency_min_progress_pct (progres sangat kecil
+  // = pembanding terlalu kecil/berisik) — di bawah itu, pembandingan terhadap progres dilewati (tetap dinilai terhadap total proyek).
+  const frac = Number(progressFraction);
+  const minFrac = Math.max(0, num(cfg.efficiency_min_progress_pct)) / 100;
+  const useProgress = Number.isFinite(frac) && frac >= minFrac && frac > 0;
+  const progressTol = 1 + num(cfg.qty_tolerance_pct) / 100;
   const products = [];
   for (const g of groups.values()) {
     const { typical, cap } = computeCap({ areaM2: area, standard: g.std, settings: cfg });
     const pctOfCap = cap > 0 ? (g.usedStd / cap) * 100 : 0;
+    // Pemakaian yang wajar sampai titik progres ini = kebutuhan tipikal (sudah termasuk loss) × fraksi progres.
+    const expected = useProgress ? typical * Math.min(1, frac) : null;
+    const pctOfExpected = expected > 0 ? (g.usedStd / expected) * 100 : null;
+    const ahead = expected != null && g.usedStd > expected * progressTol + EPS;
     products.push({
       rateCode: g.rate.code || '', name: g.rate.name || '', unit: g.std.unit, usedStd: round(g.usedStd, 2),
       typicalStd: round(typical, 2), capStd: round(cap, 2), pctOfCap: round(pctOfCap, 0),
       pctOfTypical: typical > 0 ? round((g.usedStd / typical) * 100, 0) : 0,
+      expectedStd: expected == null ? null : round(expected, 2),
+      pctOfExpected: pctOfExpected == null ? null : round(pctOfExpected, 0),
       reports: g.reports, basis: g.std.basis,
-      status: g.usedStd > cap + EPS ? 'over' : pctOfCap >= warn ? 'near' : 'ok'
+      // over = melewati plafon total; ahead = pemakaian melampaui progres pekerjaan (indikasi boros / belum dilaporkan progresnya)
+      status: g.usedStd > cap + EPS ? 'over' : ahead ? 'ahead' : pctOfCap >= warn ? 'near' : 'ok'
     });
   }
   products.sort((a, b) => b.pctOfCap - a.pctOfCap);
-  const status = products.some((p) => p.status === 'over') ? 'over' : products.some((p) => p.status === 'near') ? 'near' : products.length ? 'ok' : 'not_applicable';
-  return { status, products, unmatched, matchedCount: products.length };
+  const status = products.some((p) => p.status === 'over') ? 'over'
+    : products.some((p) => p.status === 'ahead') ? 'ahead'
+    : products.some((p) => p.status === 'near') ? 'near'
+    : products.length ? 'ok' : 'not_applicable';
+  return { status, products, unmatched, matchedCount: products.length, progressUsed: useProgress ? round(frac * 100, 0) : null };
 }
 
 // ─────────────── Kuota RAB (G_PKL_RAB_QUOTA, Fase 2) ───────────────

@@ -143,6 +143,33 @@ export async function notifyProjectClientInstructionVo(
 	);
 }
 
+/**
+ * Scope Teknis Fase 4 (5 Nov 2026) — hasil ukur DFT lapangan di luar toleransi spesifikasi proyek.
+ * Penerima WA: Supervisor proyek (koleksi flat project_notify_recipients, sama seperti defisit manpower).
+ * Pemanggil (dftDeviation.ts) sudah memeriksa saklar setelan & throttle; fail-soft seperti notifikasi lain.
+ */
+export async function notifyProjectDftDeviation(p: {
+	reportId: number | string;
+	reportNo: string;
+	projectId: number | string;
+	projectName: string;
+	objectName: string;
+	deviations: Array<{ layerNo: number; status: 'kurang' | 'over'; avg: number; target: number; min: number; max: number }>;
+}): Promise<void> {
+	const waRecipients = await fetchProjectRecipients('supervisor');
+	const detail = p.deviations
+		.map((d) => `L${d.layerNo} ${d.status === 'kurang' ? 'kurang tebal' : 'over-thickness'} (rata-rata ${d.avg} µm, batas ${d.min}–${d.max}, target ${d.target})`)
+		.join('; ');
+	const message = `⚠️ Deviasi DFT ${p.projectName} — ${p.objectName} (laporan inspeksi ${p.reportNo}): ${detail}. Instruksikan touch-up sebelum cat mengering penuh.`;
+	await dispatch('project_dft_deviation', message, {
+		waRecipients,
+		sourceCollection: 'inspection_report',
+		sourceId: p.reportId,
+		actionUrl: `/inspection/${p.reportId}`,
+		actionRequired: true
+	});
+}
+
 // Catatan: notifikasi approve/reject laporan harian TIDAK direlay dari sini — keputusan
 // verify/reject sekarang terjadi langsung di erp-epi-1 (endpoint RBAC-gated, lihat
 // src/routes/api/laporan/[id]/decide/+server.js), yang punya akses langsung ke
@@ -289,6 +316,20 @@ export async function notifyProjectP2hSubmitted(
 			actionUrl: `/preventive`
 		});
 	}
+}
+
+/** PMT-49 — operator menutup pemakaian dengan kondisi "dilarang dipakai": unit dikunci under_repair, supervisor diberi tahu. */
+export async function notifyProjectP2hTutupDilarang(
+	sessionId: number | string,
+	equipmentLabel: string,
+	operatorId: number | string | null
+): Promise<void> {
+	const waRecipients = await fetchProjectRecipients('supervisor');
+	await dispatch(
+		'project_p2h_critical',
+		`⚠️ Tutup pemakaian ${equipmentLabel}: operator menandai unit DILARANG DIPAKAI. Status unit dialihkan ke Dalam Perbaikan, butuh tindak lanjut Maintenance.`,
+		{ karyawanId: operatorId, waRecipients, sourceCollection: 'p2h_session', sourceId: sessionId, actionUrl: `/preventive`, actionRequired: true }
+	);
 }
 
 /** Submit adendum timeline dari lapangan (leader) — notif ke admin/PM (department-level, tidak ada FK requester). */
@@ -447,3 +488,25 @@ export async function notifyProjectQcDefectAlert(
 	});
 }
 
+
+/**
+ * Alih pakai darurat kendaraan (Verifikasi Barcode Equipment, G_FLT_DRIVER_LOCK): kabari pemegang booking (driver + pemohon)
+ * SEGERA, bukan menunggu rekap GA. Hanya WA langsung ke karyawan terkait (waKaryawanIds → relay mengambil no_hp). Event
+ * `fleet_handover_holder` terdaftar di erp-epi notif/registry.js. Fire-and-forget: gagal kirim tidak boleh menggagalkan alih pakai.
+ */
+export async function notifyFleetHandover(p: {
+	holderKaryawanIds: Array<number | string>;
+	actorName: string;
+	unitLabel: string;
+	bookingCode?: string | null;
+	reason: string;
+}): Promise<void> {
+	const ids = [...new Set(p.holderKaryawanIds.map(String).filter(Boolean))];
+	if (!ids.length) return;
+	const booking = p.bookingCode ? ` (booking ${p.bookingCode})` : '';
+	await dispatch(
+		'fleet_handover_holder',
+		`🚗 ${p.unitLabel}${booking} dipakai ${p.actorName} lewat alih pakai darurat dengan alasan: "${p.reason}". Jika tidak sesuai, segera hubungi koordinator armada/GA.`,
+		{ waKaryawanIds: ids, sourceCollection: 'fleet_bookings' }
+	);
+}

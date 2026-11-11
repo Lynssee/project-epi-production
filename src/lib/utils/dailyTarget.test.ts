@@ -35,4 +35,24 @@ describe('computeDailyTarget', () => {
 	it('project null aman', () => {
 		expect(computeDailyTarget(null, '2026-10-10', [])).toEqual([]);
 	});
+	it('fallback linear target estimasi harian bila Kurva S belum memiliki tanggal spesifik', () => {
+		const projLinear = {
+			start_date: '2026-10-01',
+			end_date: '2026-10-10', // 10 hari
+			timeline_planning: {
+				categories: [
+					{
+						unit: 'm²',
+						subtasks: [
+							{ id: 'sub_a', volume: 100 } // 100 / 10 = 10 m²/hari
+						]
+					}
+				]
+			}
+		};
+		const r = computeDailyTarget(projLinear, '2026-10-05', [{ subtask_id: 'sub_a', progress_value: 8 }]);
+		expect(r).toEqual([
+			{ unit: 'm²', target: 10, realisasi: 8, pct: 80, isEstimated: true }
+		]);
+	});
 });

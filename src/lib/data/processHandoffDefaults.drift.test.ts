@@ -1,4 +1,4 @@
-// Penjaga DRIFT: 28 serah-terima bawaan di sini adalah CERMIN `DEFAULT_HANDOFFS` erp-epi (src/lib/utils/processGrandMap.js).
+// Penjaga DRIFT: 29 serah-terima bawaan di sini adalah CERMIN `DEFAULT_HANDOFFS` erp-epi (src/lib/utils/processGrandMap.js).
 // Bila checkout erp-epi ada di samping repo ini (atau ERP_EPI_PATH diset), tes ini membandingkan keduanya. Tanpa checkout → dilewati (bukan gagal).
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
@@ -11,9 +11,9 @@ const erpFile = resolve(erpRoot, 'src/lib/utils/processGrandMap.js');
 const has = existsSync(erpFile);
 
 describe('processHandoffDefaults ≡ erp-epi DEFAULT_HANDOFFS', () => {
-	it('bentuk dasar: 28 titik, kode H01..H28 unik', () => {
-		expect(DEFAULT_HANDOFFS).toHaveLength(28);
-		expect(new Set(DEFAULT_HANDOFFS.map((h) => h.code)).size).toBe(28);
+	it('bentuk dasar: 29 titik, kode H01..H29 unik', () => {
+		expect(DEFAULT_HANDOFFS).toHaveLength(29);
+		expect(new Set(DEFAULT_HANDOFFS.map((h) => h.code)).size).toBe(29);
 	});
 
 	(has ? it : it.skip)('sama persis dengan sumber di erp-epi (kode, asal, tujuan, jenis, dokumen)', async () => {

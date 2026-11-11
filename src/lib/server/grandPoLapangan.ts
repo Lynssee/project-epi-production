@@ -9,10 +9,12 @@ import {
 	buildMaterialItems,
 	buildPilihanProduk,
 	buildRekonsiliasi,
+	tambahSumberPo,
 	sjStatus,
 	estimasiTiba,
 	idOf,
 	type AnggotaPaket,
+	type SubGrandPoLapangan,
 	type BarisMaterial,
 	type RingkasSj,
 	type BarisRekon,
@@ -38,6 +40,7 @@ export interface PaketLapangan {
 	nama: string;
 	nomor_gpo: string | null;
 	anggota: AnggotaPaket[];
+	sub_grand_po: SubGrandPoLapangan[];
 }
 
 export interface MaterialLapangan {
@@ -95,11 +98,14 @@ export async function loadGrandPoLapangan(projectId: number): Promise<GrandPoLap
 	const grandPoIds = [...new Set((mine?.data || []).map((m) => idOf(m.grand_po_id)).filter((x): x is number => x != null))];
 	if (grandPoIds.length === 0) return empty;
 
-	const [headers, allMembers] = await Promise.all([
+	const [headers, allMembers, allSubPos] = await Promise.all([
 		readList(`/items/grand_po?filter[id][_in]=${inList(grandPoIds)}&filter[status][_neq]=batal&limit=-1&fields=id,nama,nomor_gpo,status`, 'Grand PO', warnings),
 		readList(
-			`/items/grand_po_members?filter[grand_po_id][_in]=${inList(grandPoIds)}&filter[status][_eq]=aktif&sort=urutan,id&limit=-1&fields=id,grand_po_id,so_customer_id,peran,memasok_member_id`,
-			'anggota Grand PO', warnings)
+			`/items/grand_po_members?filter[grand_po_id][_in]=${inList(grandPoIds)}&filter[status][_eq]=aktif&sort=urutan,id&limit=-1&fields=id,grand_po_id,so_customer_id,peran,memasok_member_id,sub_grand_po_id`,
+			'anggota Grand PO', warnings),
+		readList(
+			`/items/sub_grand_po?filter[grand_po_id][_in]=${inList(grandPoIds)}&sort=urutan,id&limit=-1&fields=id,grand_po_id,kode_sub,judul,ruang_lingkup,status,current_phase_key,project_id,urutan`,
+			'Sub Grand PO', warnings)
 	]);
 	const liveGpoIds = new Set(headers.map((h) => Number(h.id)));
 	const members = allMembers.filter((m) => liveGpoIds.has(idOf(m.grand_po_id) as number));
@@ -118,11 +124,31 @@ export async function loadGrandPoLapangan(projectId: number): Promise<GrandPoLap
 
 	const paket: PaketLapangan[] = headers.map((h) => {
 		const ms = members.filter((m) => idOf(m.grand_po_id) === Number(h.id));
+		const subs: SubGrandPoLapangan[] = (allSubPos || [])
+			.filter((s: any) => idOf(s.grand_po_id) === Number(h.id))
+			.map((s: any) => {
+				const assigned = ms.filter((m) => idOf(m.sub_grand_po_id) === Number(s.id));
+				const isMy = s.project_id === projectId || assigned.some((m) => soIds.has(idOf(m.so_customer_id) as number));
+				return {
+					id: Number(s.id),
+					grand_po_id: Number(s.grand_po_id),
+					kode_sub: s.kode_sub || '',
+					judul: s.judul || '',
+					ruang_lingkup: s.ruang_lingkup || null,
+					status: s.status || 'draft',
+					current_phase_key: s.current_phase_key || 'akuisisi',
+					project_id: s.project_id ? Number(s.project_id) : null,
+					urutan: Number(s.urutan || 0),
+					proyek_ini: Boolean(isMy),
+					jumlah_anggota: assigned.length
+				};
+			});
 		return {
 			grand_po_id: Number(h.id),
 			nama: h.nama,
 			nomor_gpo: h.nomor_gpo || null,
-			anggota: buildPaketMembers({ members: ms, soById, projectById, thisProjectId: projectId, thisProjectSoIds: soIds })
+			anggota: buildPaketMembers({ members: ms, soById, projectById, thisProjectId: projectId, thisProjectSoIds: soIds }),
+			sub_grand_po: subs
 		};
 	});
 
@@ -177,12 +203,12 @@ export async function loadGrandPoLapangan(projectId: number): Promise<GrandPoLap
 	let rekonsiliasi: RekonLapangan | null = null;
 	if (pilihan_produk.length) {
 		const [logs, tol] = await Promise.all([
-			readListStrict(`/items/project_coating_log?filter[project_id][_eq]=${projectId}&limit=-1&fields=id,product_id,qty_used,satuan`, 'coating log', warnings),
+			readListStrict(`/items/project_coating_log?filter[project_id][_eq]=${projectId}&limit=-1&fields=id,product_id,qty_used,satuan,so_customer_id`, 'coating log', warnings),
 			getToleransiPct()
 		]);
 		if (logs) {
 			const r = buildRekonsiliasi({ items: allItems, logs, toleransiPct: tol });
-			rekonsiliasi = { baris: r.baris, tanpa_produk: r.tanpaProduk, satuan_beda: r.satuanBeda, toleransi_pct: tol };
+			rekonsiliasi = { baris: tambahSumberPo(r.baris, material, { logs, toleransiPct: tol }), tanpa_produk: r.tanpaProduk, satuan_beda: r.satuanBeda, toleransi_pct: tol };
 		}
 	}
 

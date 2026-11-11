@@ -20,6 +20,7 @@
 	import IconBoxCheck from '@tabler/icons-svelte/icons/box-align-bottom';
 	import IconArrowBackUp from '@tabler/icons-svelte/icons/arrow-back-up';
 	import IconTool from '@tabler/icons-svelte/icons/tool';
+	import IconBook from '@tabler/icons-svelte/icons/book';
 	import { getIdToken } from '$lib/services/secureDirectus';
 
 	// §7 Rekomendasi L2/L3 (Fase 4, rencana "Pengeluaran Barang Terpusat v2"): kartu
@@ -131,6 +132,14 @@
 					href: '/stock-lapangan',
 					icon: IconStack2,
 					show: canView(['view_stock_lapangan', 'input_stock_lapangan'])
+				},
+				{
+					id: 'katalog-produk',
+					label: 'Katalog Produk & Campur Cat',
+					desc: 'Scan QR drum/kaleng, panduan teknis cat, & kalkulator campuran',
+					href: '/produk',
+					icon: IconBook,
+					show: true
 				},
 				{
 					id: 'requisition',

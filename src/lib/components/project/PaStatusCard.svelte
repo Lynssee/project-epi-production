@@ -56,7 +56,14 @@
 		else {
 			console.error('Gagal memuat status birokrasi proyek:', paRes.reason);
 			pa = null;
-			paError = 'Antrean birokrasi & status pengajuan gagal dimuat.';
+			// Pesan menyebut penyebab nyata (bukan satu kalimat generik) agar PL tahu harus berbuat apa.
+			const status = (paRes.reason as { status?: number } | null)?.status;
+			paError =
+				status === 403
+					? 'Akun Anda belum tercatat sebagai Leader / Co-Leader / Manpower Leader proyek ini, jadi antrean birokrasi tidak ditampilkan. Hubungi Admin bila ini keliru.'
+					: status === 401
+						? 'Sesi login berakhir — muat ulang halaman lalu login kembali.'
+						: 'Antrean birokrasi & status pengajuan gagal dimuat (server sedang bermasalah). Coba lagi sebentar lagi.';
 		}
 		if (idleRes.status === 'fulfilled') {
 			idle = idleRes.value.idle;

@@ -1058,6 +1058,20 @@ export function getBreadcrumbAndTitle(pathname: string): BreadcrumbResult {
 			};
 		}
 
+		if (sub === 'spesifikasi-teknis') {
+			return {
+				breadcrumb: [
+					{ label: 'Departemen' },
+					{ label: 'Project', href: '/proyek/hub' },
+					{ label: 'List Project', href: '/proyek' },
+					{ label: 'Detail Proyek', href: projectBaseHref },
+					{ label: 'Spesifikasi Teknis' }
+				],
+				title: 'Spesifikasi Teknis Proyek',
+				parentHref: projectBaseHref
+			};
+		}
+
 		if (sub === 'coating-log') {
 			return {
 				breadcrumb: [

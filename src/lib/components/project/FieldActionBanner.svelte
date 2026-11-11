@@ -49,6 +49,9 @@
 	let criticalItems = $derived(
 		activeItems.filter((i) => i.tingkat_urgensi === 'kritis' || i.is_gate_blocker)
 	);
+	let gateBlockers = $derived(
+		activeItems.filter((i) => i.is_gate_blocker)
+	);
 	let pendingResolution = $derived(
 		activeItems.filter((i) => i.status === 'open' || i.status === 'in_progress')
 	);
@@ -113,8 +116,9 @@
 				return { bg: 'bg-amber-500/20 text-amber-300 border-amber-500/30', label: 'Menunggu Ditindaklanjuti' };
 			case 'in_progress':
 				return { bg: 'bg-sky-500/20 text-sky-300 border-sky-500/30', label: 'Sedang Dikerjakan' };
+			case 'pending_verification':
 			case 'resolved':
-				return { bg: 'bg-purple-500/20 text-purple-300 border-purple-500/30', label: 'Menunggu Verifikasi Pusat' };
+				return { bg: 'bg-purple-500/30 text-purple-200 border-purple-500/50', label: '⏳ Menunggu Approval Manajemen (Gate Masih Mengunci)' };
 			case 'closed':
 				return { bg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', label: 'Selesai & Diverifikasi' };
 			default:
@@ -166,9 +170,14 @@
 						<span class="text-xs font-bold tracking-wider uppercase text-white flex items-center gap-1.5">
 							⚡ Komando Direksi &amp; Kendala Lapangan
 						</span>
-						{#if criticalItems.length > 0}
+						{#if gateBlockers.length > 0}
+							<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-600 text-white animate-pulse flex items-center gap-1 shadow-md shadow-rose-900/50">
+								<span>⛔</span>
+								<span>{gateBlockers.length} PENGUNCIAN PENGAJUAN (GATE AKTIF)</span>
+							</span>
+						{:else if criticalItems.length > 0}
 							<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white animate-pulse">
-								{criticalItems.length} KRITIS / GATE BLOCKER
+								{criticalItems.length} KRITIS
 							</span>
 						{:else if activeItems.length > 0}
 							<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/30 text-amber-300 border border-amber-500/40">
@@ -182,7 +191,9 @@
 					</div>
 
 					<p class="text-xs text-slate-300 mt-0.5">
-						{#if criticalItems.length > 0}
+						{#if gateBlockers.length > 0}
+							<strong class="text-rose-400">Peringatan Penguncian:</strong> Terdapat feedback manajerial (Gate G_MGR_FEEDBACK_LOCK). Seluruh pengajuan anggaran, pembelian material, dan surat jalan ditahan sampai bukti perbaikan disetujui kantor pusat.
+						{:else if criticalItems.length > 0}
 							Terdapat kendala kritis atau instruksi yang menahan peralihan fase proyek (Gate Blocker).
 						{:else if activeItems.length > 0}
 							Instruksi manajemen kantor atau kendala lapangan yang sedang berjalan.
@@ -238,8 +249,13 @@
 										{stBadge.label}
 									</span>
 									{#if item.is_gate_blocker}
-										<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-900/50 text-rose-300 border border-rose-500/50">
-											⛔ Gate Blocker
+										<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-500/60 flex items-center gap-1 shadow-xs">
+											<span>🔒 Penguncian Gate</span>
+											{#if item.scope_lock === 'unit_spesifik' && item.target_unit_id}
+												<span class="text-amber-300">(Unit #{item.target_unit_id})</span>
+											{:else}
+												<span>(Seluruh Proyek)</span>
+											{/if}
 										</span>
 									{/if}
 									{#if item.target_selesai}
@@ -280,16 +296,17 @@
 									<button
 										type="button"
 										onclick={() => (itemForResolution = item)}
-										class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-950/40 transition-all active:scale-95"
+										class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-950/40 transition-all active:scale-95 cursor-pointer"
 										title="Laporkan bahwa arahan ini sudah selesai dilaksanakan"
 									>
 										<IconCamera size={14} />
-										<span>Laporkan Sudah Dilaksanakan</span>
+										<span>{item.is_gate_blocker ? '✍️ Kirim Bukti Perbaikan ke Manajemen' : 'Laporkan Sudah Dilaksanakan'}</span>
 									</button>
 								{:else if item.status === 'pending_verification' || item.status === 'resolved'}
-									<span class="text-xs text-purple-300 italic px-2 py-1 bg-purple-950/50 rounded-lg border border-purple-500/20">
-										Menunggu Verifikasi Direksi/Admin
-									</span>
+									<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-950/70 border border-purple-500/40 text-purple-200 text-xs font-semibold">
+										<span class="animate-spin text-purple-400">⏳</span>
+										<span>Bukti Terkirim · Menunggu Approval Manajemen (Gate Masih Mengunci)</span>
+									</div>
 								{/if}
 
 								<!-- Detail Toggle -->

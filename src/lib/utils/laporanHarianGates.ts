@@ -46,6 +46,7 @@ export interface LaporanHarianGateContext {
 	// Fase 2 Laporan Lapangan & Paritas ERP (16 Okt 2026) — QC Ambient & Rasio Material.
 	qcAmbient?: { applicable?: boolean; filled_today?: boolean; [key: string]: any };
 	materialVariance?: { flagged?: boolean; note?: string; [key: string]: any };
+	assignedWorkersCount?: number;
 	unconfirmedSopCount?: number;
 	sopGateMode?: 'warn' | 'hard' | 'soft' | 'shadow';
 }
@@ -103,7 +104,8 @@ export function evaluateLaporanHarianGates(ctx: LaporanHarianGateContext) {
 		hse_daily: ctx.hseDaily ?? {},
 		downtime_log: ctx.downtimeLog ?? [],
 		qc_ambient: ctx.qcAmbient ?? {},
-		material_variance: ctx.materialVariance ?? {}
+		material_variance: ctx.materialVariance ?? {},
+		assigned_workers_count: ctx.assignedWorkersCount
 	};
 
 	const { gates } = evaluateLaporanHarianRules(snapshot);

@@ -41,6 +41,7 @@ function fake({ noPaket = false, failPath = '', memasok = 1 as number | null, to
 		if (path.startsWith('/items/so_customer_details')) return { data: [{ id: 5097, product_id: 22380, so_customer_id: 2001, nama_barang: 'BROWN 130', qty: 16, jumlah_pcs: 20, packing: 'kg' }] };
 		if (path.startsWith('/items/surat_jalan?')) return { data: [{ id: 30, so_customer_id: 2001, nomor_sj: 'SJ30', status: 'shipped', track_stage: 'dalam_perjalanan', date_created: '2026-09-25T01:00:00Z' }] };
 		if (path.startsWith('/items/surat_jalan_items')) return { data: [{ id: 1, surat_jalan_id: 30, so_detail_id: 5097, qty_delivered: 100, qty_gr_received: 0, cancelled_at: null }] };
+		if (path.startsWith('/items/sub_grand_po')) return { data: [{ id: 10, grand_po_id: 7, kode_sub: 'SUB-01', judul: 'Pekerjaan Blasting Ruang Bakar', ruang_lingkup: 'Blasting Sa 2.5', status: 'draft', current_phase_key: 'eksekusi', project_id: 978, urutan: 1 }] };
 		throw new Error('Path tak dikenal: ' + path);
 	});
 	return calls;
@@ -70,6 +71,8 @@ describe('loadGrandPoLapangan', () => {
 		expect(m.surat_jalan[0]).toMatchObject({ nomor_sj: 'SJ30', status: 'dalam_perjalanan' });
 		expect(m.estimasi_tiba).toContain('perjalanan');
 		expect(m.memasok_belum_ditentukan).toBe(false);
+		expect(r.paket[0].sub_grand_po).toHaveLength(1);
+		expect(r.paket[0].sub_grand_po[0]).toMatchObject({ kode_sub: 'SUB-01', judul: 'Pekerjaan Blasting Ruang Bakar', proyek_ini: true, current_phase_key: 'eksekusi' });
 	});
 
 	it('material tanpa memasok_member_id → tetap tampil dengan tanda "belum ditentukan"', async () => {
@@ -139,10 +142,12 @@ describe('GET /api/proyek/[project_id]/grand-po', () => {
 
 describe('Fase 6 — rekonsiliasi di loader', () => {
 	it('rekonsiliasi memakai coating log proyek ini; log tanpa produk dihitung terpisah; pilihan_produk tersedia', async () => {
-		fake({ logs: [{ id: 1, product_id: 22380, qty_used: 30, satuan: 'kg' }, { id: 2, product_id: null, qty_used: 3, satuan: 'kg' }] });
+		fake({ logs: [{ id: 1, product_id: 22380, qty_used: 30, satuan: 'kg', so_customer_id: 2001 }, { id: 2, product_id: null, qty_used: 3, satuan: 'kg' }] });
 		const r = await loadGrandPoLapangan(978);
 		expect(r.pilihan_produk).toEqual([{ product_id: 22380, nama_barang: 'BROWN 130', unit: '' }].map((p) => ({ ...p, unit: 'kg' })));
 		expect(r.rekonsiliasi?.baris[0]).toMatchObject({ product_id: 22380, qty_pesan: 320, qty_kirim: 100, qty_dipakai: 30, qty_sisa: 70, level: 'ok' });
+		expect(r.rekonsiliasi?.baris[0].sumber_po).toEqual([{ so_id: 2001, nomor_po: '1022', qty_pesan: 320, qty_kirim: 100, qty_dipakai: 30, qty_sisa: 70, level: 'ok' }]);
+		expect(r.rekonsiliasi?.baris[0].qty_dipakai_tanpa_po).toBe(0);
 		expect(r.rekonsiliasi?.tanpa_produk).toBe(1);
 		expect(r.rekonsiliasi?.toleransi_pct).toBe(5);
 		expect(findMoneyKeys({ r: r.rekonsiliasi, p: r.pilihan_produk })).toEqual([]);

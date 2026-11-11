@@ -8,10 +8,12 @@
 	import { getTimProyekSaya, type TimProyekSaya } from '$lib/services/ess/timProyekSaya';
 	import { getTimTren, type TimTren, type TimCadence } from '$lib/services/ess/kinerjaTren';
 	import TimMiniMatrix from './TimMiniMatrix.svelte';
+	import KpiInteractivePreviewModal from './KpiInteractivePreviewModal.svelte';
 
 	let data = $state<TimProyekSaya | null>(null);
 	let loading = $state(true);
 	let bukaId = $state<number | null>(null);
+	let showTeamMatrixPreview = $state(false);
 	// Mini-matriks: dimuat saat proyek pertama dibuka (hemat kuota), bukan saat kartu muncul.
 	let tren = $state<TimTren | null>(null);
 	let trenCadence = $state<TimCadence>('mingguan');
@@ -61,7 +63,17 @@
 	<section class="mb-8" data-testid="tim-proyek">
 		<div class="flex items-start justify-between gap-2 mb-1">
 			<h2 class="text-lg font-bold" style="color: var(--sys-label)">Performa Tim Proyek Saya</h2>
-			{#if adaOutsource}<button type="button" class="text-xs font-semibold text-amber-600 shrink-0" onclick={() => goto('/manpower/rating')}>Nilai pekerja →</button>{/if}
+			<div class="flex items-center gap-2 shrink-0">
+				<button
+					type="button"
+					class="px-2.5 py-1 text-xs font-bold rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 flex items-center gap-1 shadow-2xs"
+					onclick={() => (showTeamMatrixPreview = true)}
+					title="Buka Pratinjau Matriks Rekapitulasi Tim Proyek True A4"
+				>
+					<span>👁️</span> <span>Pratinjau Matriks Tim</span>
+				</button>
+				{#if adaOutsource}<button type="button" class="text-xs font-semibold text-amber-600 shrink-0" onclick={() => goto('/manpower/rating')}>Nilai pekerja →</button>{/if}
+			</div>
 		</div>
 		{#if adaOutsource}
 			<p class="text-[11px] mb-3" style="color: var(--sys-label3)">
@@ -135,5 +147,10 @@
 				</div>
 			{/each}
 		</div>
+		<KpiInteractivePreviewModal
+			open={showTeamMatrixPreview}
+			scope="department"
+			onClose={() => (showTeamMatrixPreview = false)}
+		/>
 	</section>
 {/if}

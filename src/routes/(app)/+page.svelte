@@ -40,6 +40,7 @@ import { authStore, getUserDisplay, getUserInitials, shouldFilterProjectsByLeade
 	import FieldActionAlertWidget from '$lib/components/project/FieldActionAlertWidget.svelte';
 	import GateKpiBannerMendesak from '$lib/components/ess/GateKpiBannerMendesak.svelte';
 	import TunggakanFisikWidget from '$lib/components/TunggakanFisikWidget.svelte';
+	import VisitBelumDitutupWidget from '$lib/components/site-checkin/VisitBelumDitutupWidget.svelte';
 	import {
 		getBudgetStatusLabel,
 		getBudgetStatusClass,
@@ -611,6 +612,9 @@ import { authStore, getUserDisplay, getUserInitials, shouldFilterProjectsByLeade
 
 			<!-- Penajaman Gate SJ Fase 3 — Tunggakan Fisik Saya; nol tampil bila tidak ada SJ menunggak. -->
 			<TunggakanFisikWidget />
+
+			<!-- PDP-33 — Visit belum ditutup (tutup visit harian: catatan + foto); nol tampil bila tidak ada. -->
+			<VisitBelumDitutupWidget />
 
 			<!-- PRJ-29 — satu pintu uang keluar; wizard menanyakan jenisnya lalu merutekan ke form yang benar. -->
 			{#if projects.length > 0}

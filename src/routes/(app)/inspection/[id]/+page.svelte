@@ -23,6 +23,10 @@
 	import { IconArrowLeft, IconAlertTriangle, IconPlus, IconTrash, IconLoader2, IconCamera, IconPrinter } from '@tabler/icons-svelte';
 	import { createFormPersist, registerFormPersistSaveTriggers } from '$lib/utils/formPersist';
 	import DraftIndicator from '$lib/components/shared/DraftIndicator.svelte';
+	import { compareDftToLayer } from '$lib/shared/projectSpecDft';
+	import { getIdToken } from '$lib/services/secureDirectus';
+	import SaGuide from '$lib/components/inspection/SaGuide.svelte';
+	import { fetchProjectObjectSpecs, type ProjectObjectSpec } from '$lib/services/projectSpecApi';
 
 	type LayerRow = InspectionPaintLayer & { readings: number[] };
 
@@ -177,6 +181,72 @@
 	function layerDft(layer: LayerRow) {
 		return validateDft8515(layer.readings, layer.dft_spec_min, layer.dft_spec_max);
 	}
+
+	// --- Acuan spesifikasi proyek (Fase 3 Scope Teknis): target micron per lapisan dari Project Charter ---
+	// Opsional & read-only: gagal memuat TIDAK menghalangi pengisian inspeksi (batas spec tetap bisa diketik manual).
+	let projectSpecs = $state<ProjectObjectSpec[]>([]);
+	let specObjectId = $state<number | null>(null);
+	let specError = $state('');
+	let specLoadedFor: number | null = null;
+
+	$effect(() => {
+		const pid = projectId;
+		if (!pid || pid === specLoadedFor) return;
+		specLoadedFor = pid;
+		specError = '';
+		projectSpecs = [];
+		specObjectId = null;
+		fetchProjectObjectSpecs(pid)
+			.then((list) => {
+				if (specLoadedFor !== pid) return; // proyek diganti saat menunggu
+				projectSpecs = list.filter((o) => o.layers.length > 0);
+				if (projectSpecs.length === 1) specObjectId = projectSpecs[0].id;
+			})
+			.catch((e) => {
+				console.error('[inspection] gagal memuat spesifikasi proyek:', e);
+				if (specLoadedFor === pid) specError = 'Spesifikasi proyek belum bisa dimuat — isi batas DFT secara manual.';
+			});
+	});
+
+	const specObject = $derived(projectSpecs.find((o) => o.id === specObjectId) || null);
+	const specLayerOf = (layer: LayerRow) => specObject?.layers.find((l) => l.no === layer.layer_no) || null;
+
+	function applySpecToLayer(layer: LayerRow) {
+		const sl = specLayerOf(layer);
+		if (!sl) return;
+		layer.dft_spec_min = sl.min;
+		layer.dft_spec_max = sl.max;
+		if (!layer.paint_name && sl.merk) layer.paint_name = sl.merk;
+		if (!layer.painting_system && sl.tahap) layer.painting_system = sl.tahap;
+	}
+
+	// Beri tahu PM bila ada layer kurang tebal / over (server menghitung ulang & mengecek saklar setelan + throttle).
+	// Fire-and-forget: tidak pernah menghalangi penyimpanan inspeksi.
+	function notifyDftDeviationIfAny(rid: number) {
+		if (!specObject) return;
+		const deviates = layers.some((l) => {
+			const sl = specLayerOf(l);
+			if (!sl) return false;
+			const s = compareDftToLayer(l.readings, sl).status;
+			return s === 'kurang' || s === 'over';
+		});
+		if (!deviates) return;
+		getIdToken()
+			.then((tok) =>
+				fetch('/api/inspection/notify-dft-deviation', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+					body: JSON.stringify({ reportId: rid, objectId: specObject.id })
+				})
+			)
+			.catch((e) => console.warn('[inspection] notifikasi deviasi DFT gagal (diabaikan):', e?.message || e));
+	}
+
+	const SPEC_TONE: Record<string, { bg: string; fg: string; label: string }> = {
+		memenuhi: { bg: 'var(--gg)', fg: 'var(--ggd)', label: 'Memenuhi spesifikasi' },
+		kurang: { bg: '#fef3c7', fg: '#92400e', label: 'Kurang tebal' },
+		over: { bg: 'var(--rel)', fg: 'var(--red)', label: 'Over-thickness' }
+	};
 
 	function onPhotoFileChange(e: Event) {
 		const file = (e.target as HTMLInputElement).files?.[0];
@@ -384,6 +454,7 @@
 				goto(`/inspection/${reportId}`, { replaceState: true, noScroll: true });
 			}
 			await persistChildren(reportId as number);
+			notifyDftDeviationIfAny(reportId as number);
 			successMsg = 'Draft tersimpan.';
 			localDraftPersist.clear();
 			localDraftSavedAt = null;
@@ -514,6 +585,7 @@
 			<!-- Surface prep -->
 			<section class="rounded-xl border p-3.5" style="border-color: var(--sys-sep)">
 				<h2 class="text-[13px] font-bold mb-2.5" style="color: var(--sys-label)">3. Surface Preparation</h2>
+				<SaGuide target={specObject?.spec?.surface_preparation?.standar_sa ?? null} />
 				<div class="grid grid-cols-2 gap-2">
 					<input bind:value={prepMethod} placeholder="Method (mis. Sa 2.5)" class="rounded-lg px-3 py-2 text-[13px]" style="background: var(--sys-fill); border: 1px solid var(--sys-sep)" />
 					<input bind:value={abrasiveType} placeholder="Abrasive Type (mis. Silica 60/80)" class="rounded-lg px-3 py-2 text-[13px]" style="background: var(--sys-fill); border: 1px solid var(--sys-sep)" />
@@ -532,6 +604,23 @@
 						<option value="conventional">Conventional</option>
 					</select>
 				</div>
+
+				{#if projectId && (projectSpecs.length > 0 || specError)}
+					<div class="mb-3 rounded-lg p-2.5 text-[11px]" style="background: var(--sys-fill); border: 1px dashed var(--sys-sep)" data-testid="acuan-spesifikasi">
+						{#if specError}
+							<p style="color: var(--sys-label3)">{specError}</p>
+						{:else}
+							<label for="acuan-spek" class="font-semibold" style="color: var(--sys-label)">Acuan spesifikasi proyek <span style="color: var(--sys-label3)" class="font-normal">(opsional)</span></label>
+							<select id="acuan-spek" bind:value={specObjectId} class="mt-1 w-full rounded px-2 py-1.5 text-[12px]" style="background: var(--sys-bg); border: 1px solid var(--sys-sep)">
+								<option value={null}>— tanpa acuan —</option>
+								{#each projectSpecs as o (o.id)}
+									<option value={o.id}>{o.nama} · total {o.totalMicron} µm</option>
+								{/each}
+							</select>
+							<p class="mt-1" style="color: var(--sys-label3)">Pilih objek yang sedang diinspeksi. Tiap layer lalu dibandingkan otomatis dengan target micron dari Project Charter, dan tombol “Pakai batas spek” mengisi DFT Spec Min/Max untuk Anda.</p>
+						{/if}
+					</div>
+				{/if}
 
 				<div class="space-y-3">
 					{#each layers as layer, li (li)}
@@ -561,6 +650,13 @@
 								<input bind:value={layer.dft_spec_max} type="number" step="0.1" placeholder="DFT Spec Max (µm)" class="rounded px-2 py-1 text-[11px]" style="background: var(--sys-bg); border: 1px solid var(--sys-sep)" />
 							</div>
 
+							{#if specLayerOf(layer)}
+								{@const sl = specLayerOf(layer)}
+								<div class="mb-2 flex items-center justify-between gap-2 rounded px-2 py-1.5 text-[11px]" style="background: var(--sys-bg); border: 1px solid var(--sys-sep)">
+									<span style="color: var(--sys-label)">Spek proyek L{sl?.no}: target <strong>{sl?.target} µm</strong> (batas {sl?.min}–{sl?.max}){sl?.merk ? ` · ${sl.merk}` : ''}</span>
+									<button type="button" onclick={() => applySpecToLayer(layer)} class="shrink-0 rounded px-2 py-0.5 font-semibold" style="background: var(--sys-fill); border: 1px solid var(--sys-sep)">Pakai batas spek</button>
+								</div>
+							{/if}
 							<p class="text-[11px] font-semibold mb-1" style="color: var(--sys-label3)">Titik ukur DFT (µm)</p>
 							<div class="flex flex-wrap gap-1.5 mb-1.5">
 								{#each layer.readings as _, ri}
@@ -574,6 +670,17 @@
 								</button>
 							</div>
 
+							{#if specLayerOf(layer)}
+								{@const cmp = compareDftToLayer(layer.readings, specLayerOf(layer))}
+								{#if cmp.status !== 'kosong'}
+									<div class="mb-1 rounded px-2 py-1 text-[11px] font-semibold" style="background: {SPEC_TONE[cmp.status].bg}; color: {SPEC_TONE[cmp.status].fg}" data-testid="banding-dft-{cmp.status}" role="status">
+										{SPEC_TONE[cmp.status].label} — {cmp.message}
+										{#if cmp.status === 'kurang' || cmp.status === 'over'}
+											<span class="block font-normal">Informasikan ke Project Leader/PM sebelum cat mengering penuh agar touch-up bisa segera dilakukan.</span>
+										{/if}
+									</div>
+								{/if}
+							{/if}
 							{#if dft.avg !== null}
 								<div class="flex items-center gap-2 flex-wrap text-[11px]">
 									<span style="color: var(--sys-label3)">Avg: <strong>{dft.avg}µm</strong></span>

@@ -60,7 +60,7 @@ describe('parseEpiQr BLJ-SJK-V2', () => {
 		expect(parseEpiQr('EPI:BLJ-SJK-V2:0:t')).toBeNull();
 	});
 	it('URL /scan/<payload> (QR cetak) juga terbaca', () => {
-		expect(parseEpiQr('https://project.eltamaprimaindo.com/scan/' + encodeURIComponent('EPI:BLJ-SJK-V2:5:tok'))).toMatchObject({ type: 'BLJ-SJK-V2', id: 5 });
+		expect(parseEpiQr('https://dev-project.eltamaprimaindo.com/scan/' + encodeURIComponent('EPI:BLJ-SJK-V2:5:tok'))).toMatchObject({ type: 'BLJ-SJK-V2', id: 5 });
 	});
 });
 

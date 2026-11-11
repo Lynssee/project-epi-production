@@ -46,7 +46,7 @@ export const GET: RequestHandler = async (event) => {
 		};
 		const sjQuery = new URLSearchParams({
 			filter: JSON.stringify(sjFilter),
-			fields: 'id,nomor_sj,driver,date_created,notes,qr_token,status',
+			fields: 'id,nomor_sj,driver,date_created,notes,qr_token,status,vehicle_id,mode_kirim,eta_tiba,no_resi',
 			limit: '-1'
 		});
 		const sjResult = await directusServerJson<{ data: any[] }>(`/items/surat_jalan?${sjQuery.toString()}`);
@@ -76,6 +76,10 @@ export const GET: RequestHandler = async (event) => {
 				suratJalanId: sj.id,
 				nomorSJ: sj.nomor_sj,
 				driver: sj.driver,
+				vehicleId: sj.vehicle_id ?? null,
+				modeKirim: sj.mode_kirim ?? null,
+				etaTiba: sj.eta_tiba ?? null,
+				noResi: sj.no_resi ?? null,
 				tanggalKirim: sj.date_created,
 				qrToken: sj.qr_token || null,
 				projectId: exp.project_id,
@@ -114,7 +118,7 @@ export const GET: RequestHandler = async (event) => {
 					};
 		const genericSjQuery = new URLSearchParams({
 			filter: JSON.stringify(genericSjFilter),
-			fields: 'id,nomor_sj,driver,date_created,notes,qr_token,project_id',
+			fields: 'id,nomor_sj,driver,date_created,notes,qr_token,project_id,vehicle_id,mode_kirim,eta_tiba,no_resi',
 			limit: '-1'
 		});
 		const genericSjResult = await directusServerJson<{ data: any[] }>(`/items/surat_jalan?${genericSjQuery.toString()}`);
@@ -143,6 +147,10 @@ export const GET: RequestHandler = async (event) => {
 						suratJalanId: sj.id,
 						nomorSJ: sj.nomor_sj,
 						driver: sj.driver,
+						vehicleId: sj.vehicle_id ?? null,
+						modeKirim: sj.mode_kirim ?? null,
+						etaTiba: sj.eta_tiba ?? null,
+						noResi: sj.no_resi ?? null,
 						tanggalKirim: sj.date_created,
 						qrToken: sj.qr_token || null,
 						projectId: sj.project_id ?? null,
@@ -164,5 +172,20 @@ export const GET: RequestHandler = async (event) => {
 		}
 	}
 
-	return json({ shipments: [...shipmentsBySJ.values()] });
+	// 6. Plat nomor truk (Aturan #2: query terpisah). Gagal -> plat kosong + log; daftar GR TETAP tampil (informasi tambahan, bukan syarat).
+	const shipments = [...shipmentsBySJ.values()];
+	const vehicleIds = [...new Set(shipments.map((s) => s.vehicleId).filter((v) => v != null))];
+	let platById = new Map<string, string>();
+	if (vehicleIds.length > 0) {
+		try {
+			const vq = new URLSearchParams({ filter: JSON.stringify({ id: { _in: vehicleIds } }), fields: 'id,nomor_polisi', limit: '-1' });
+			const vr = await directusServerJson<{ data: any[] }>(`/items/fleet_kendaraan?${vq.toString()}`);
+			platById = new Map((vr?.data || []).map((v) => [String(v.id), String(v.nomor_polisi || '')]));
+		} catch (e: any) {
+			console.warn('[goods-received/list] gagal baca plat kendaraan (info truk dikosongkan):', e?.message);
+		}
+	}
+	for (const s of shipments) s.plat = (s.vehicleId != null && platById.get(String(s.vehicleId))) || null;
+
+	return json({ shipments });
 };

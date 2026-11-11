@@ -909,17 +909,16 @@ export async function createCheckin(
 				body: JSON.stringify(payload)
 			});
 		} catch (e) {
-			// SV-12: request kembar (race) lolos pre-check exact-match di atas lalu sama-sama mencoba
-			// INSERT — constraint unik client_txn_id menolak yang kedua. Alih-alih gagal, ambil baris
-			// yang berhasil dibuat request pertama (tetap idempoten dari sudut pandang klien).
-			if (input.clientTxnId) {
-				const raceQuery = new URLSearchParams({ 'filter[client_txn_id][_eq]': input.clientTxnId, fields: '*', limit: '1' });
-				const raceRes = await directusServerJson<{ data: SiteCheckinRecord[] }>(`/items/site_checkin?${raceQuery.toString()}`).catch(() => null);
-				const raceExisting = raceRes?.data?.[0];
-				if (raceExisting) return raceExisting;
-			}
-			throw e;
+		// SV-12: request kembar (race) lolos pre-check exact-match di atas lalu sama-sama mencoba
+		// INSERT — constraint unik client_txn_id menolak yang kedua. Alih-alih gagal, ambil baris
+		// yang berhasil dibuat request pertama (tetap idempoten dari sudut pandang klien).
+		if (input.clientTxnId) {
+			const raceQuery = new URLSearchParams({ 'filter[client_txn_id][_eq]': input.clientTxnId, fields: '*', limit: '1' });
+			const raceRes = await directusServerJson<{ data: SiteCheckinRecord[] }>(`/items/site_checkin?${raceQuery.toString()}`).catch(() => null);
+			const raceExisting = raceRes?.data?.[0];
+			if (raceExisting) return raceExisting;
 		}
+		throw e;
 	}
 
 	// Paket 02 §3.10: baris ini LEBIH TUA dari check-in yang sedang aktif (replay offline

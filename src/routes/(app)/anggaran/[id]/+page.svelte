@@ -633,7 +633,7 @@
 
 			<!-- BIZ-04: Tarik Pengajuan (pemilik) -->
 			{#if canTarik}
-				<div class="card-section no-print">
+				<div class="card-section no-print" id="tarik-pengajuan">
 					{#if !showTarik}
 						<button class="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer disabled:opacity-50 border-red-200 text-red-700 hover:bg-red-50" onclick={() => (showTarik = true)} title="Hanya bisa sebelum ada yang menyetujui. Nomor & riwayat tetap tersimpan.">🚫 Tarik Pengajuan</button>
 						<p class="text-[11px] text-gray-500 mt-1">Salah input atau ganda? Tarik pengajuan ini — hanya bisa sebelum ada yang menyetujui. Sudah ada yang menyetujui: minta Finance membatalkan.</p>
@@ -1291,12 +1291,18 @@
 				     Sebelumnya cek ini hanya membandingkan 'Selesai'/'Verified'/'Ditolak', sehingga
 				     pengajuan 'Completed' (sudah dibayar) & 'Rejected' masih bisa diedit/dibatalkan. -->
 				{#if !isBudgetFinanceApproved(budget.status) && !isBudgetRejected(budget.status)}
-					<button
-						class="flex-1 py-2.5 border border-gray-200 rounded-xl text-gray-500 text-[13px] font-medium flex items-center justify-center gap-1.5 cursor-pointer active:bg-gray-50 transition-all"
-						onclick={() => { if(confirm('Batalkan pengajuan ini?')) alert('Pengajuan dibatalkan'); }}
-					>
-						<IconX size={16} /> Batalkan
-					</button>
+					<!-- Dulu: confirm() + alert('Pengajuan dibatalkan') TANPA memanggil apa pun (pemohon mengira batal padahal
+					     masih menggantung di antrean). Kini membuka alur "Tarik pengajuan" (BIZ-04) yang benar-benar membatalkan;
+					     hanya tampil bila pengajuan memang bisa ditarik (pemilik + Pending/Perlu Revisi). -->
+					{#if canTarik}
+						<button
+							class="flex-1 py-2.5 border border-gray-200 rounded-xl text-gray-500 text-[13px] font-medium flex items-center justify-center gap-1.5 cursor-pointer active:bg-gray-50 transition-all"
+							title="Salah input atau ganda? Tarik pengajuan ini sebelum ada yang menyetujui."
+							onclick={() => { showTarik = true; document.getElementById('tarik-pengajuan')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}
+						>
+							<IconX size={16} /> Tarik
+						</button>
+					{/if}
 					<button
 						class="flex-1 py-2.5 bg-[var(--p)] text-white border-none rounded-xl text-[13px] font-medium flex items-center justify-center gap-1.5 cursor-pointer active:bg-[var(--pd)] transition-all"
 						onclick={() => goto(`/anggaran/${id}/edit`)}

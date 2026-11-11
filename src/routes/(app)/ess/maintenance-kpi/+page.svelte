@@ -3,10 +3,12 @@
 	import { onMount } from 'svelte';
 	import { getMyMaintenanceKpi, type MaintenanceKpiSummary } from '$lib/services/ess/maintenanceKpi';
 	import { IconLoader2, IconAlertTriangle, IconTool, IconClock } from '@tabler/icons-svelte';
+	import KpiInteractivePreviewModal from '$lib/components/ess/KpiInteractivePreviewModal.svelte';
 
 	let loading = $state(true);
 	let errorMsg = $state('');
 	let summary = $state<MaintenanceKpiSummary | null>(null);
+	let previewOpen = $state(false);
 
 	async function load() {
 		loading = true;
@@ -21,12 +23,39 @@
 	}
 
 	onMount(load);
+
+	const statusInfo = $derived((() => {
+		if (!summary || summary.pct === null || summary.pct === undefined) {
+			return { label: 'Belum Dinilai', cls: 'bg-slate-100 text-slate-600 border border-slate-200' };
+		}
+		if (summary.pct >= 85) {
+			return { label: 'On Target (Tercapai)', cls: 'bg-emerald-100 text-emerald-700 border border-emerald-300' };
+		}
+		if (summary.pct >= 65) {
+			return { label: 'Waspada (Ambang)', cls: 'bg-amber-100 text-amber-700 border border-amber-300' };
+		}
+		return { label: 'Kritis (Di Bawah Target)', cls: 'bg-rose-100 text-rose-700 border border-rose-300' };
+	})());
 </script>
 
 <div class="w-full p-4 md:p-6 pb-24">
-	<div class="mb-8">
-		<h1 class="text-2xl md:text-3xl font-extrabold tracking-tight gradient-text">Work Order Saya</h1>
-		<p class="text-sm md:text-base mt-1 font-medium" style="color: var(--sys-label3)">Penyelesaian WO periode berjalan</p>
+	<div class="mb-8 flex items-start justify-between gap-3">
+		<div>
+			<h1 class="text-2xl md:text-3xl font-extrabold tracking-tight gradient-text">Work Order Saya</h1>
+			<p class="text-sm md:text-base mt-1 font-medium" style="color: var(--sys-label3)">Penyelesaian WO periode berjalan</p>
+		</div>
+		<div>
+			<button
+				type="button"
+				class="h-11 shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 text-xs font-bold border border-indigo-300 bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:border-indigo-700 dark:text-indigo-200 hover:bg-indigo-100 transition-colors shadow-xs"
+				onclick={() => (previewOpen = true)}
+				aria-label="Pratinjau Rapor Maintenance True A4"
+				title="Pratinjau Rapor Kinerja True A4 untuk Maintenance & Mekanik"
+				data-testid="btn-pratinjau-maintenance-kpi"
+			>
+				👁️ Pratinjau Rapor
+			</button>
+		</div>
 	</div>
 
 	{#if loading}
@@ -57,6 +86,9 @@
 			<div class="flex items-center justify-between relative z-10">
 				<div>
 					<p class="text-xs font-bold" style="color: var(--sys-label3)">Periode {summary.periode || '-'}</p>
+					<span class="text-[10px] px-2 py-0.5 rounded-full font-bold ml-2 {statusInfo.cls}">
+						{statusInfo.label}
+					</span>
 					<p class="text-base font-bold mt-1" style="color: var(--sys-label)">{summary.personnelName}</p>
 				</div>
 				{#if summary.pct !== null}
@@ -65,6 +97,26 @@
 					</div>
 				{/if}
 			</div>
+			<!-- Quick Grid Metrik Operasional Lapangan -->
+			<div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 my-4 pt-3 border-t border-slate-150 dark:border-slate-800/80 text-xs">
+				<div class="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-white/30">
+					<span class="text-[10px] text-slate-400 block font-semibold">Total Tugas</span>
+					<strong class="text-base font-black text-slate-800 dark:text-white">{summary.total} WO</strong>
+				</div>
+				<div class="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-white/30">
+					<span class="text-[10px] text-emerald-600 block font-semibold">Selesai</span>
+					<strong class="text-base font-black text-emerald-600">{summary.selesai} WO</strong>
+				</div>
+				<div class="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-white/30">
+					<span class="text-[10px] text-amber-600 block font-semibold">Belum Selesai</span>
+					<strong class="text-base font-black text-amber-600">{summary.openList.length} WO</strong>
+				</div>
+				<div class="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-white/30">
+					<span class="text-[10px] text-indigo-600 block font-semibold">Rata-rata MTTR</span>
+					<strong class="text-base font-black text-indigo-600">{summary.mttrJam != null ? `${summary.mttrJam} jam` : '—'}</strong>
+				</div>
+			</div>
+
 			<p class="text-xs mt-4 relative z-10" style="color: var(--sys-label3)">
 				{#if summary.total === 0}
 					Belum ada WO ditugaskan ke Anda pada periode ini.
@@ -77,7 +129,7 @@
 		<h2 class="text-lg font-bold mb-4" style="color: var(--sys-label)">WO Belum Selesai ({summary.openList.length})</h2>
 		{#if summary.openList.length === 0}
 			<div class="glass-panel rounded-2xl p-10 text-center">
-				<p class="text-sm font-medium" style="color: var(--sys-label3)">Tidak ada WO menggantung. 🎉</p>
+				<p class="text-sm font-medium" style="color: var(--sys-label3)">Tidak ada WO menggantung. Semua selesai dengan baik.</p>
 			</div>
 		{:else}
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -130,3 +182,9 @@
 		</div>
 	{/if}
 </div>
+
+<KpiInteractivePreviewModal
+	open={previewOpen}
+	scope="individual"
+	onClose={() => (previewOpen = false)}
+/>

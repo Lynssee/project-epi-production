@@ -30,7 +30,7 @@ export async function POST(event: RequestEvent) {
 	if (!NIK_PATTERN.test(nik)) throw error(400, 'NIK wajib 16 digit angka.');
 	if (!fotoKtpFileId) throw error(400, 'Foto KTP wajib diunggah (fotoKtpFileId kosong).');
 
-	await authenticateProjectLeaderForManpower(event, manpowerId);
+	const { karyawan } = await authenticateProjectLeaderForManpower(event, manpowerId);
 
 	await directusServerJson(`/items/manpower/${manpowerId}`, {
 		method: 'PATCH',
@@ -43,7 +43,9 @@ export async function POST(event: RequestEvent) {
 			manpower_id: manpowerId,
 			jenis_dokumen: 'ktp',
 			file: fotoKtpFileId,
-			status_verifikasi: 'menunggu'
+			status_verifikasi: 'menunggu',
+			// PDP-25: email pengunggah -> HRD menolak dokumen = notifikasi in-app ke orang ini beserta alasannya.
+			diunggah_oleh: (karyawan.email_company || '').toLowerCase() || null
 		})
 	});
 

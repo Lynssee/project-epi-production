@@ -19,6 +19,7 @@
 	import ManualActualModal from '$lib/components/project/ManualActualModal.svelte';
 	import { loadProjectSettings, getProjectSetting } from '$lib/services/projectSettings';
 	import { isNonWorkday, buildHolidaySet, getEffectiveWorkdaysPerWeek } from '$lib/utils/workingDays';
+	import { computeCriticalPath } from '$lib/utils/criticalPath';
 	import directus from '$lib/services/directus';
 	import { readItems } from '@directus/sdk';
 	import {
@@ -318,6 +319,33 @@
 	// Timeline & Scope Management Fase 2 — hari libur nasional/perusahaan (koleksi `holidays` HRD, read-only)
 	let holidaySet = $state<Set<string>>(new Set());
 	let globalWorkdaysPerWeek = $state(6);
+
+	// Jalur Kritis (CPM) — hanya subtask dengan rantai predecessor terhubung yang bisa kritis.
+	// Dihitung ulang hanya saat jadwal/kategori/hari libur berubah (murni, tanpa call API).
+	let cpmMap = $derived.by(() =>
+		computeCriticalPath(categories, {
+			workdaysPerWeek: getEffectiveWorkdaysPerWeek(project, globalWorkdaysPerWeek),
+			holidaySet
+		})
+	);
+	function isCriticalSub(sub: any): boolean {
+		return !!(sub?.id != null && cpmMap.get(sub.id)?.critical) && getProgress(sub, 'daily_actual') < 100;
+	}
+	// Panduan Hari Ini: subtask kritis yang sedang berjalan hari ini atau sudah lewat jadwal & belum selesai.
+	let criticalToday = $derived.by(() => {
+		const today = todayKey();
+		const out: { name: string; late: boolean; days: number }[] = [];
+		for (const cat of categories) {
+			for (const sub of cat.subtasks || []) {
+				if (!isCriticalSub(sub)) continue;
+				const keys = Object.keys(sub.daily_plan || {}).filter((k) => sub.daily_plan[k] > 0).sort();
+				if (keys.length === 0 || keys[0] > today) continue;
+				const late = keys[keys.length - 1] < today;
+				out.push({ name: sub.name || 'Aktivitas', late, days: late ? daysSincePlan(sub) : 0 });
+			}
+		}
+		return out.sort((a, b) => Number(b.late) - Number(a.late) || b.days - a.days).slice(0, 3);
+	});
 
 	// Standarisasi Timeline v2 (TAJAM), Fase 6 — label tahap mobilisasi utk badge & sheet kebutuhan.
 	let mobStagesSetting = $state<Array<{ key: string; label: string }>>([]);
@@ -762,6 +790,16 @@
 	{:else}
 		<ManpowerTodayCard {categories} reports={projectReports} todayKey={todayKey()} />
 
+			{#if criticalToday.length > 0}
+				<div class="tl-critical-guide" data-testid="critical-guide">
+					<b>💡 Panduan Hari Ini:</b>
+					{#each criticalToday as c, i}
+						{i > 0 ? '; ' : ' '}<b>{c.name}</b>{c.late ? ` (terlambat ${c.days} hari)` : ''}
+					{/each}
+					berada di <b>Jalur Kritis</b> — keterlambatannya langsung menunda serah terima proyek. Pastikan material, alat, dan tenaga siap sebelum mulai kerja; bila terhambat, tekan <i>Alasan</i> pada baris subtask agar manajemen bisa membantu.
+				</div>
+			{/if}
+
 		<!-- Excel Ribbon & Controls Bar -->
 		<div class="px-4 py-2.5 bg-gray-50 dark:bg-[#16202A] border-b border-gray-200/80 dark:border-[#2B3844] flex flex-col gap-2">
 			<div class="flex items-center justify-between flex-wrap gap-2">
@@ -1007,6 +1045,11 @@
 										</div>
 									</div>
 									<SubtaskSpecBadges {sub} mobStageLabel={mobStageLabel(sub.mob_stage)} onVendorClick={openVendorCard} />
+									{#if isCriticalSub(sub)}
+										<div class="mt-1">
+											<span class="tl-critical-badge" title="Float = 0: keterlambatan aktivitas ini langsung menunda serah terima proyek. Utamakan material, alat, dan tenaga untuk aktivitas ini.">JALUR KRITIS</span>
+										</div>
+									{/if}
 									{#if isSubtaskDelayed(sub)}
 										<div class="flex items-center flex-wrap gap-1 mt-1">
 											<span class="tl-delay-badge"><IconAlertTriangle size={10} /> Delay</span>
@@ -1344,6 +1387,14 @@
 		background: #1976D2 !important;
 	}
 
+	.tl-critical-badge {
+		display: inline-flex; align-items: center; font-size: 9px; font-weight: 800; letter-spacing: 0.03em;
+		padding: 2px 6px; border-radius: 6px; background: #e11d48; color: white; white-space: nowrap;
+	}
+	.tl-critical-guide {
+		margin: 8px 0; padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.45;
+		background: #fff1f2; border: 1px solid #fda4af; color: #881337;
+	}
 	/* Timeline Adendum */
 	.tl-delay-badge {
 		display: inline-flex; align-items: center; gap: 3px;

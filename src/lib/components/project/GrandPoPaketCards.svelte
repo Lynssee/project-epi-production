@@ -3,14 +3,29 @@
      yang memasok proyek ini. TANPA Rupiah. Tidak menampilkan apa pun bila proyek bukan anggota Grand PO. -->
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
-	import { fetchGrandPoLapangan, type GrandPoLapangan } from '$lib/services/grandPoLapangan';
-	import { IconPackages, IconTruckDelivery, IconLoader2, IconInfoCircle, IconScale } from '@tabler/icons-svelte';
+	import { fetchGrandPoLapangan, type GrandPoLapangan, type SubGrandPoLapangan } from '$lib/services/grandPoLapangan';
+	import { IconPackages, IconTruckDelivery, IconLoader2, IconInfoCircle, IconScale, IconLayersIntersect, IconChevronDown, IconChevronUp, IconCheck, IconShieldCheck, IconTools, IconFileCheck } from '@tabler/icons-svelte';
 
 	let { project = null } = $props<{ project?: any }>();
 
 	let data = $state<GrandPoLapangan | null>(null);
 	let loading = $state(false);
 	let error = $state('');
+	let selectedSubPoId = $state<number | null>(null);
+
+	const SUB_PHASES = [
+		{ key: 'akuisisi', label: 'Akuisisi', num: 1 },
+		{ key: 'kesiapan', label: 'Kesiapan', num: 2 },
+		{ key: 'mobilisasi', label: 'Mobilisasi', num: 3 },
+		{ key: 'eksekusi', label: 'Eksekusi', num: 4 },
+		{ key: 'sdm_hse', label: 'SDM/HSE', num: 5 },
+		{ key: 'closing', label: 'Closing', num: 6 }
+	];
+
+	function getPhaseIndex(phaseKey: string): number {
+		const idx = SUB_PHASES.findIndex((p) => p.key === (phaseKey || '').toLowerCase());
+		return idx >= 0 ? idx : 0;
+	}
 
 	const PERAN: Record<string, string> = { jasa: 'Jasa', material: 'Material', manpower_supply: 'Manpower Supply', sewa_alat: 'Sewa Alat', lainnya: 'Lainnya' };
 	const SJ_LABEL: Record<string, [string, string]> = {
@@ -82,6 +97,118 @@
 					</li>
 				{/each}
 			</ul>
+
+			{#if p.sub_grand_po && p.sub_grand_po.length > 0}
+				<div class="mt-4 pt-3 border-t border-gray-100 dark:border-[#2B3844]" data-testid="gpo-lap-sub-po-section">
+					<div class="flex items-center justify-between gap-2 mb-2">
+						<div class="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
+							<IconLayersIntersect size={14} class="text-violet-500" />
+							<span>Sub Grand PO ({p.sub_grand_po.length})</span>
+						</div>
+						<span class="text-[10px] text-gray-400">Klik judul untuk alur lapangan & kesiapan site</span>
+					</div>
+
+					<div class="space-y-2">
+						{#each p.sub_grand_po as sub (sub.id)}
+							<div class="rounded-xl border {sub.proyek_ini ? 'border-violet-200 dark:border-violet-900/50 bg-violet-50/20' : 'border-gray-100 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-800/20'} overflow-hidden transition-all duration-200">
+								<!-- Header Bar (Clickable) -->
+								<button
+									type="button"
+									class="w-full px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-gray-100/50 dark:hover:bg-gray-700/20 transition-colors cursor-pointer"
+									onclick={() => { selectedSubPoId = selectedSubPoId === sub.id ? null : sub.id; }}
+									data-testid="gpo-lap-sub-header-{sub.id}"
+								>
+									<div class="min-w-0">
+										<div class="flex items-center gap-1.5">
+											<span class="text-[10px] font-mono font-bold text-violet-600 dark:text-violet-400">{sub.kode_sub}</span>
+											<span class="text-xs font-bold text-gray-900 dark:text-white truncate">{sub.judul}</span>
+											{#if sub.proyek_ini}
+												<span class="text-[9px] font-semibold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-400 px-1 rounded">Proyek Ini</span>
+											{/if}
+										</div>
+										<div class="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500">
+											<span class="capitalize">Fase: <strong>{sub.current_phase_key || 'akuisisi'}</strong></span>
+											<span>•</span>
+											<span>{sub.jumlah_anggota} anggota PO</span>
+											{#if sub.status === 'menunggu_verifikasi_finance'}
+												<span>•</span>
+												<span class="font-semibold text-purple-600 dark:text-purple-400">Verifikasi Finance</span>
+											{:else if sub.status === 'selesai'}
+												<span>•</span>
+												<span class="font-semibold text-emerald-600 dark:text-emerald-400">Selesai</span>
+											{/if}
+										</div>
+									</div>
+									<div class="shrink-0 text-gray-400">
+										{#if selectedSubPoId === sub.id}
+											<IconChevronUp size={16} />
+										{:else}
+											<IconChevronDown size={16} />
+										{/if}
+									</div>
+								</button>
+
+								<!-- Expanded Flow & Site Readiness Detail -->
+								{#if selectedSubPoId === sub.id}
+									<div class="px-3 pb-3 pt-1 border-t border-gray-100 dark:border-[#2B3844] space-y-3 bg-white/60 dark:bg-[#151D24]" data-testid="gpo-lap-sub-flow-{sub.id}">
+										{#if sub.ruang_lingkup}
+											<div class="text-[11px] text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800/40 p-2 rounded-lg">
+												<span class="font-semibold text-gray-700 dark:text-gray-200">Lingkup Kerja:</span> {sub.ruang_lingkup}
+											</div>
+										{/if}
+
+										<!-- 6-Phase Operational Stepper -->
+										<div>
+											<p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Progress 6 Fase Lapangan</p>
+											<div class="grid grid-cols-3 sm:grid-cols-6 gap-1 text-center">
+												{#each SUB_PHASES as ph, idx}
+													{@const activeIdx = getPhaseIndex(sub.current_phase_key)}
+													{@const isPast = idx < activeIdx}
+													{@const isCurrent = idx === activeIdx}
+													<div class="rounded-lg p-1.5 border text-[10px] transition-all {isCurrent ? 'bg-violet-600 text-white font-bold border-violet-600 shadow-xs' : isPast ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800' : 'bg-gray-50 text-gray-400 border-gray-200 dark:bg-gray-800 dark:border-gray-700'}">
+														<div class="flex items-center justify-center gap-0.5">
+															{#if isPast}
+																<IconCheck size={10} class="stroke-2" />
+															{/if}
+															<span>{ph.num}. {ph.label}</span>
+														</div>
+													</div>
+												{/each}
+											</div>
+										</div>
+
+										<!-- Checklist Kesiapan Site & Gate Kontrol K3 -->
+										<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
+											<div class="p-2 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 flex items-start gap-1.5">
+												<IconShieldCheck size={14} class="text-emerald-600 shrink-0 mt-0.5" />
+												<div>
+													<p class="font-bold text-emerald-900 dark:text-emerald-300">Kesiapan K3 & APD</p>
+													<p class="text-gray-500">Izin kerja & induksi keselamatan diverifikasi</p>
+												</div>
+											</div>
+											<div class="p-2 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 flex items-start gap-1.5">
+												<IconTools size={14} class="text-blue-600 shrink-0 mt-0.5" />
+												<div>
+													<p class="font-bold text-blue-900 dark:text-blue-300">Material & Peralatan</p>
+													<p class="text-gray-500">Staging area & packing list terpasang</p>
+												</div>
+											</div>
+											<div class="p-2 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30 flex items-start gap-1.5">
+												<IconFileCheck size={14} class="text-indigo-600 shrink-0 mt-0.5" />
+												<div>
+													<p class="font-bold text-indigo-900 dark:text-indigo-300">BAST Parsial</p>
+													<p class="text-gray-500">Siap serah terima bertahap per Sub PO</p>
+												</div>
+											</div>
+										</div>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
 			<p class="text-[10px] text-gray-400 mt-2 flex items-start gap-1"><IconInfoCircle size={12} class="shrink-0 mt-px" />Progres tiap PO jasa dihitung dari proyeknya. PO yang berbagi proyek ini menunjukkan progres proyek yang sama.</p>
 		</div>
 	{/each}
@@ -145,7 +272,14 @@
 						{#each data.rekonsiliasi.baris as r (r.product_id)}
 							{@const lv = REKON_LEVEL[r.level] || REKON_LEVEL.ok}
 							<tr class="border-t border-gray-100 dark:border-[#2B3844]" title={r.catatan}>
-								<td class="py-1.5 pr-2 text-gray-800 dark:text-gray-200">{r.nama_barang}</td>
+								<td class="py-1.5 pr-2 text-gray-800 dark:text-gray-200">
+									{r.nama_barang}
+									{#if (r.sumber_po?.length ?? 0) > 0}
+										<span class="block text-[10px] text-gray-400 font-normal" data-testid="gpo-lap-rekon-po" title="Kuota fisik per PO. Pemakaian dihitung per PO dari catatan Coating Log yang memilih PO asal; catatan tanpa PO ditampilkan terpisah.">
+											{#each r.sumber_po ?? [] as sp, i (sp.so_id)}{i > 0 ? ' · ' : 'PO '}{sp.nomor_po} (kirim {fmt(sp.qty_kirim)}/{fmt(sp.qty_pesan)}{sp.qty_dipakai !== undefined ? `, dipakai ${fmt(sp.qty_dipakai)}, sisa ${fmt(sp.qty_sisa ?? 0)}` : ''}){sp.level === 'melebihi_po' ? ' ⚠ melebihi PO' : ''}{/each}{#if (r.qty_dipakai_tanpa_po ?? 0) > 0} · belum bertag PO: {fmt(r.qty_dipakai_tanpa_po ?? 0)}{/if}
+										</span>
+									{/if}
+								</td>
 								<td class="py-1.5 px-2 text-right">{fmt(r.qty_pesan)}</td>
 								<td class="py-1.5 px-2 text-right">{fmt(r.qty_kirim)}</td>
 								<td class="py-1.5 px-2 text-right">{fmt(r.qty_dipakai)}</td>

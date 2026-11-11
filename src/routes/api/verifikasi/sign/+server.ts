@@ -11,7 +11,7 @@ import { directusServerJson } from '$lib/server/directus';
 import { isRateLimited } from '$lib/server/rateLimit';
 import { buildVerifyUrl, canonicalId, readSecret, signDokumen } from '$lib/server/verifikasiDokumen';
 
-const BASE_DEFAULT = 'https://project.eltamaprimaindo.com';
+const BASE_DEFAULT = 'https://dev-project.eltamaprimaindo.com';
 
 export const POST: RequestHandler = async (event) => {
 	const { user } = await authenticateEss(event);

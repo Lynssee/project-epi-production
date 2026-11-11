@@ -379,7 +379,15 @@
 				</div>
 				<div>
 					<div class="text-[11px]" style="color: var(--sys-label3)">Status DP</div>
-					<div style="color: var(--sys-label)">{contract.dp_status || '-'}</div>
+					<div style="color: var(--sys-label)" class="font-medium">
+						{#if ['paid', 'LUNAS', 'Sudah Bayar', 'lunas'].includes(contract.dp_status || '')}
+							<span class="text-emerald-600 dark:text-emerald-400 font-semibold">✅ Lunas / Masuk Kas</span>
+						{:else if contract.dp_status === 'billed'}
+							<span class="text-blue-600 dark:text-blue-400 font-semibold">📄 Tagihan Terbit</span>
+						{:else}
+							<span>{contract.dp_status || '-'}</span>
+						{/if}
+					</div>
 				</div>
 				{#if contract.bast_final_date}
 					<div>
@@ -421,6 +429,11 @@
 									{TERMIN_STATUS_CONFIG[t.status]?.label || t.status}
 								</span>
 							</div>
+							{#if t.status === 'paid' || t.paid_date}
+								<span class="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+									💰 Dana termin terverifikasi masuk dari Finance {t.paid_date ? '(' + t.paid_date + ')' : ''}
+								</span>
+							{/if}
 							{#if baDoc}
 								<a
 									href={getPreviewUrl(baDoc.file_id || '')}

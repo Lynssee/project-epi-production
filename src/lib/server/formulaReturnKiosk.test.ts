@@ -45,7 +45,7 @@ beforeEach(() => {
 describe('parseSpkScan', () => {
 	it('menerima QR SPK, URL scan, dan angka polos; menolak yang lain', () => {
 		expect(parseSpkScan('EPI:SPK:77:77')).toBe(77);
-		expect(parseSpkScan('https://project.eltamaprimaindo.com/scan/EPI%3ASPK%3A77%3A77')).toBe(77);
+		expect(parseSpkScan('https://dev-project.eltamaprimaindo.com/scan/EPI%3ASPK%3A77%3A77')).toBe(77);
 		expect(parseSpkScan(' 77 ')).toBe(77);
 		expect(parseSpkScan('EPI:SJ:5:abc')).toBeNull();
 		expect(parseSpkScan('EPI:ITEM:5')).toBeNull();

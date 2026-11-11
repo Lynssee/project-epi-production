@@ -16,7 +16,7 @@ import { env } from '$env/dynamic/private';
 import { directusServerJson } from '$lib/server/directus';
 import { resolveKepalaDivisiApprover } from '$lib/server/ess/divisi';
 
-async function relayNotifyDispatch(params: {
+export async function relayNotifyDispatch(params: {
 	eventType: string;
 	message: string;
 	waKaryawanIds?: (number | string)[];
@@ -131,7 +131,7 @@ export async function notifyBookingSubmitted(params: {
 }
 
 /** Fetch penerima WA aktif dari fleet_notify_recipients berdasarkan peran. */
-async function fetchNotifyRecipients(peran: string): Promise<{ nama: string; no_telpon: string }[]> {
+export async function fetchNotifyRecipients(peran: string): Promise<{ nama: string; no_telpon: string }[]> {
 	const filter = encodeURIComponent(JSON.stringify({ peran: { _eq: peran }, active: { _eq: true } }));
 	const res = await directusServerJson<{ data: { nama: string; no_telpon: string }[] }>(
 		`/items/fleet_notify_recipients?filter=${filter}&fields=nama,no_telpon&limit=-1`

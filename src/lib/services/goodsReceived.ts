@@ -45,6 +45,11 @@ export interface GRShipment {
 	suratJalanId: number;
 	nomorSJ: string;
 	driver: string | null;
+	/** Info perjalanan (Fase 6) — opsional; kosong bila SJ belum punya kendaraan / tidak lewat armada. Tanpa GPS. */
+	plat?: string | null;
+	modeKirim?: string | null;
+	etaTiba?: string | null;
+	noResi?: string | null;
 	tanggalKirim: string;
 	qrToken: string | null;
 	projectId: number | null;

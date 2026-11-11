@@ -18,7 +18,7 @@
 	import {
 		IconArrowLeft, IconBuilding, IconChevronRight,
 		IconLoader2, IconClipboardList, IconSearch, IconUser, IconX,
-		IconChartPie, IconChevronDown, IconChevronUp, IconBrandWhatsapp, IconDownload, IconInfoCircle
+		IconChartPie, IconSun, IconChevronDown, IconChevronUp, IconBrandWhatsapp, IconDownload, IconInfoCircle
 	} from '@tabler/icons-svelte';
 	import PdfBlobViewer from '$lib/components/project/PdfBlobViewer.svelte';
 	import ProjectPreFlightWidget from '$lib/components/project/ProjectPreFlightWidget.svelte';
@@ -618,6 +618,27 @@
 	{:else}
 		<div class="scroll-body px-4 py-4" style="background: var(--sys-bg)">
 			
+			<!-- Shortcut Presensi Pagi TBM Roll-Call (Fase 3) -->
+			<div class="mb-3.5 p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+				<div class="flex items-start gap-2.5">
+					<div class="p-2 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+						<IconSun size={20} />
+					</div>
+					<div>
+						<h4 class="text-[13px] font-bold text-amber-900 dark:text-amber-200">Presensi Pagi & Safety Briefing (TBM Roll-Call)</h4>
+						<p class="text-[11px] text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+							Lakukan verifikasi kehadiran tim SPK aktif sebelum pukul 08:30 WIB untuk sinkronisasi headcount riil dan deteksi dini tenaga kerja mangkir.
+						</p>
+					</div>
+				</div>
+				<a
+					href="/tbm-rollcall"
+					class="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-2xs shrink-0 transition-all hover:scale-[1.02] active:scale-[0.98]"
+				>
+					<span>⚡ Buka TBM Roll-Call</span>
+				</a>
+			</div>
+
 			<div class="flex items-center justify-between mb-4 mt-1 bg-[var(--sys-bg2)] p-3 rounded-2xl shadow-sm border border-[var(--sys-sep)]">
 				<div class="flex items-center gap-2">
 					<IconChartPie size={18} class="text-[var(--g)]" />

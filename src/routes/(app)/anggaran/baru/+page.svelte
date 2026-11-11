@@ -1,7 +1,7 @@
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
-	import { isDeferredGate, deferredHandlerLabel, contactHint, canRequestDispensasi } from '$lib/utils/paGateStage';
+	import { isDeferredGate, deferredHandlerLabel, contactHint, canRequestDispensasi, menungguAdminProject, sembunyikDariLeader, milikPihakLainGagal, teksMenungguAdmin } from '$lib/utils/paGateStage';
 	import { shareInflight } from '$lib/services/preflightShare';
 	import GateRequestDispensasi from '$lib/components/anggaran/GateRequestDispensasi.svelte';
 	import {
@@ -42,6 +42,7 @@
 	import { fetchGateHints, applyGateHints } from '$lib/services/gateHintClient';
 	import { fetchFieldBudgetPct, previewFieldBudgetAfter, type FieldBudgetPct } from '$lib/services/projectFinancePct';
 	import { collectErrors, hasBlockingError, type ValidationInput } from '$lib/utils/anggaranValidation';
+	import { computePaBatchCycle, getCutoffCountdown } from '$lib/utils/paCutoffCycle';
 	import { getRapPosOptions, type RapPosOption } from '$lib/services/soRabApi';
 	import { loadProjectSettings, getProjectSetting } from '$lib/services/projectSettings';
 	import GateFixKtpNik from '$lib/components/shared/GateFixKtpNik.svelte';
@@ -362,6 +363,29 @@
 	let lampiranExceptionReason = $state('');
 	let lampiranExceptionNote = $state('');
 
+	// Siklus Pengajuan Anggaran Mingguan (Rabu Cutoff -> Kamis Review -> Jumat Rilis)
+	let isEmergencyCutoff = $state(false);
+	let emergencyCutoffReason = $state('');
+	const localCycleInfo = $derived(
+		computePaBatchCycle(new Date(), {
+			isEmergency: isEmergencyCutoff,
+			emergencyReason: emergencyCutoffReason,
+			kategoriBelanja: selectedCategoryKode || undefined
+		})
+	);
+	const cutoffCountdown = $derived(
+		getCutoffCountdown(localCycleInfo.cutoffThisWeek, new Date())
+	);
+	const activeBatchTarget = $derived(
+		preflightResult?.pa_batch?.batch_rilis_target || localCycleInfo.batchRilisTarget
+	);
+	const activeBatchLabel = $derived(
+		preflightResult?.pa_batch?.batch_label || localCycleInfo.batchLabel
+	);
+	const activeIsPostCutoff = $derived(
+		preflightResult?.pa_batch ? preflightResult.pa_batch.is_post_cutoff : localCycleInfo.isPostCutoff
+	);
+
 	// Fase 3 Bagian C: panel pra-terbang (pre-flight gate check, warning-only)
 	let preflightResult = $state<any>(null);
 	let checkingPreflight = $state(false);
@@ -374,6 +398,8 @@
 	// G_MANPOWER_IDENTITAS, memakai affected_items (id+label) yang server sudah kirim.
 	// Fase 4 tambahan — dialog "Unggah BAP sekarang" untuk gate G_BAP_BORONGAN.
 	let bapDialogOpen = $state(false);
+	// PDP-35: baris gate yang server tandai display='hide' (mis. N/A sumbu department) disembunyikan dari daftar ringkas.
+	let tampilSemuaGate = $state(false);
 	let dispensasiGate = $state<string | null>(null); // gate yang sedang dimintakan dispensasi (GateRequestDispensasi)
 	let ktpDialog = $state<{ open: boolean; manpowerId: number; manpowerName: string }>({
 		open: false,
@@ -551,6 +577,7 @@
 
 	onMount(() => {
 		loadSpjCheck(); // Fase 5B (Penajaman v2, 2 Sep 2026) — self-check, tidak menahan apa pun
+		loadKuotaCheck(); // Fase 2 antrean PA — self-check kuota pengajuan menunggu keputusan, informatif
 		loadTemplates();
 		// Fase 2 (Rencana v2 Shift-Left Gate Anggaran) — kembali ke tab ini (mis. setelah
 		// mengisi Timeline/Laporan Harian di tab lain) -> cek ulang otomatis, tanpa perlu
@@ -579,6 +606,24 @@
 			loadingSpjCheck = false;
 		}
 	}
+
+	// Fase 2 (antrean PA & gate): self-check kuota — berapa pengajuan MILIK SENDIRI yang masih menunggu keputusan
+	// (gate G_PA_INFLIGHT_CAP). Dimuat sekali; informatif, tidak pernah menahan pengaju membuka/mengisi form.
+	let kuotaCheck = $state<any>(null);
+	async function loadKuotaCheck() {
+		try {
+			const token = await getIdToken();
+			const res = await fetch('/api/kuota-saya', { headers: { Authorization: `Bearer ${token}` } });
+			kuotaCheck = await res.json().catch(() => null);
+		} catch {
+			kuotaCheck = null;
+		}
+	}
+	let kuotaTampil = $derived(
+		!!kuotaCheck?.available && !!kuotaCheck?.data?.applicable &&
+		(kuotaCheck.data.exceeded || (kuotaCheck.data.cap > 0 && kuotaCheck.data.count >= kuotaCheck.data.cap - 1 && kuotaCheck.data.count > 0))
+	);
+	let kuotaMenahan = $derived(kuotaCheck?.data?.mode === 'soft' || kuotaCheck?.data?.mode === 'hard');
 
 	// Banner Sisa Pagu (UPFE Fase 3/4, keputusan Lead 12 Okt 2026): peran lapangan HANYA melihat PERSEN, tanpa rupiah RAP.
 	// Muncul otomatis begitu proyek dipilih; engine keuangan tunggal di admin (komitmen ikut dihitung). Informatif, tidak pernah menahan submit.
@@ -692,6 +737,8 @@
 			urgency, tanggalDibutuhkan, notes, paymentMethod,
 			penerimaDanaType, penerimaDanaNama, bankName, bankAccountNumber, bankAccountName,
 			departmentId,
+			isEmergencyCutoff,
+			emergencyCutoffReason,
 			items: $state.snapshot(items)
 		};
 	}
@@ -713,6 +760,8 @@
 		bankAccountNumber = d.bankAccountNumber ?? '';
 		bankAccountName = d.bankAccountName ?? '';
 		if (d.departmentId) departmentId = d.departmentId;
+		isEmergencyCutoff = Boolean(d.isEmergencyCutoff);
+		emergencyCutoffReason = d.emergencyCutoffReason ?? '';
 		if (Array.isArray(d.items) && d.items.length) items = d.items;
 	}
 
@@ -1029,7 +1078,9 @@
 					total: it.qty * it.price
 				})),
 				tanggal_dibutuhkan: tanggalDibutuhkan,
-				lampiran_count: uploadedLampiranIds.length
+				lampiran_count: uploadedLampiranIds.length,
+				is_emergency_cutoff: isEmergencyCutoff,
+				emergency_cutoff_reason: emergencyCutoffReason
 			});
 			// Panggilan identik yang sedang berjalan dibagi (bukan cache): hasil tak pernah basi, hanya hemat panggilan ganda.
 			const shared = await shareInflight(payload, async () => {
@@ -1075,7 +1126,9 @@
 			l: uploadedLampiranIds.length,
 			df: dynamicValues,
 			bbm: bbmSplitEnabled ? bbmSplits : null,
-			td: tanggalDibutuhkan
+			td: tanggalDibutuhkan,
+			ec: isEmergencyCutoff,
+			ecr: isEmergencyCutoff ? emergencyCutoffReason : ''
 		});
 		if (signature === lastPreflightSignature) return;
 		if (preflightAutoTimer) clearTimeout(preflightAutoTimer);
@@ -1104,7 +1157,10 @@
 			needsAttachment, hasLampiran: !!hasLampiran,
 			hasLampiranException: !!(lampiranExceptionReason && lampiranExceptionNote.trim().length >= MIN_EXCEPTION_NOTE_LENGTH),
 			minExceptionNoteLength: MIN_EXCEPTION_NOTE_LENGTH, uploadingLampiran: !!uploadingLampiran,
-			bbmSplitEnabled, bbmSplits, formatCurrency
+			bbmSplitEnabled, bbmSplits, formatCurrency,
+			isEmergencyCutoff,
+			emergencyCutoffReason,
+			minEmergencyCutoffReasonLength: 20
 		};
 	}
 	// Terhitung ulang otomatis saat pengaju memperbaiki field — panel berkurang tanpa reload.
@@ -1142,6 +1198,15 @@
 		// Dual Gate PA (soft): wajib pernyataan tertulis bila laporan bolong / MoM belum ada.
 		if (gatesButuhPernyataan.length > 0 && !hasValidPernyataan(gatePernyataan)) {
 			notify('Ada laporan harian yang bolong / MoM belum ada. Isi laporan susulannya, atau tulis pernyataan tertulis (minimal 20 karakter) di panel "Periksa Sebelum Kirim".');
+			return;
+		}
+
+		// Gate Feedback Manajerial (G_MGR_FEEDBACK_LOCK): Blokir keras jika ada arahan manajemen yang belum disetujui
+		const feedbackLockGate = preflightResult?.gates?.find((g: any) => g.gate_key === 'G_MGR_FEEDBACK_LOCK' && g.status === 'failed');
+		if (feedbackLockGate) {
+			notify('⛔ Pengajuan ditahan: Terdapat feedback manajerial (G_MGR_FEEDBACK_LOCK) yang belum selesai atau belum diverifikasi direksi.');
+			submitBlockedError = 'Pengajuan ditahan oleh Gate Feedback Manajerial (G_MGR_FEEDBACK_LOCK). Harap selesaikan arahan perbaikan di dashboard proyek terlebih dahulu.';
+			document.getElementById('panel-syarat-pengajuan')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 			return;
 		}
 
@@ -1222,7 +1287,11 @@
 				// gate membaca field ini khusus kategori_belanja='rilis_hutang'.
 				source_payable_id: selectedCategoryKode === 'rilis_hutang' ? (selectedPayableInvoice?.id ?? null) : null,
 				// PC3-08 (FLD-11): dana tujuan isi ulang (createPettyCashReplenishmentFromPA: fund eksplisit menang atas tebakan departemen)
-				petty_cash_fund_id: isPettyCashCategory ? Number(pettyCashFundId) || null : null
+				petty_cash_fund_id: isPettyCashCategory ? Number(pettyCashFundId) || null : null,
+				// Siklus Mingguan Pengajuan Anggaran (Rabu Cutoff -> Kamis Review -> Jumat Rilis)
+				batch_rilis_target: activeBatchTarget,
+				is_emergency_cutoff: isEmergencyCutoff,
+				emergency_cutoff_reason: isEmergencyCutoff ? emergencyCutoffReason.trim() : null
 			};
 
 			const created = await createPengajuanAnggaran(formData, mappedItems, { onWarning: (m) => notify(m, 'error') });
@@ -1312,6 +1381,132 @@
 					</p>
 				</div>
 			{/if}
+
+			<!-- Fase 2 antrean PA: Self-check kuota — pengajuan Anda yang masih menunggu keputusan. Muncul saat sudah/hampir
+			     mencapai kuota; teks menyesuaikan mode gate (shadow/warn = peringatan, soft/hard = bisa tertahan). -->
+			{#if kuotaTampil}
+				<div class="mb-3 rounded-xl border px-3 py-2.5 {kuotaCheck.data.exceeded ? 'border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900' : 'border-sky-200 bg-sky-50 dark:bg-sky-950/20 dark:border-sky-900'}">
+					<p class="text-[12px] font-semibold {kuotaCheck.data.exceeded ? 'text-amber-800 dark:text-amber-300' : 'text-sky-800 dark:text-sky-300'}">
+						{#if kuotaCheck.data.exceeded}
+							🚦 {kuotaCheck.data.count} pengajuan Anda masih menunggu keputusan (kuota {kuotaCheck.data.cap})
+						{:else}
+							🚦 {kuotaCheck.data.count} dari {kuotaCheck.data.cap} kuota pengajuan menunggu keputusan terpakai
+						{/if}
+					</p>
+					<ul class="mt-1 space-y-0.5 text-[11px] {kuotaCheck.data.exceeded ? 'text-amber-700 dark:text-amber-400' : 'text-sky-700 dark:text-sky-400'}">
+						{#each kuotaCheck.data.items ?? [] as p}
+							<li>• {p.nomor_pengajuan} — {formatCurrency(p.total_amount)}</li>
+						{/each}
+					</ul>
+					<p class="text-[10px] mt-1 {kuotaCheck.data.exceeded ? 'text-amber-600' : 'text-sky-600'}">
+						Minta approver memutuskannya, atau tarik pengajuan yang sudah tidak diperlukan (buka detail pengajuan → Tarik).
+						{#if kuotaCheck.data.exceeded}
+							{kuotaMenahan ? 'Pengajuan baru bisa tertahan gate saat dikirim.' : 'Saat ini hanya peringatan — belum menahan pengajuan baru.'}
+						{/if}
+					</p>
+				</div>
+			{/if}
+
+			<!-- Siklus Jadwal Pengajuan Anggaran Mingguan (Rabu Cutoff -> Kamis Review -> Jumat Rilis) -->
+			<div class="mb-3 rounded-2xl border p-3.5 transition-all {localCycleInfo.isExempt ? 'border-sky-200 bg-sky-50/60 dark:bg-sky-950/20 dark:border-sky-900' : activeIsPostCutoff ? 'border-amber-300 bg-amber-50/70 dark:bg-amber-950/20 dark:border-amber-900' : 'border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 dark:border-emerald-900'}">
+				<div class="flex items-start justify-between gap-2">
+					<div class="flex items-center gap-2">
+						<span class="flex h-7 w-7 items-center justify-center rounded-xl {localCycleInfo.isExempt ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/60 dark:text-sky-300' : activeIsPostCutoff ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300'}">
+							<IconInfoCircle size={17} />
+						</span>
+						<div>
+							<h4 class="text-[13px] font-bold text-slate-800 dark:text-slate-100 mb-0">
+								Siklus Pengajuan Anggaran Mingguan
+							</h4>
+							<p class="text-[11px] text-slate-500 dark:text-slate-400">
+								SOP: Cutoff Rabu 17:00 WIB • Review Kamis • Rilis Jumat
+							</p>
+						</div>
+					</div>
+					<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold {localCycleInfo.isExempt ? 'bg-sky-100 text-sky-800 border border-sky-300 dark:bg-sky-900/50 dark:text-sky-200' : activeIsPostCutoff ? (isEmergencyCutoff ? 'bg-purple-100 text-purple-800 border border-purple-300 dark:bg-purple-900/50 dark:text-purple-200' : 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-900/50 dark:text-amber-200') : 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-200'}">
+						{#if localCycleInfo.isExempt}
+							Fleksibel (Bebas Cutoff)
+						{:else if activeIsPostCutoff}
+							{#if isEmergencyCutoff}
+								⚡ Jalur Darurat (Jumat Ini)
+							{:else}
+								Pasca Cutoff (Pekan Depan)
+							{/if}
+						{:else}
+							Jumat Minggu Ini
+						{/if}
+					</span>
+				</div>
+
+				<div class="mt-2.5 pt-2 border-t border-slate-200/70 dark:border-slate-800 text-[12px] space-y-1.5">
+					<div class="flex items-center justify-between">
+						<span class="text-slate-600 dark:text-slate-300 font-medium">Target Pencairan Dana:</span>
+						<span class="font-bold text-slate-900 dark:text-slate-100 font-mono">
+							Jumat, {activeBatchLabel}
+						</span>
+					</div>
+
+					{#if localCycleInfo.isExempt}
+						<p class="text-[11px] text-sky-700 dark:text-sky-300">
+							Kategori pengajuan ini (kas kecil) tidak terikat siklus mingguan dan diproses sesuai kebutuhan operasional.
+						</p>
+					{:else if !activeIsPostCutoff}
+						<p class="text-[11px] text-emerald-700 dark:text-emerald-300">
+							✓ Pengajuan diajukan sebelum batas cutoff. <strong>{cutoffCountdown.countdownText}</strong> menuju batas submit Rabu 17:00 WIB.
+						</p>
+					{:else}
+						<div class="rounded-xl bg-white/70 dark:bg-slate-900/70 p-2.5 border border-amber-200 dark:border-amber-900/60">
+							<p class="text-[11px] text-amber-800 dark:text-amber-300">
+								⏳ <strong>Pengajuan melewati batas cutoff Rabu 17:00 WIB.</strong> Pengajuan ini dijadwalkan masuk batch rilis Jumat pekan depan ({activeBatchLabel}) agar Finance dapat memverifikasi dokumen secara cermat.
+							</p>
+
+							<!-- Jalur Cepat Darurat -->
+							<div class="mt-2 pt-2 border-t border-amber-200/60 dark:border-amber-800/40">
+								<label class="flex items-start gap-2 cursor-pointer select-none">
+									<input
+										type="checkbox"
+										bind:checked={isEmergencyCutoff}
+										class="mt-0.5 h-4 w-4 rounded text-[var(--p)] focus:ring-[var(--p)] border-gray-300"
+									/>
+									<div class="flex-1">
+										<span class="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
+											Kebutuhan Sangat Darurat Lapangan (Fast-Track ke Jumat Minggu Ini)
+										</span>
+										<p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+											Centang jika pengajuan tidak dapat ditunda ke pekan depan (misal: operasional kritis terhenti). Wajib isi alasan darurat minimal 20 karakter untuk audit Finance & Manajemen.
+										</p>
+									</div>
+								</label>
+
+								{#if isEmergencyCutoff}
+									<div class="mt-2.5 space-y-1" id="f-emergency-cutoff">
+										<div class="flex items-center justify-between text-[10px]">
+											<label for="emergencyReasonInput" class="font-semibold text-slate-700 dark:text-slate-300">
+												Alasan Kebutuhan Darurat *
+											</label>
+											<span class="{emergencyCutoffReason.trim().length >= 20 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}">
+												{emergencyCutoffReason.trim().length} / 20 karakter
+											</span>
+										</div>
+										<textarea
+											id="emergencyReasonInput"
+											bind:value={emergencyCutoffReason}
+											rows={2}
+											placeholder="Contoh: Genset utama di lokasi padam total, butuh pembelian solar dan sparepart darurat hari ini..."
+											class="f-textarea w-full text-[12px] p-2 rounded-lg border"
+											class:!border-red-500={msgsFor('f-emergency-cutoff').length > 0}
+											onblur={() => touch('f-emergency-cutoff')}
+										></textarea>
+										{#each msgsFor('f-emergency-cutoff') as m}
+											<p class="text-[11px] text-red-600 mt-0.5">{m}</p>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						</div>
+					{/if}
+				</div>
+			</div>
 
 			<SectionGuide
 				id="anggaran.baru.sectionGuide"
@@ -1946,7 +2141,7 @@
 						{/if}
 						<!-- Fase 2 — header ringkas: "Syarat pengajuan: X/Y terpenuhi" + chip merah per
 						     gate WAJIB gagal (klik -> scroll ke kartunya). -->
-						{@const wajibGates = preflightResult.gates.filter((g: any) => g.severity === 'WAJIB' && !isDeferredGate(g))}
+						{@const wajibGates = preflightResult.gates.filter((g: any) => g.severity === 'WAJIB' && !isDeferredGate(g) && !sembunyikDariLeader(g))}
 						{@const wajibTerpenuhi = wajibGates.filter((g: any) => g.status !== 'failed').length}
 						{#if wajibGates.length > 0}
 							<div class="sticky top-0 z-10 -mx-1 mb-2 px-1 py-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-gray-100 dark:border-slate-800">
@@ -1966,8 +2161,41 @@
 								{/if}
 							</div>
 						{/if}
+						<!-- PDP-23/35: urut "bisa Anda benahi" dulu, lalu "akan diperiksa pihak lain" (gate deferred);
+						     baris display='hide' disembunyikan kecuali pengguna menekan "Tampilkan semua". -->
+						{@const semuaGate = (preflightResult.gates || []) as any[]}
+						{@const gateTersembunyi = semuaGate.filter((g) => g.display === 'hide').length}
+						{@const gateAdmin = semuaGate.filter((g) => menungguAdminProject(g))}
+						{@const picAdmin = (gateAdmin[0] as any)?.pic ?? null}
+						{@const gateTampil = semuaGate.filter((g) => (tampilSemuaGate || g.display !== 'hide') && !sembunyikDariLeader(g))}
+						{@const daftarGate = [...gateTampil.filter((g) => !isDeferredGate(g) && !milikPihakLainGagal(g)), ...gateTampil.filter((g) => isDeferredGate(g) || milikPihakLainGagal(g))]}
+						{@const adaDeferred = daftarGate.some((g) => isDeferredGate(g) || milikPihakLainGagal(g))}
+						{#if gateAdmin.length > 0}
+							<!-- PDP-36: gate milik Admin Project yang gagal — bukan pekerjaan leader. Tampil sebagai satu kartu "menunggu". -->
+							<div class="mb-2 rounded-lg border border-indigo-200 bg-indigo-50 dark:bg-indigo-950/30 dark:border-indigo-900 p-2.5">
+								<p class="text-[12px] font-bold text-indigo-800 dark:text-indigo-200">⏳ {teksMenungguAdmin(picAdmin)}</p>
+								<p class="text-[11px] text-indigo-700 dark:text-indigo-300 mt-0.5">
+									Data berikut hanya bisa dilengkapi Admin Project di ERP — Anda tidak perlu mengisinya.
+									{#if gateAdmin.some((g: any) => g.severity === 'WAJIB')}<b>Pengiriman tertahan sampai selesai.</b>{/if}
+									Hubungi {picAdmin?.nama || 'PM'} agar segera dilengkapi, lalu tekan "Cek Ulang".
+								</p>
+								<ul class="mt-1.5 space-y-1">
+									{#each gateAdmin as g}
+										<li class="text-[11px] text-indigo-900 dark:text-indigo-100"><strong>{g.label}:</strong> {g.message}</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
 						<div class="space-y-1.5">
-							{#each preflightResult.gates as g}
+							{#each daftarGate as g, gi}
+								{#if adaDeferred && gi === 0 && !isDeferredGate(g) && !milikPihakLainGagal(g)}
+									<p class="text-[11px] font-bold text-gray-700 dark:text-gray-200 pt-0.5">✍️ Bisa Anda benahi sekarang
+										<span class="font-normal text-gray-500">— benahi sebelum mengajukan.</span></p>
+								{/if}
+								{#if (isDeferredGate(g) || milikPihakLainGagal(g)) && (gi === 0 || !(isDeferredGate(daftarGate[gi - 1]) || milikPihakLainGagal(daftarGate[gi - 1])))}
+									<p class="text-[11px] font-bold text-slate-600 dark:text-slate-300 pt-2 mt-1 border-t border-gray-100 dark:border-slate-800">🕓 Akan diperiksa pihak lain
+										<span class="font-normal text-gray-500">— bukan tugas Anda. Bila tertahan, Anda akan diberi tahu.</span></p>
+								{/if}
 								<div id="gate-{g.gate_key}" class="flex flex-col gap-0.5 text-[12px] scroll-mt-16">
 									<div class="flex items-start gap-1.5">
 										<span>{g.status === 'passed' ? '✅' : g.status === 'failed' && isDeferredGate(g) ? '🕓' : g.severity === 'WAJIB' ? '🔴' : '🟡'}</span>
@@ -2063,9 +2291,36 @@
 											📷 Unggah BAP sekarang
 										</button>
 									{/if}
+									{#if g.gate_key === 'G_MGR_FEEDBACK_LOCK' && g.status === 'failed'}
+										<div class="ml-5 mt-1.5 p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200">
+											<div class="font-bold flex items-center gap-1.5 text-xs text-rose-700 dark:text-rose-300">
+												<span>⛔</span>
+												<span>Pengajuan Ditahan: Arahan Feedback Manajemen Aktif</span>
+											</div>
+											<p class="mt-1 text-[11px] leading-relaxed">
+												Direksi / Manajemen memberikan feedback perbaikan yang harus diselesaikan terlebih dahulu. Sesuai tata kelola, seluruh pengajuan dana, material, dan surat jalan ditahan sampai bukti perbaikan dikirim dan <strong>disetujui oleh Manajemen</strong>.
+											</p>
+											{#if selectedProject}
+												<a
+													href="/proyek/{selectedProject}"
+													class="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] shadow-sm transition"
+												>
+													<span>🚀 Buka Halaman Proyek &amp; Selesaikan Arahan</span>
+													<span>→</span>
+												</a>
+											{/if}
+										</div>
+									{/if}
 								</div>
 							{/each}
 						</div>
+						{#if gateTersembunyi > 0}
+							<button type="button" onclick={() => (tampilSemuaGate = !tampilSemuaGate)}
+								title="Pemeriksaan yang tidak berlaku untuk pengajuan ini (mis. khusus proyek) disembunyikan agar daftar ringkas. Tidak mengubah hasil pemeriksaan."
+								class="mt-2 text-[11px] font-medium text-blue-600 hover:underline">
+								{tampilSemuaGate ? 'Sembunyikan pemeriksaan yang tidak berlaku' : `Tampilkan semua pemeriksaan (${gateTersembunyi} tersembunyi)`}
+							</button>
+						{/if}
 						<p class="text-[10px] text-gray-300 mt-2">Mode peringatan — tidak menahan pengiriman. Perbaiki bila memungkinkan.</p>
 					{/if}
 				{:else}
