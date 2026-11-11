@@ -27,6 +27,7 @@
 	import { getCurrentPosition } from '$lib/utils/geoClient';
 	import { enqueuePeminjamanScan, registerPeminjamanAutoFlush, type QueuedPeminjamanEntry } from '$lib/utils/offlinePeminjamanQueue';
 	import { getEquipmentByCode } from '$lib/services/preventive';
+	import { verifyEquipment, quickPosition, EquipmentVerifyError, type EquipmentVerifyResult } from '$lib/services/equipmentVerify';
 	import { getComponentUnitById, recordComponentInspection, type ComponentUnitLite } from '$lib/services/clm';
 	import { resolveGudangArea } from '$lib/services/cekAreaApi';
 	import { saveScanProof } from '$lib/utils/p2hScanProof';
@@ -84,6 +85,7 @@
 		EquipmentActionSheet ??= (await import('$lib/components/scanner/EquipmentActionSheet.svelte')).default;
 	}
 	let scannedEquipment = $state<{ id: string; name: string; code?: string | null } | null>(null);
+	let equipmentVerification = $state<EquipmentVerifyResult | null>(null);
 
 	// QR komponen (EPI:COMP:<id>, CLM v2 Fase 4) — mekanik/operator hanya melihat identitas
 	// & mencatat kondisi. TIDAK ada rupiah di layar lapangan.
@@ -283,7 +285,22 @@
 		// action sheet kontekstual (sama seperti dashboard Maintenance), bukan dead-end.
 		if (epi && epi.type === 'EQUIPMENT') {
 			const equipCode = String(epi.id);
-			const equipment = await getEquipmentByCode(equipCode);
+			// Verifikasi Barcode Equipment Fase 2: satu panggilan server mengembalikan unit + pemegang/peminjam + hasil gate.
+			// Gangguan/akun belum tertaut => fail-open: lanjut seperti dulu (getEquipmentByCode) tanpa kartu verifikasi.
+			// 404 = kode memang tidak ada -> pesan error biasa.
+			let verified: EquipmentVerifyResult | null = null;
+			try {
+				// Lokasi hanya untuk jejak audit upaya tertolak; dibatasi 1,5 dtk agar scan tidak tertahan.
+				verified = await verifyEquipment(equipCode, await quickPosition(1500));
+			} catch (err) {
+				if (err instanceof EquipmentVerifyError && err.status === 404) {
+					status = 'error';
+					errorMsg = err.message;
+					return;
+				}
+				console.error('[scan] verifikasi unit gagal, lanjut tanpa verifikasi:', err instanceof Error ? err.message : err);
+			}
+			const equipment = verified?.equipment ?? (await getEquipmentByCode(equipCode));
 			if (!equipment) {
 				status = 'error';
 				errorMsg = `Equipment dengan kode "${equipCode}" tidak ditemukan.`;
@@ -292,6 +309,7 @@
 			saveScanProof(equipment.id);
 			await loadEquipmentActionSheet();
 			scannedEquipment = { id: equipment.id, name: equipment.name, code: equipment.code };
+			equipmentVerification = verified;
 			status = 'epi';
 			epiParsed = epi;
 			return;
@@ -782,5 +800,5 @@
 </div>
 
 {#if scannedEquipment && EquipmentActionSheet}
-	<EquipmentActionSheet equipment={scannedEquipment} onClose={() => { scannedEquipment = null; goto('/ess'); }} />
+	<EquipmentActionSheet equipment={scannedEquipment} verify={equipmentVerification} onClose={() => { scannedEquipment = null; goto('/ess'); }} />
 {/if}

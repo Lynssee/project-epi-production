@@ -6,7 +6,8 @@
 	import { authStore } from '$lib/stores/auth';
 	import { rolesStore } from '$lib/stores/roles';
 	import { hasPermission } from '$lib/constants/permissions';
-	import { getEquipmentById, getDuePmTasks, completePmTask, logActivity } from '$lib/services/preventive';
+	import { getEquipmentById, getDuePmTasks, selesaikanPmTask } from '$lib/services/preventive';
+	import { preparePhotoForUpload, sendPreparedPhoto, p2hPhotoFileName, P2hPhotoCompressFailed, tandaiKonteksFoto } from '$lib/utils/p2hPhotoUpload';
 	import IconArrowLeft from '@tabler/icons-svelte/icons/arrow-left';
 	import IconLoader2 from '@tabler/icons-svelte/icons/loader-2';
 	import IconAlertTriangle from '@tabler/icons-svelte/icons/alert-triangle';
@@ -24,6 +25,51 @@
 	let hoursmeterInput = $state<number | null>(null);
 	let submitting = $state(false);
 	let errorMsg = $state('');
+	let infoMsg = $state('');
+	// PMT-51: temuan -> catatan + foto wajib; tanpa temuan cukup tombol selesai.
+	let adaTemuan = $state(false);
+	let catatan = $state('');
+	let fotoId = $state<string | null>(null);
+	let fotoUploading = $state(false);
+	let fotoMsg = $state('');
+
+	function resetForm() {
+		activeTaskId = null;
+		hoursmeterInput = null;
+		adaTemuan = false;
+		catatan = '';
+		fotoId = null;
+		fotoMsg = '';
+	}
+
+	/** Butir pemeriksaan dari template (bagian sebelum/saat/setelah) — panduan baca-saja untuk mekanik. */
+	function butirTemplate(t: any): string[] {
+		try {
+			const d = typeof t?.template?.checklist_details === 'string' ? JSON.parse(t.template.checklist_details) : t?.template?.checklist_details;
+			return ['sebelum', 'saat', 'setelah'].flatMap((k) => (Array.isArray(d?.[k]) ? d[k] : [])).map((i: any) => String(i?.text || '')).filter(Boolean);
+		} catch {
+			return [];
+		}
+	}
+
+	async function onFoto(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		fotoMsg = '';
+		fotoUploading = true;
+		try {
+			tandaiKonteksFoto(file, 'pm');
+			const prepared = await preparePhotoForUpload(file, 'compress');
+			fotoId = await sendPreparedPhoto(prepared, p2hPhotoFileName(equipment?.code || equipmentId, 'pm', prepared), 'compress');
+		} catch (err: any) {
+			console.error('[PM] unggah foto temuan gagal:', err);
+			fotoMsg = err instanceof P2hPhotoCompressFailed ? 'Foto gagal diperkecil di HP ini. Turunkan resolusi kamera lalu foto ulang.' : err?.message || 'Gagal mengunggah foto.';
+		} finally {
+			fotoUploading = false;
+			input.value = '';
+		}
+	}
 
 	$effect(() => {
 		const roleId = $authStore.roleId;
@@ -47,22 +93,26 @@
 	}
 
 	async function handleComplete(taskId: string) {
-		submitting = true;
 		errorMsg = '';
+		infoMsg = '';
+		if (adaTemuan && !catatan.trim()) {
+			errorMsg = 'Jelaskan temuan pada catatan.';
+			return;
+		}
+		if (adaTemuan && !fotoId) {
+			errorMsg = 'Foto temuan wajib dilampirkan bila ada temuan.';
+			return;
+		}
+		submitting = true;
 		try {
-			await completePmTask(taskId, { doneDate: today, hoursmeter: hoursmeterInput });
-			const karyawanName = $authStore.karyawanName;
-			if (karyawanName) {
-				await logActivity({
-					user_name: karyawanName,
-					action: 'update',
-					entity_type: 'pm_due_tracker',
-					entity_id: taskId,
-					summary: `Tugas PM ${equipment?.name} ditandai selesai`
-				});
+			const r = await selesaikanPmTask({ trackerId: taskId, adaTemuan, catatan: catatan.trim(), fotoId, hoursmeter: hoursmeterInput });
+			if ('queued' in r) {
+				infoMsg = 'Tersimpan di HP dan akan terkirim saat sinyal kembali.';
+			} else {
+				infoMsg = r.berikutnya ? `PM selesai. Jatuh tempo berikutnya: ${r.berikutnya}.` : 'PM selesai.';
+				if (r.workOrderId) infoMsg += ' Temuan dilaporkan ke Maintenance sebagai Work Order.';
 			}
-			activeTaskId = null;
-			hoursmeterInput = null;
+			resetForm();
 			await load();
 		} catch (err: any) {
 			errorMsg = err?.message || 'Gagal menandai tugas selesai.';
@@ -88,7 +138,10 @@
 			{#if equipment?.identitas_barang_id}<div class="mb-3"><KnowledgeCard itemId={equipment.identitas_barang_id} context="maintenance" label="Panduan perawatan" /></div>{/if}
 
 		{#if errorMsg}
-			<p class="text-[12px] mb-3" style="color: #DC2626">{errorMsg}</p>
+			<p class="text-[12px] mb-3" style="color: #DC2626" role="alert">{errorMsg}</p>
+		{/if}
+		{#if infoMsg}
+			<p class="text-[12px] mb-3 rounded-lg p-2" style="background:var(--gl); color:var(--g)" role="status">✓ {infoMsg}</p>
 		{/if}
 
 		{#if tasks.length === 0}
@@ -112,6 +165,30 @@
 
 						{#if activeTaskId === t.id}
 							<div class="mt-3 flex flex-col gap-2">
+								{#if butirTemplate(t).length}
+									<div class="rounded-lg p-2.5 text-[11px]" style="background:var(--sys-fill); color:var(--sys-label2)">
+										<p class="font-semibold mb-1">Periksa sebelum menandai selesai:</p>
+										<ul class="list-disc pl-4 space-y-0.5">{#each butirTemplate(t) as b}<li>{b}</li>{/each}</ul>
+									</div>
+								{/if}
+								<label class="flex items-center gap-2 text-[12px]" style="color: var(--sys-label)">
+									<input type="checkbox" bind:checked={adaTemuan} /> Ada temuan (kerusakan / ketidaknormalan)
+								</label>
+								{#if adaTemuan}
+									<textarea
+										class="w-full rounded-lg border text-[12px] p-2"
+										style="border-color: var(--sys-sep)"
+										rows="2"
+										placeholder="Jelaskan temuan (wajib)"
+										bind:value={catatan}
+									></textarea>
+									<input type="file" accept="image/*" capture="environment" class="text-[11px]" disabled={fotoUploading} onchange={onFoto} />
+									{#if fotoUploading}<p class="text-[11px] animate-pulse" style="color: var(--sys-label3)">Mengunggah foto…</p>{:else if fotoId}<p class="text-[11px]" style="color:#16A34A">✓ Foto temuan terlampir.</p>{/if}
+									{#if fotoMsg}<p class="text-[11px]" style="color:#DC2626" role="alert">{fotoMsg}</p>{/if}
+									<p class="text-[10px]" style="color: var(--sys-label3)">Temuan otomatis dilaporkan ke Maintenance (Work Order). Foto wajib hanya bila ada temuan.</p>
+								{:else}
+									<p class="text-[10px]" style="color: var(--sys-label3)">Tanpa temuan, cukup tekan Tandai Selesai. Jatuh tempo berikutnya dihitung dari hari ini.</p>
+								{/if}
 								<input
 									type="number"
 									class="w-full rounded-lg border text-[12px] p-2"
@@ -123,14 +200,14 @@
 									<button
 										class="flex-1 h-10 rounded-lg text-[12px] font-semibold"
 										style="background:var(--sys-fill); color:var(--sys-label3)"
-										onclick={() => (activeTaskId = null)}
+										onclick={resetForm}
 									>
 										Batal
 									</button>
 									<button
 										class="flex-1 h-10 rounded-lg text-[12px] font-bold text-white flex items-center justify-center gap-1.5 disabled:opacity-40"
 										style="background: var(--g)"
-										disabled={submitting}
+										disabled={submitting || fotoUploading}
 										onclick={() => handleComplete(t.id)}
 									>
 										{#if submitting}<IconLoader2 size={14} class="animate-spin" />{/if}

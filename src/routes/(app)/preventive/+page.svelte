@@ -5,7 +5,7 @@
 	import { authStore } from '$lib/stores/auth';
 	import { rolesStore } from '$lib/stores/roles';
 	import { hasPermission } from '$lib/constants/permissions';
-	import { getOperatorEquipment, getTodaySessionsMap, getPmDueCountsMap, getEquipmentCategoriesMap, submitQuickHM } from '$lib/services/preventive';
+	import { getOperatorEquipment, getTodaySessionsMap, getPmDueCountsMap, getEquipmentCategoriesMap, submitQuickHM, resolveOperatorId, getOpenP2hSessions, type P2hOpenSession } from '$lib/services/preventive';
 	import { getAssetOwnershipSummaryBatch } from '$lib/services/assetOwnership';
 	import { todayWib } from '$lib/utils/wibDate';
 	import IconTool from '@tabler/icons-svelte/icons/tool';
@@ -132,6 +132,31 @@
 	}
 
 	let loading = $state(true);
+	// PMT-49 §4.1: sesi P2H milik saya yang belum ditutup — tampil sebagai kartu "Tutup pemakaian".
+	let openSessions = $state<P2hOpenSession[]>([]);
+	let openSessionsError = $state('');
+	// PMT-49: sesi terbuka operator lain di unit proyek yang saya pimpin (Leader). Kosong bila bukan Leader.
+	let leaderSessions = $state<P2hOpenSession[]>([]);
+	let leaderByUnit = $derived.by(() => {
+		const m = new Map<string, { equipment_id: string; name: string | null; code: string | null; operators: Set<string>; dates: string[] }>();
+		for (const os of leaderSessions) {
+			const g = m.get(os.equipment_id) ?? { equipment_id: os.equipment_id, name: os.equipment_name, code: os.equipment_code, operators: new Set<string>(), dates: [] };
+			g.dates.push(os.date);
+			if (os.operator_name) g.operators.add(os.operator_name);
+			m.set(os.equipment_id, g);
+		}
+		return [...m.values()].map((g) => ({ ...g, dates: g.dates.sort() }));
+	});
+	// Dikelompokkan per unit: operator yang lupa menutup berhari-hari tidak boleh dibanjiri 1 kartu per sesi.
+	let openByUnit = $derived.by(() => {
+		const m = new Map<string, { equipment_id: string; name: string | null; code: string | null; dates: string[] }>();
+		for (const os of openSessions) {
+			const g = m.get(os.equipment_id) ?? { equipment_id: os.equipment_id, name: os.equipment_name, code: os.equipment_code, dates: [] };
+			g.dates.push(os.date);
+			m.set(os.equipment_id, g);
+		}
+		return [...m.values()].map((g) => ({ ...g, dates: g.dates.sort() })).sort((a, b) => b.dates[b.dates.length - 1].localeCompare(a.dates[a.dates.length - 1]));
+	});
 	let equipmentList = $state<any[]>([]);
 	let sessionMap = $state<Record<string, any>>({});
 	let pmMap = $state<Record<string, { overdue: number; total: number }>>({});
@@ -167,6 +192,17 @@
 			// localStorage tidak tersedia — pilihan tidak akan bertahan setelah reload.
 		}
 	}
+	let currentPersonnelId = $state<string | null>(null);
+
+	let myAssignedUnits = $derived.by(() => {
+		if (!currentPersonnelId) return [];
+		return equipmentList.filter((eq) => eq.current_pic_id === currentPersonnelId);
+	});
+
+	let myUninspectedUnits = $derived.by(() => {
+		return myAssignedUnits.filter((eq) => !sessionMap[eq.id]);
+	});
+
 	let isCategoryDropdownOpen = $state(false);
 	let dropdownRef: HTMLDivElement | null = null;
 	let collapsedCategories = $state<Record<string, boolean>>({});
@@ -240,6 +276,7 @@
 
 			const done = !!sessionMap[eq.id];
 			const pm = pmMap[eq.id];
+			if (statusFilter === 'Unit Saya' && eq.current_pic_id !== currentPersonnelId) continue;
 			if (statusFilter === 'P2H Sudah' && !done) continue;
 			if (statusFilter === 'P2H Belum' && done) continue;
 			if (statusFilter === 'PM Overdue' && (!pm || pm.overdue <= 0)) continue;
@@ -272,10 +309,31 @@
 		}
 	});
 
+	async function loadOpenSessions() {
+		try {
+			const semua = await getOpenP2hSessions(undefined, { leader: true });
+			openSessions = semua.filter((x) => x.is_mine);
+			leaderSessions = semua.filter((x) => x.is_leader_scope);
+			openSessionsError = '';
+		} catch (err) {
+			// Kartu hanya pelengkap daftar unit — gagal tidak menghalangi halaman, tapi tidak boleh diam.
+			console.error('[preventive] gagal memuat sesi P2H terbuka:', err instanceof Error ? err.message : err);
+			openSessionsError = 'Daftar sesi yang belum ditutup gagal dimuat.';
+		}
+	}
+
 	async function loadData() {
 		loading = true;
+		void loadOpenSessions();
 		try {
 			equipmentList = await getOperatorEquipment();
+			if ($authStore.karyawanName || $authStore.karyawanId) {
+				try {
+					currentPersonnelId = await resolveOperatorId($authStore.karyawanName || '', $authStore.karyawanId);
+				} catch {
+					currentPersonnelId = null;
+				}
+			}
 			const ids = equipmentList.map((e) => e.id);
 			const categoryIds = [...new Set(equipmentList.map(e => e.category_id).filter(Boolean))];
 			[sessionMap, pmMap, categoryMap, ownershipMap] = await Promise.all([
@@ -339,9 +397,123 @@
 			steps={h('daftar.page').sectionGuide?.steps ?? []}
 		/>
 
+		<!-- ══ GATE WARN BANNER: TANGGUNG JAWAB P2H PIC SAYA ══════════ -->
+		{#if !loading && myAssignedUnits.length > 0}
+			{#if myUninspectedUnits.length > 0}
+				<div class="mb-4 p-3.5 rounded-2xl border border-amber-300 bg-amber-50/90 dark:bg-amber-950/40 dark:border-amber-800 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+					<div class="flex items-start gap-2.5">
+						<span class="text-xl">⚠️</span>
+						<div>
+							<div class="flex items-center gap-2 flex-wrap">
+								<span class="font-bold text-[13px]">Unit Tanggung Jawab PIC Anda</span>
+								<span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100">Gate: WARN</span>
+							</div>
+							<p class="text-[12px] text-amber-800 dark:text-amber-300 mt-0.5">
+								Anda adalah PIC untuk <strong>{myAssignedUnits.length} unit</strong>. Ada <strong>{myUninspectedUnits.length} unit</strong> belum dilakukan P2H fisik hari ini. Harap cek sebelum beroperasi!
+							</p>
+						</div>
+					</div>
+					<button
+						type="button"
+						class="shrink-0 px-3 py-1.5 rounded-xl font-bold text-[12px] bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-colors cursor-pointer"
+						onclick={() => statusFilter = 'Unit Saya'}
+					>
+						Tampilkan Unit Saya ({myUninspectedUnits.length}) →
+					</button>
+				</div>
+			{:else}
+				<div class="mb-4 p-3 rounded-2xl border border-emerald-300 bg-emerald-50/80 dark:bg-emerald-950/30 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 flex items-center justify-between gap-2 shadow-2xs">
+					<div class="flex items-center gap-2">
+						<span class="text-base">✓</span>
+						<span class="text-[12px] font-semibold">
+							Seluruh <strong>{myAssignedUnits.length} unit</strong> tanggung jawab PIC Anda telah selesai P2H hari ini. Siap beroperasi!
+						</span>
+					</div>
+					<button
+						type="button"
+						class="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 hover:underline cursor-pointer"
+						onclick={() => statusFilter = 'Unit Saya'}
+					>
+						Lihat Unit Saya →
+					</button>
+				</div>
+			{/if}
+		{/if}
+
+		<!-- PMT-49: sesi pemakaian yang belum ditutup -->
+		{#if openSessions.length > 0}
+			<div class="mt-2 mb-4 rounded-xl border border-amber-300 bg-amber-50/70 dark:bg-amber-950/30 dark:border-amber-800 p-3.5" aria-label="Sesi pemakaian belum ditutup">
+				<div class="flex items-center gap-1.5 mb-1">
+					<IconClock size={15} class="text-amber-700 dark:text-amber-300" />
+					<h2 class="text-[13px] font-bold text-amber-900 dark:text-amber-200">Tutup pemakaian ({openSessions.length} sesi, {openByUnit.length} unit)</h2>
+				</div>
+				<p class="text-[11px] text-amber-800 dark:text-amber-300 mb-2.5">
+					Tutup pemakaian saat selesai memakai unit: pilih kondisi dan tanda tangan. Foto hanya bila ada temuan.
+				</p>
+				<div class="flex flex-col gap-1.5">
+					{#each openByUnit as os (os.equipment_id)}
+						<button
+							type="button"
+							class="flex items-center justify-between gap-2 w-full text-left rounded-lg border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-900 px-3 py-2 cursor-pointer hover:border-amber-400"
+							onclick={() => goto(`/preventive/p2h/${os.equipment_id}`)}
+						>
+							<span class="min-w-0">
+								<span class="block text-[12px] font-semibold text-slate-900 dark:text-slate-100 truncate">{os.equipment_name || 'Unit'}{os.equipment_code ? ` · ${os.equipment_code}` : ''}</span>
+								<span class="block text-[11px] text-slate-500 dark:text-slate-400">{os.dates.length === 1 ? `Dibuka ${os.dates[0]}` : `${os.dates.length} sesi belum ditutup (${os.dates[0]} s/d ${os.dates[os.dates.length - 1]})`}</span>
+							</span>
+							<span class="shrink-0 text-[11px] font-bold text-amber-800 dark:text-amber-300">Tutup →</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
+		{#if leaderByUnit.length > 0}
+			<div class="mt-2 mb-4 rounded-xl border border-sky-300 bg-sky-50/70 dark:bg-sky-950/30 dark:border-sky-800 p-3.5" aria-label="Sesi pemakaian belum ditutup di proyek Anda">
+				<h2 class="text-[13px] font-bold text-sky-900 dark:text-sky-200 mb-1">Belum ditutup di proyek Anda ({leaderSessions.length} sesi, {leaderByUnit.length} unit)</h2>
+				<p class="text-[11px] text-sky-800 dark:text-sky-300 mb-2.5">Sebagai Leader, ingatkan operator menutup pemakaian, atau bantu tutup langsung dari halaman unit.</p>
+				<div class="flex flex-col gap-1.5">
+					{#each leaderByUnit as lu (lu.equipment_id)}
+						<button
+							type="button"
+							class="flex items-center justify-between gap-2 w-full text-left rounded-lg border border-sky-200 dark:border-sky-800 bg-white dark:bg-slate-900 px-3 py-2 cursor-pointer hover:border-sky-400"
+							onclick={() => goto(`/preventive/p2h/${lu.equipment_id}`)}
+						>
+							<span class="min-w-0">
+								<span class="block text-[12px] font-semibold text-slate-900 dark:text-slate-100 truncate">{lu.name || 'Unit'}{lu.code ? ` · ${lu.code}` : ''}</span>
+								<span class="block text-[11px] text-slate-500 dark:text-slate-400">{lu.dates.length} sesi · {lu.dates[0]} s/d {lu.dates[lu.dates.length - 1]}{lu.operators.size ? ` · ${[...lu.operators].join(', ')}` : ''}</span>
+							</span>
+							<span class="shrink-0 text-[11px] font-bold text-sky-800 dark:text-sky-300">Buka →</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
+		{#if !openSessions.length && openSessionsError}
+			<p class="mt-2 mb-3 text-[11px] text-slate-500">{openSessionsError}</p>
+		{/if}
+
 		<!-- Quick Metric KPI Filter Cards -->
 		{#if !loading && equipmentList.length > 0}
-			<div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3 mb-5 mt-2">
+			<div class="grid grid-cols-2 {myAssignedUnits.length > 0 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-2.5 md:gap-3 mb-5 mt-2">
+				{#if myAssignedUnits.length > 0}
+					<!-- Unit Saya (PIC) -->
+					<button
+						type="button"
+						class="p-3.5 rounded-xl border text-left transition-all cursor-pointer {statusFilter === 'Unit Saya' ? 'ring-2 ring-purple-500 border-purple-500 bg-purple-50/50 dark:bg-purple-950/30' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs'}"
+						onclick={() => statusFilter = statusFilter === 'Unit Saya' ? 'Semua' : 'Unit Saya'}
+					>
+						<div class="flex items-center justify-between gap-1 mb-1.5">
+							<span class="text-[11px] font-semibold text-purple-800 dark:text-purple-300">Unit Saya</span>
+							<div class="w-6 h-6 rounded-md bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400 flex items-center justify-center font-bold text-xs">
+								<span>👤</span>
+							</div>
+						</div>
+						<div class="flex items-baseline gap-2">
+							<span class="text-xl md:text-2xl font-bold text-purple-800 dark:text-purple-300">{myAssignedUnits.length}</span>
+							<span class="text-[11px] text-purple-700 dark:text-purple-400">{myUninspectedUnits.length > 0 ? `${myUninspectedUnits.length} belum` : 'Lengkap'}</span>
+						</div>
+					</button>
+				{/if}
 				<!-- Total Unit -->
 				<button
 					type="button"

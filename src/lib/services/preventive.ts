@@ -26,7 +26,8 @@ export const VEHICLE_CATEGORY_IDS = [
 ];
 
 export const PRODUKSI_CATEGORY_IDS = [
-	'ea8b045b-dcb6-415b-843d-3035de12a1b3'  // MESIN (Mesin / Produksi)
+	'218138c0-3e2c-43b5-a885-f99ff85a3969', // equipment_category "Mesin Produksi" — id yang BENAR dipakai equipment.category_id
+	'ea8b045b-dcb6-415b-843d-3035de12a1b3'  // asset_sub_category "MESIN PRODUKSI" (id lama; bukan category_id, dipertahankan agar tidak ada yang berubah)
 ];
 
 
@@ -75,7 +76,8 @@ export async function getOperatorEquipment(options: { categoryIds?: string[] } =
 					'last_hoursmeter',
 					'location_id',
 					'ownership_type',
-					'owner_name'
+					'owner_name',
+					'current_pic_id'
 				],
 				sort: ['name'],
 				limit: -1
@@ -101,7 +103,8 @@ export async function getEquipmentById(equipmentId: string) {
 					'location_id',
 					'ownership_type',
 					'owner_name',
-					'identitas_barang_id'
+					'identitas_barang_id',
+					'current_pic_id'
 				]
 			})
 		);
@@ -394,7 +397,7 @@ export async function getPmDueCountsMap(equipmentIds: string[]): Promise<Record<
 			const chunk = equipmentIds.slice(i, i + chunkSize);
 			const result = (await directus.request(
 				readItems('pm_due_tracker', {
-					filter: { equipment_id: { _in: chunk } },
+					filter: { equipment_id: { _in: chunk }, pm_task_template_id: { _nnull: true } },
 					fields: ['id', 'equipment_id', 'status_id', 'due_date'],
 					limit: -1
 				})
@@ -566,15 +569,59 @@ export async function submitP2hSessionAtomic(
  * shift/pekerjaan untuk konfirmasi kondisi unit saat selesai dipakai. Sama pola
  * offline-queue-nya dengan submitP2hSessionAtomic: gagal jaringan -> diantre.
  */
+export type P2hKondisiTutup = 'baik' | 'perlu_periksa' | 'dilarang';
+
+export interface P2hOpenSession {
+	id: string;
+	equipment_id: string;
+	equipment_name: string | null;
+	equipment_code: string | null;
+	operator_id: string | null;
+	is_mine: boolean;
+	/** PMT-49: sesi operator lain pada unit di proyek yang saya pimpin (hanya bila diminta dengan leader=true). */
+	is_leader_scope?: boolean;
+	operator_name?: string | null;
+	date: string;
+}
+
+/**
+ * PMT-49 — sesi P2H yang belum ditutup: milik operator yang login, plus (bila equipmentId diberikan)
+ * sesi lama unit itu milik siapa pun. Lewat endpoint server (guard personnel), bukan Directus langsung.
+ */
+export async function getOpenP2hSessions(equipmentId?: string, opts: { leader?: boolean } = {}): Promise<P2hOpenSession[]> {
+	const { auth } = await import('$lib/firebase');
+	const user = auth.currentUser;
+	if (!user) return [];
+	const idToken = await user.getIdToken();
+	const params = new URLSearchParams();
+	if (equipmentId) params.set('equipment_id', equipmentId);
+	if (opts.leader) params.set('leader', '1');
+	const qs = params.toString() ? `?${params.toString()}` : '';
+	const res = await fetch(`/api/preventive/p2h/terbuka${qs}`, { headers: { Authorization: `Bearer ${idToken}` } });
+	if (!res.ok) {
+		const data = await res.json().catch(() => null);
+		throw new Error(data?.message || `Gagal memuat sesi terbuka (${res.status})`);
+	}
+	const data = await res.json();
+	return Array.isArray(data?.sessions) ? data.sessions : [];
+}
+
 export async function closeP2hSessionAtomic(
 	sessionId: string,
 	signature: string,
-	catatanSelesai?: string
+	catatanSelesai?: string,
+	opts: { kondisi?: P2hKondisiTutup; fotoSelesai?: string | null } = {}
 ): Promise<{ queued: true } | { session: any }> {
 	const { auth } = await import('$lib/firebase');
 	const { enqueue } = await import('$lib/utils/offlineQueue');
 
-	const payload = { session_id: sessionId, signature, catatan_selesai: catatanSelesai || null };
+	const payload = {
+		session_id: sessionId,
+		signature,
+		catatan_selesai: catatanSelesai || null,
+		kondisi: opts.kondisi ?? 'baik',
+		foto_selesai: opts.fotoSelesai ?? null
+	};
 	const url = '/api/preventive/p2h/tutup';
 
 	let idToken: string;
@@ -611,7 +658,8 @@ export async function getDuePmTasks(equipmentId: string) {
 	try {
 		const trackers = (await directus.request(
 			readItems('pm_due_tracker', {
-				filter: { equipment_id: { _eq: equipmentId } },
+				// Tracker tanpa template (196 baris warisan, status kosong) bukan tugas nyata — disembunyikan dari mekanik.
+				filter: { equipment_id: { _eq: equipmentId }, pm_task_template_id: { _nnull: true } },
 				sort: ['due_date'],
 				limit: -1
 			})
@@ -623,7 +671,7 @@ export async function getDuePmTasks(equipmentId: string) {
 		const statusIds = [...new Set(trackerList.map((t: any) => t.status_id).filter(Boolean))];
 		const [templates, statuses] = await Promise.all([
 			templateIds.length
-				? directus.request(readItems('pm_task_template', { filter: { id: { _in: templateIds } }, fields: ['id', 'task_name'], limit: -1 }))
+				? directus.request(readItems('pm_task_template', { filter: { id: { _in: templateIds } }, fields: ['id', 'task_name', 'checklist_details'], limit: -1 }))
 				: Promise.resolve([]),
 			statusIds.length
 				? directus.request(readItems('category', { filter: { id: { _in: statusIds } }, fields: ['id', 'name'], limit: -1 }))
@@ -669,7 +717,7 @@ export async function getMyPmDueTasks(equipmentIds: string[]): Promise<MyPmDueTa
 			const chunk = equipmentIds.slice(i, i + chunkSize);
 			const result = (await directus.request(
 				readItems('pm_due_tracker', {
-					filter: { equipment_id: { _in: chunk }, due_date: { _lte: today } },
+					filter: { equipment_id: { _in: chunk }, due_date: { _lte: today }, pm_task_template_id: { _nnull: true } },
 					fields: ['id', 'equipment_id', 'due_date', 'pm_task_template_id', 'status_id'],
 					sort: ['due_date'],
 					limit: -1
@@ -719,6 +767,56 @@ export async function getMyPmDueTasks(equipmentIds: string[]): Promise<MyPmDueTa
 	} catch (error) {
 		handleDirectusError(error);
 		return [];
+	}
+}
+
+/**
+ * PMT-51 — tandai tugas PM selesai lewat endpoint server (/api/preventive/pm/selesai). Server menutup siklus ini dan membuat siklus
+ * berikutnya. Foto + catatan wajib bila ada temuan. Gagal jaringan -> diantre (server idempoten: 409 bila sudah selesai).
+ */
+export async function selesaikanPmTask(p: {
+	trackerId: string;
+	adaTemuan: boolean;
+	catatan?: string;
+	fotoId?: string | null;
+	hoursmeter?: number | null;
+}): Promise<{ queued: true } | { ok: true; selesai: string; berikutnya: string | null; workOrderId: string | null }> {
+	const { auth } = await import('$lib/firebase');
+	const { enqueue } = await import('$lib/utils/offlineQueue');
+	const payload = {
+		tracker_id: p.trackerId,
+		ada_temuan: p.adaTemuan,
+		catatan: p.catatan || null,
+		foto_id: p.fotoId || null,
+		hoursmeter: p.hoursmeter ?? null
+	};
+	const url = '/api/preventive/pm/selesai';
+	let idToken: string;
+	try {
+		const user = auth.currentUser;
+		if (!user) throw new Error('Sesi tidak ditemukan. Silakan login ulang.');
+		idToken = await user.getIdToken();
+	} catch {
+		enqueue(url, 'POST', payload);
+		return { queued: true };
+	}
+	try {
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+			body: JSON.stringify(payload)
+		});
+		if (!res.ok) {
+			const data = await res.json().catch(() => null);
+			throw new Error(data?.message || `Gagal (${res.status})`);
+		}
+		return res.json();
+	} catch (err: any) {
+		if (err instanceof TypeError || err.name === 'TypeError' || err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network')) {
+			enqueue(url, 'POST', payload);
+			return { queued: true };
+		}
+		throw err;
 	}
 }
 

@@ -13,7 +13,8 @@
 		getTodayP2hSession,
 		getP2hLogsBySession,
 		submitP2hSessionAtomic,
-		closeP2hSessionAtomic,
+		getOpenP2hSessions,
+		type P2hOpenSession,
 		logActivity,
 		COMPRESSOR_CATEGORY_IDS,
 		FORKLIFT_CATEGORY_IDS,
@@ -38,9 +39,15 @@
 	}
 	import { hasValidScanProof, saveScanProof } from '$lib/utils/p2hScanProof';
 	import { saveP2hDraft, loadP2hDraft, clearP2hDraft } from '$lib/utils/p2hDraft';
-	import { compressPhoto } from '$lib/utils/photoCompress';
+	import {
+		preparePhotoForUpload,
+		sendPreparedPhoto,
+		p2hPhotoFileName,
+		P2hPhotoCompressFailed,
+		P2hPhotoUploadFailed,
+		tandaiKonteksFoto
+	} from '$lib/utils/p2hPhotoUpload';
 	import directus from '$lib/services/directus';
-	import { secureDirectusFetch } from '$lib/services/secureDirectus';
 	import { todayWib } from '$lib/utils/wibDate';
 	import { SectionGuide, FieldHint, HelpIcon, StatusExplainer } from '$lib/components/hints';
 	// Impor modul hint langsung (bukan barrel) — lihat catatan bundling di getHint.ts.
@@ -51,12 +58,26 @@
 	const h = (key: string) => getHint(preventiveHints, key, 'preventive-maintenance');
 	import { getCurrentPosition, type DevicePosition } from '$lib/utils/geoClient';
 	import SignaturePad from '$lib/components/shared/SignaturePad.svelte';
+	import P2hTutupForm from '$lib/components/preventive/P2hTutupForm.svelte';
 	import { p2hAnswerSchema, p2hSessionSchema } from '$lib/schemas/p2hSession';
 	import ComponentVerifySection from '$lib/components/preventive/ComponentVerifySection.svelte';
 	import KnowledgeCard from '$lib/components/inventory360/KnowledgeCard.svelte';
+	import UnitHolderCard from '$lib/components/scanner/UnitHolderCard.svelte';
+	import { verifyEquipment, type ToolVerifyResult } from '$lib/services/equipmentVerify';
 
 	let equipmentId = $derived($page.params.equipment_id as string);
 	const today = todayWib();
+
+	// Kartu peminjam resmi (Verifikasi Barcode Equipment Fase 3). Hanya hasil kind 'tool' yang ditampilkan.
+	let borrowerInfo = $state<ToolVerifyResult | null>(null);
+	async function loadBorrowerCard(code: string) {
+		try {
+			const r = await verifyEquipment(code);
+			borrowerInfo = r.kind === 'tool' ? r : null;
+		} catch (err) {
+			console.error('[p2h] kartu peminjam gagal dimuat (P2H tetap bisa diisi):', err instanceof Error ? err.message : err);
+		}
+	}
 
 	let loading = $state(true);
 	let submitting = $state(false);
@@ -68,11 +89,16 @@
 	let todayLogs = $state<Awaited<ReturnType<typeof getP2hLogsBySession>>>([]);
 	let showExportSheet = $state(false);
 	let showCloseForm = $state(false);
-	let closingSession = $state(false);
-	let closeCatatan = $state('');
-	let closeError = $state('');
 	let closeSuccess = $state(false);
-	let closeSignaturePad: any = $state();
+	// PMT-49 §4.3: sesi lama (tanggal < hari ini) unit ini yang belum ditutup — peringatan SHADOW:
+	// tidak menahan P2H baru. Penutupan dilakukan inline lewat form yang sama.
+	let oldOpenSessions = $state<P2hOpenSession[]>([]);
+	let closingOldId = $state<string | null>(null);
+	// Banner menampilkan paling banyak 3 sesi lama terbaru; sisanya dibereskan Admin Maintenance (laporan data lama PMT-49 §5).
+	const OLD_BANNER_MAX = 3;
+	let oldOpenShown = $derived(oldOpenSessions.slice(0, OLD_BANNER_MAX));
+	let oldOpenHidden = $derived(Math.max(0, oldOpenSessions.length - OLD_BANNER_MAX));
+	let oldCloseDoneMsg = $state('');
 	let answers = $state<Record<string, { result: 'Go' | 'No-Go' | null; notes: string; foto?: string | null; fotoPreview?: string | null; uploading?: boolean; numeric_value?: number | null; text_value?: string | null }>>({});
 	let errorMsg = $state('');
 	let successInfo = $state<{ hasNoGo: boolean; workOrderCreated: boolean; queued: boolean; workOrderId?: number | string | null } | null>(null);
@@ -135,9 +161,6 @@
 	// kompresi punya batas waktu + fallback file asli, preview memakai thumbnail kecil dari
 	// server, pesan tampil di item itu sendiri, dan reload saat memilih foto terdeteksi.
 	const UNIT_SLOT = '__unit__';
-	const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // = BODY_SIZE_LIMIT server (.env)
-	const MAX_RAW_PHOTO_BYTES = 30 * 1024 * 1024; // file mentah > ini tidak dicoba dikompres (rawan crash)
-	const COMPRESS_TIMEOUT_MS = 20_000;
 	const PENDING_PHOTO_KEY = 'epi_p2h_pending_photo';
 	const PENDING_PHOTO_MAX_AGE_MS = 10 * 60 * 1000;
 
@@ -197,71 +220,56 @@
 		target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 	}
 
-	function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-		return new Promise<T>((resolve, reject) => {
-			const timer = setTimeout(() => reject(new Error('Kompresi foto melebihi batas waktu.')), ms);
-			promise.then(
-				(v) => { clearTimeout(timer); resolve(v); },
-				(e) => { clearTimeout(timer); reject(e); }
-			);
-		});
-	}
-
-	function buildPhotoFileName(slot: string, file: File): string {
-		const code = String(equipment?.code || equipmentId).replace(/[^a-zA-Z0-9_-]+/g, '-');
-		const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
-		return `p2h-${code}-${slot === UNIT_SLOT ? 'unit' : 'item'}-${Date.now()}.${ext}`;
-	}
-
-	async function uploadErrorMessage(res: Response): Promise<string> {
-		if (res.status === 401) return 'Sesi login habis. Muat ulang halaman lalu login lagi, kemudian unggah ulang fotonya.';
-		if (res.status === 413) return 'Foto terlalu besar untuk server. Pilih mode "Kompres Otomatis" lalu coba lagi.';
-		let detail = '';
-		try {
-			const body = await res.json();
-			detail = body?.errors?.[0]?.message || body?.error || body?.message || '';
-		} catch {
-			// respons bukan JSON
-		}
-		return `Gagal mengunggah foto (${res.status}${detail ? `: ${detail}` : ''}). Silakan coba lagi.`;
-	}
+	/**
+	 * PMT-52: foto yang gagal dikirim dipegang di sini (per slot) supaya operator cukup menekan
+	 * "Coba lagi" / "Kirim foto asli" tanpa memotret ulang. Hanya di memori halaman ini
+	 * (bukan antrian offline permanen).
+	 */
+	type PhotoRetry = { file: File; kind: 'upload' | 'compress' };
+	let photoRetry = $state<Record<string, PhotoRetry>>({});
 
 	/** Kompres (sesuai mode) lalu unggah ke Directus lewat proxy. Mengembalikan file id. */
-	async function uploadP2hPhoto(file: File, slot: string): Promise<string> {
-		if (file.size > MAX_RAW_PHOTO_BYTES) {
-			throw new Error(`Ukuran foto ${(file.size / 1024 / 1024).toFixed(1)}MB terlalu besar. Turunkan resolusi kamera (mis. 12MP) lalu foto ulang.`);
-		}
-		let toUpload = file;
-		if (photoUploadMode === 'compress') {
-			try {
-				toUpload = await withTimeout(compressPhoto(file), COMPRESS_TIMEOUT_MS);
-			} catch (err) {
-				// Kompresi gagal/macet di HP ini — kirim file asli selama masih di bawah batas server.
-				console.warn('[P2H] Kompresi foto gagal, mengunggah file asli:', err);
-				toUpload = file;
-			}
-		}
-		if (toUpload.size > MAX_UPLOAD_BYTES) {
-			throw new Error(
-				photoUploadMode === 'direct'
-					? `Foto asli ${(toUpload.size / 1024 / 1024).toFixed(1)}MB melebihi batas 15MB. Pilih mode "Kompres Otomatis" lalu coba lagi.`
-					: `Foto ${(toUpload.size / 1024 / 1024).toFixed(1)}MB gagal diperkecil di HP ini. Turunkan resolusi kamera lalu foto ulang.`
-			);
-		}
-		const formData = new FormData();
-		formData.append('file', toUpload, buildPhotoFileName(slot, toUpload));
-		let res: Response;
+	async function uploadP2hPhoto(file: File, slot: string, opts: { sendOriginal?: boolean } = {}): Promise<string> {
+		delete photoRetry[slot];
+		const mode = opts.sendOriginal ? 'direct' : photoUploadMode;
 		try {
-			res = await secureDirectusFetch('/files', { method: 'POST', body: formData });
-		} catch (err: any) {
-			if (err instanceof TypeError) throw new Error('Koneksi terputus saat mengunggah foto. Periksa sinyal lalu coba lagi.');
+			tandaiKonteksFoto(file, slot === UNIT_SLOT ? 'p2h-unit' : 'p2h-item');
+			const prepared = await preparePhotoForUpload(file, mode);
+			return await sendPreparedPhoto(
+				prepared,
+				p2hPhotoFileName(equipment?.code || equipmentId, slot === UNIT_SLOT ? 'unit' : 'item', prepared),
+				mode
+			);
+		} catch (err) {
+			if (err instanceof P2hPhotoCompressFailed) photoRetry[slot] = { file: err.original, kind: 'compress' };
+			else if (err instanceof P2hPhotoUploadFailed) photoRetry[slot] = { file: err.file, kind: 'upload' };
 			throw err;
 		}
-		if (!res.ok) throw new Error(await uploadErrorMessage(res));
-		const data = await res.json().catch(() => null);
-		const fileId = data?.data?.id;
-		if (!fileId) throw new Error('Respons server tidak berisi file foto. Silakan coba lagi.');
-		return fileId;
+	}
+
+	/** Tombol "Coba lagi" / "Kirim foto asli (lambat)" pada pesan gagal. */
+	async function retryPhoto(slot: string, sendOriginal: boolean) {
+		const pending = photoRetry[slot];
+		if (!pending) return;
+		delete photoMessages[slot];
+		const isUnit = slot === UNIT_SLOT;
+		if (isUnit) uploadingFotoUnit = true;
+		else answers[slot] = { ...answers[slot], uploading: true };
+		try {
+			const fileId = await uploadP2hPhoto(pending.file, slot, { sendOriginal });
+			if (isUnit) {
+				fotoUnitFileId = fileId;
+				fotoUnitPreview = photoThumbUrl(fileId);
+			} else {
+				answers[slot] = { ...answers[slot], foto: fileId, fotoPreview: photoThumbUrl(fileId) };
+			}
+		} catch (err: any) {
+			console.error('[P2H] Ulang unggah foto gagal:', err);
+			photoMessages[slot] = { tone: 'error', text: err?.message || 'Gagal mengunggah foto. Silakan coba lagi.' };
+		} finally {
+			if (isUnit) uploadingFotoUnit = false;
+			else answers[slot] = { ...answers[slot], uploading: false };
+		}
 	}
 
 	async function handleFotoUnitUpload(event: Event) {
@@ -387,6 +395,9 @@
 			loading = false;
 			return;
 		}
+		// Tidak ditunggu: kartu peminjam hanya pelengkap, gagal/lambat tidak boleh menunda checklist P2H.
+		if (equipment.code) void loadBorrowerCard(String(equipment.code));
+		void loadOldOpenSessions();
 		if (equipment.category_id) {
 			const catMap = await getEquipmentCategoriesMap([equipment.category_id]);
 			categoryName = catMap[equipment.category_id] || '';
@@ -485,30 +496,29 @@
 	let canSubmit = $derived(allAnswered && allRequiredPhotosAttached && !anyPhotoUploading);
 
 
-	async function handleCloseSession() {
-		if (closingSession || !todaySession) return;
-		if (!closeSignaturePad || closeSignaturePad.isEmpty()) {
-			closeError = 'Tanda tangan wajib diisi.';
-			return;
-		}
-		closingSession = true;
-		closeError = '';
+	function onTutupClosed(r: { queued: boolean; session: any | null }) {
+		if (r.queued) todaySession = { ...todaySession, jam_selesai_pakai: new Date().toISOString() };
+		else todaySession = r.session;
+		closeSuccess = true;
+		showCloseForm = false;
+	}
+
+	async function loadOldOpenSessions() {
 		try {
-			const signatureData = closeSignaturePad.toDataURL();
-			const result = await closeP2hSessionAtomic(todaySession.id, signatureData, closeCatatan.trim() || undefined);
-			if ('queued' in result) {
-				closeSuccess = true;
-				todaySession = { ...todaySession, jam_selesai_pakai: new Date().toISOString() };
-			} else {
-				todaySession = result.session;
-				closeSuccess = true;
-			}
-			showCloseForm = false;
-		} catch (err: any) {
-			closeError = err?.message || 'Gagal menutup sesi P2H.';
-		} finally {
-			closingSession = false;
+			const list = await getOpenP2hSessions(equipmentId);
+			oldOpenSessions = list.filter((x) => x.equipment_id === equipmentId && x.date < today);
+		} catch (err) {
+			// Peringatan hanya pelengkap — gagal memuat tidak boleh menghalangi P2H, tapi jangan diam.
+			console.error('[p2h] gagal memuat sesi lama yang belum ditutup:', err instanceof Error ? err.message : err);
 		}
+	}
+
+	function onOldSessionClosed(id: string, r: { queued: boolean }) {
+		oldOpenSessions = oldOpenSessions.filter((x) => x.id !== id);
+		closingOldId = null;
+		oldCloseDoneMsg = r.queued
+			? 'Penutupan tersimpan di HP dan akan terkirim saat sinyal kembali.'
+			: 'Sesi lama berhasil ditutup.';
 	}
 
 	async function handleSubmit() {
@@ -607,6 +617,20 @@
 		>
 			{photoMessages[slot].tone === 'error' ? '⚠️' : 'ℹ️'} {photoMessages[slot].text}
 		</p>
+		{#if photoRetry[slot]}
+			<div class="flex flex-wrap gap-2 mt-1.5">
+				{#if photoRetry[slot].kind === 'upload'}
+					<button type="button" class="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-emerald-600 text-white" onclick={() => retryPhoto(slot, false)}>
+						🔄 Coba lagi
+					</button>
+				{/if}
+				{#if photoRetry[slot].kind === 'compress'}
+					<button type="button" class="px-2.5 py-1 rounded-md text-[11px] font-semibold border border-[var(--sys-sep)] text-[var(--sys-label2)]" onclick={() => retryPhoto(slot, true)}>
+						📤 Kirim foto asli (lambat)
+					</button>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 {/snippet}
 
@@ -646,6 +670,71 @@
 			{#if hadDraft && !successInfo}
 				<div class="mb-4 px-3 py-2 rounded-lg text-[12px] font-medium bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
 					Isian sebelumnya yang belum terkirim sudah dipulihkan.
+				</div>
+			{/if}
+
+			<!-- Verifikasi Barcode Equipment Fase 3: peminjam resmi unit. Informatif — TIDAK pernah memblokir pengisian P2H
+			     (pengisi bisa mekanik/operator pengganti yang sah). Tidak tampil untuk kendaraan armada (ditangani sheet scan). -->
+			{#if borrowerInfo && !successInfo}
+				<div class="mb-4 flex flex-col gap-2">
+					{#if borrowerInfo.borrower}
+						<UnitHolderCard
+							person={borrowerInfo.borrower}
+							title="Penanggung jawab / peminjam unit saat ini"
+							tone={borrowerInfo.verification.decision === 'mismatch' ? 'warn' : borrowerInfo.verification.matches ? 'ok' : 'neutral'}
+							lines={[
+								borrowerInfo.loan?.projectName ? `Proyek: ${borrowerInfo.loan.projectName}` : null,
+								borrowerInfo.loan?.endDatePlanned ? `Pinjam s/d ${borrowerInfo.loan.endDatePlanned}` : null,
+								borrowerInfo.loan?.purpose
+							]}
+						/>
+					{/if}
+					{#if borrowerInfo.verification.warn && borrowerInfo.verification.message}
+						<p class="text-[11px] rounded-lg p-2" style="background: #FEF9C3; color: #854D0E">{borrowerInfo.verification.message}</p>
+					{/if}
+				</div>
+			{/if}
+
+			{#if oldCloseDoneMsg}
+				<p role="status" class="mb-3 text-[11px] rounded-lg p-2 bg-emerald-50 text-emerald-800 border border-emerald-200">✓ {oldCloseDoneMsg}</p>
+			{/if}
+			{#if oldOpenSessions.length > 0 && !successInfo}
+				<div class="mb-4 rounded-xl border p-3 space-y-2" style="border-color: #D97706; background: rgba(217,119,6,0.07)" aria-label="Sesi lama belum ditutup">
+					<p class="text-[12px] font-bold" style="color: #B45309">⏳ Ada sesi pemakaian lama yang belum ditutup</p>
+					<p class="text-[10px]" style="color: var(--sys-label3)">
+						Peringatan saja — P2H hari ini tetap bisa diisi. Tutup dulu dengan mengisi kondisi unit saat selesai dipakai.
+					</p>
+					{#each oldOpenShown as old (old.id)}
+						<div class="rounded-lg border p-2.5 bg-white/60 dark:bg-slate-900/40" style="border-color: var(--sys-sep)">
+							<div class="flex items-center justify-between gap-2">
+								<span class="text-[12px]" style="color: var(--sys-label)">Sesi {old.date} belum ditutup.</span>
+								{#if closingOldId !== old.id}
+									<button
+										type="button"
+										class="px-3 py-1.5 rounded-lg text-[11px] font-bold text-white"
+										style="background: var(--g)"
+										onclick={() => { closingOldId = old.id; oldCloseDoneMsg = ''; }}
+									>
+										Tutup sekarang
+									</button>
+								{/if}
+							</div>
+							{#if closingOldId === old.id}
+								<div class="mt-2">
+									<P2hTutupForm
+										sessionId={old.id}
+										unitName={equipment?.name || ''}
+										unitCode={equipment?.code || ''}
+										onclosed={(r) => onOldSessionClosed(old.id, r)}
+										oncancel={() => (closingOldId = null)}
+									/>
+								</div>
+							{/if}
+						</div>
+					{/each}
+					{#if oldOpenHidden > 0}
+						<p class="text-[10px]" style="color: var(--sys-label3)">+{oldOpenHidden} sesi yang lebih lama belum ditutup — akan dibereskan Admin Maintenance.</p>
+					{/if}
 				</div>
 			{/if}
 
@@ -731,48 +820,16 @@
 								Tutup Pemakaian Unit Ini
 							</button>
 						</div>
-					{:else}
-						<div class="mt-5 mx-auto max-w-xs text-left rounded-xl border p-4 space-y-3" style="border-color: var(--sys-sep)">
-							<p class="text-[12px] font-bold" style="color: var(--sys-label)">Tutup Pemakaian — {equipment?.name}</p>
-							<div>
-								<label for="closeCatatan" class="block text-[11px] font-semibold mb-1" style="color: var(--sys-label2)">Catatan kondisi akhir (opsional)</label>
-								<textarea
-									id="closeCatatan"
-									class="w-full rounded-lg border text-[12px] p-2 bg-transparent"
-									style="border-color: var(--sys-sep); color: var(--sys-label)"
-									placeholder="Mis. ada kerusakan baru selama dipakai..."
-									rows="2"
-									bind:value={closeCatatan}
-								></textarea>
+					{:else if todaySession?.id}
+							<div class="mt-5 mx-auto max-w-xs">
+								<P2hTutupForm
+									sessionId={String(todaySession.id)}
+									unitName={equipment?.name || ''}
+									unitCode={equipment?.code || ''}
+									onclosed={onTutupClosed}
+									oncancel={() => (showCloseForm = false)}
+								/>
 							</div>
-							<div>
-								<label class="block text-[11px] font-semibold mb-1" style="color: var(--sys-label2)">Tanda Tangan Digital (Wajib)</label>
-								<SignaturePad bind:this={closeSignaturePad} height={120} />
-							</div>
-							{#if closeError}
-								<p class="text-[11px]" style="color: #DC2626">{closeError}</p>
-							{/if}
-							<div class="flex gap-2">
-								<button
-									type="button"
-									class="flex-1 h-10 rounded-lg text-[12px] font-semibold border"
-									style="border-color: var(--sys-sep); color: var(--sys-label2)"
-									onclick={() => { showCloseForm = false; closeError = ''; }}
-								>
-									Batal
-								</button>
-								<button
-									type="button"
-									class="flex-1 h-10 rounded-lg text-[12px] font-bold text-white flex items-center justify-center gap-1.5 disabled:opacity-40"
-									style="background: var(--g)"
-									disabled={closingSession}
-									onclick={handleCloseSession}
-								>
-									{#if closingSession}<IconLoader2 size={14} class="animate-spin" />{/if}
-									Simpan
-								</button>
-							</div>
-						</div>
 					{/if}
 
 					<ComponentVerifySection {equipmentId} sessionId={todaySession?.id ?? null} />
@@ -913,7 +970,7 @@
 							<div class="text-[11px] font-bold" style="color: var(--sys-label)">Mode Unggah Foto</div>
 							<div class="text-[10px]" style="color: var(--sys-label3)">
 								{#if photoUploadMode === 'compress'}
-									Foto dikompres dulu sebelum diunggah (hemat kuota).
+									Foto diperkecil otomatis sebelum dikirim (hemat kuota). Bila sinyal lemah dan gagal terkirim, foto tetap ada di layar ini — tekan "Coba lagi", tidak perlu memotret ulang.
 								{:else}
 									Foto diunggah asli tanpa dikompres (lebih berat, tapi aman kalau HP sering blank/refresh saat kompresi).
 								{/if}
