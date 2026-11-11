@@ -12,6 +12,9 @@
 	import SopSayaCard from '$lib/components/ess/SopSayaCard.svelte';
 	import TimProyekSayaCard from '$lib/components/ess/TimProyekSayaCard.svelte';
 	import KinerjaTrenCard from '$lib/components/ess/KinerjaTrenCard.svelte';
+	import KategoriKpiSayaCard from '$lib/components/ess/KategoriKpiSayaCard.svelte';
+	import PilarKpiKaryawanCard from '$lib/components/ess/PilarKpiKaryawanCard.svelte';
+	import KpiInteractivePreviewModal from '$lib/components/ess/KpiInteractivePreviewModal.svelte';
 
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -25,6 +28,10 @@
 	let skillGap = $state<SkillGapResult | null>(null);
 
 	let raporOpen = $state(false);
+	let interactivePreviewOpen = $state(false);
+	let interactivePreviewScope = $state<'individual' | 'department'>('individual');
+	/** '' = scorecard final terbaru; selain itu id scorecard milik sendiri (server menolak id lain dengan 404). */
+	let raporScorecardId = $state('');
 	let showDisputeModal = $state(false);
 	let disputeSaving = $state(false);
 	let disputeScorecard = $state<KpiRecord | null>(null);
@@ -250,8 +257,29 @@
 		<div>
 			<h1 class="text-2xl md:text-3xl font-extrabold tracking-tight gradient-text">Kinerja Saya</h1>
 			<p class="text-sm md:text-base mt-1 font-medium" style="color: var(--sys-label3)">Skor KPI final & self-assessment</p>
+			{#if kpiList.length > 1}
+				<label class="mt-2 flex items-center gap-2 text-[11px] font-semibold text-slate-500" title="Pilih scorecard final yang akan dicetak sebagai Rapor PDF">
+					Periode rapor
+					<select class="rounded-lg border border-slate-300 bg-white/80 px-2 py-1 text-xs dark:bg-slate-800" bind:value={raporScorecardId} data-testid="rapor-periode">
+						<option value="">Terbaru ({kpiList[0].periode}{kpiList[0].tahun ? ` ${kpiList[0].tahun}` : ''})</option>
+						{#each kpiList as k (k.id)}
+							<option value={k.id}>{k.periode}{k.tahun ? ` ${k.tahun}` : ''} — skor {k.total_skor ?? 'belum terukur'}</option>
+						{/each}
+					</select>
+				</label>
+			{/if}
 		</div>
 		<div class="flex shrink-0 items-center gap-2">
+		<button
+			class="h-11 shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 text-xs font-bold border border-indigo-300 bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:border-indigo-700 dark:text-indigo-200 disabled:opacity-40 hover:bg-indigo-100 transition-colors shadow-xs"
+			onclick={() => { interactivePreviewScope = 'individual'; interactivePreviewOpen = true; }}
+			disabled={kpiList.length === 0}
+			aria-label="Pratinjau interaktif rapor kinerja True A4"
+			title={kpiList.length === 0 ? 'Belum ada scorecard final untuk dipratinjau' : 'Pratinjau Rapor Kinerja True A4: Mode 1/2 Halaman, Zoom, Grafik Tren SVG, Skor Tertimbang 100%'}
+			data-testid="btn-pratinjau-kpi"
+		>
+			👁️ Pratinjau Interaktif
+		</button>
 		<button
 			class="h-11 shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 text-xs font-bold border border-emerald-300 bg-emerald-50 text-emerald-800 disabled:opacity-40"
 			onclick={() => (raporOpen = true)}
@@ -336,6 +364,7 @@
 		<GateKpiSayaCard />
 
 		<KinerjaTrenCard />
+		<KategoriKpiSayaCard />
 
 		<TimProyekSayaCard />
 
@@ -512,6 +541,8 @@
 								</p>
 							{/if}
 						{/if}
+
+						<PilarKpiKaryawanCard pilar={kpi.pilar} />
 
 						{#if tip}
 							<div class="rounded-xl p-3 mb-4 relative z-10" style="background: var(--am, #FFFBEB); border: 1px solid var(--am2, #FDE68A)">
@@ -759,10 +790,17 @@
 
 <PdfFetchSheet
 	open={raporOpen}
-	url="/api/ess/kinerja-rapor-pdf"
+	url={raporScorecardId ? `/api/ess/kinerja-rapor-pdf?scorecard=${encodeURIComponent(raporScorecardId)}` : '/api/ess/kinerja-rapor-pdf'}
 	title="Rapor Kinerja Pribadi"
 	filename="Rapor Kinerja Pribadi"
 	onClose={() => (raporOpen = false)}
+/>
+
+<KpiInteractivePreviewModal
+	open={interactivePreviewOpen}
+	scorecardId={raporScorecardId}
+	scope={interactivePreviewScope}
+	onClose={() => (interactivePreviewOpen = false)}
 />
 
 <EssExportSheet

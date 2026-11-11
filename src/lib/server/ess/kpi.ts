@@ -2,6 +2,7 @@
 // Query helper KPI karyawan (koleksi kpi_management) untuk /api/ess/kpi.
 
 import { directusServerJson } from '$lib/server/directus';
+import { hitungPilar, loadPilarConfig, type PilarKaryawan } from '$lib/server/ess/kpiPilar';
 
 export interface KpiTarget {
 	id: string;
@@ -58,6 +59,8 @@ export interface KpiRecord {
 	bobot_spesifik_pct?: number | null;
 	detail_general?: KpiDetailKategori | null;
 	detail_spesifik?: KpiDetailKategori | null;
+	// 4 Pilar karyawan (General/Teknis/Administrasi/Inovasi) -- dihitung server dari scorecard Finalized; null bila mode off / tak ada data.
+	pilar?: PilarKaryawan | null;
 	// KPI x Payroll TAJAM v2, Fase 3 — hanya terisi bila kpi_period.cutoff_status='released'
 	// (lihat attachCutoffInfo + redaction di listKpiKaryawan), sejalan kebijakan kualitatif
 	// tersembunyi sampai rilis (Q9, 29 Jul 2026).
@@ -207,8 +210,15 @@ export async function listKpiKaryawan(karyawanId: number): Promise<KpiRecord[]> 
 		sort: '-tahun,-periode',
 		limit: '24'
 	});
-	const result = await directusServerJson<{ data: KpiRecord[] }>(`/items/kpi_management?${query.toString()}`);
-	const withCutoff = await attachCutoffInfo(result?.data || []);
+	// sumber_perhitungan hanya dipakai menghitung pilar di server lalu DIBUANG (tidak dikirim ke klien).
+	query.set('fields', `${KPI_FIELDS},sumber_perhitungan`);
+	const result = await directusServerJson<{ data: (KpiRecord & { sumber_perhitungan?: unknown })[] }>(`/items/kpi_management?${query.toString()}`);
+	const pilarCfg = await loadPilarConfig();
+	const records: KpiRecord[] = (result?.data || []).map(({ sumber_perhitungan, ...rec }) => ({
+		...rec,
+		pilar: hitungPilar({ departemen: (rec as { departemen?: string | null }).departemen, targets: rec.targets, sumber_perhitungan }, pilarCfg)
+	}));
+	const withCutoff = await attachCutoffInfo(records);
 	return attachRank(withCutoff);
 }
 

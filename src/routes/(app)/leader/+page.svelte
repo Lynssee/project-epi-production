@@ -12,6 +12,10 @@
 	import { getMyNewAssignments, type NewAssignment } from '$lib/services/plDelegation';
 	import LeaderTimeline from '$lib/components/leader/LeaderTimeline.svelte';
 	import LeaderKesiapanCard from '$lib/components/leader/LeaderKesiapanCard.svelte';
+	import LeaderDailyDisciplineCard from '$lib/components/leader/LeaderDailyDisciplineCard.svelte';
+	import LeaderKpiEarlyWarningBanner from '$lib/components/leader/LeaderKpiEarlyWarningBanner.svelte';
+	import TugasSayaAlurCard from '$lib/components/ess/TugasSayaAlurCard.svelte';
+	import LeaderSopTahapCard from '$lib/components/leader/LeaderSopTahapCard.svelte';
 	import { getIdToken } from '$lib/services/secureDirectus';
 	import IconLoader2 from '@tabler/icons-svelte/icons/loader-2';
 	import IconClipboardCheck from '@tabler/icons-svelte/icons/clipboard-check';
@@ -250,9 +254,17 @@
 		<LeaderTimeline karyawanId={$authStore.karyawanId} karyawanName={$authStore.karyawanName} />
 	{/if}
 
+	<LeaderKpiEarlyWarningBanner departemen="Project" projectIds={projects.map((p) => p.id)} />
+
 	{#if projects.length}
+		<LeaderDailyDisciplineCard projectIds={projects.map((p) => p.id)} {equipmentIds} />
 		<LeaderKesiapanCard projectIds={projects.map((p) => p.id)} />
+		<!-- SOP yang ditandai relevan untuk TAHAP proyek yang sedang berjalan (maks. 2 tahap × 3 SOP). Diam bila belum ada SOP bertahap. -->
+		<LeaderSopTahapCard {projects} />
 	{/if}
+
+	<!-- SOP yang relevan untuk jabatan ini saja (maks. 4 langkah, ber-SLA dulu) — bukan ratusan SOP. Fail-soft: tanpa data kartu tak tampil. -->
+	<TugasSayaAlurCard />
 
 	{#if loading}
 		<div class="flex flex-col items-center justify-center py-16">

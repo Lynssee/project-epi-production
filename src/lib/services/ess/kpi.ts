@@ -61,9 +61,19 @@ export interface KpiRecord {
 	bobot_spesifik_pct?: number | null;
 	detail_general?: KpiDetailKategori | null;
 	detail_spesifik?: KpiDetailKategori | null;
+	// 4 Pilar karyawan (dihitung server dari scorecard Finalized); null/undefined = disembunyikan
+	pilar?: KpiPilar | null;
 	// L1 (bonus, General vs Spesifik v2) — peringkat anonim dalam departemen
 	peringkat_departemen?: number | null;
 	total_di_departemen?: number | null;
+}
+
+export type KpiPilarKey = 'general' | 'teknis' | 'administrasi' | 'inovasi';
+export interface KpiPilar {
+	mode: 'shadow' | 'on';
+	composite: number | null;
+	pilars: Record<KpiPilarKey, { score: number | null; weight: number; effectiveWeight: number; terukur: number; total: number }>;
+	missing: KpiPilarKey[];
 }
 
 export interface KpiTrendPoint {
