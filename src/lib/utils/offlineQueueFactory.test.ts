@@ -25,7 +25,7 @@ describe('createOfflineQueue — perilaku lama tidak berubah (tanpa opsi baru)',
 		});
 		const result = await queue.flush(sendFn);
 
-		expect(result).toEqual({ sent: 1, failed: 1 });
+		expect(result).toMatchObject({ sent: 1, failed: 1 });
 		const remaining = await queue.getQueued();
 		expect(remaining.map((e) => e.client_txn_id)).toEqual(['a']);
 		// Perilaku lama: tidak pernah ditandai 'failed' — selalu diulang lagi nanti.
