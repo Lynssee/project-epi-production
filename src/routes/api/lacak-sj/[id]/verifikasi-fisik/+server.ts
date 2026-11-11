@@ -6,6 +6,7 @@
 
 import { json, error, type RequestHandler } from '@sveltejs/kit';
 import { directusServerJson } from '$lib/server/directus';
+import { sortSjItemsLikePl } from '$lib/utils/sjItemOrder.js';
 import { normalizeVerifikasiFisik } from '$lib/server/sjVerifikasiFisik';
 import {
 	aktorBolehProyek, authenticateLacakActor, cekSelfVerify, evaluasiKelayakan, sudahDiverifikasi, tanggalMulaiVerifikasi
@@ -25,9 +26,10 @@ async function loadOwned(event: Parameters<RequestHandler>[0]) {
 	const projId = typeof sj.project_id === 'object' ? sj.project_id?.id : sj.project_id;
 	if (projId == null || !aktorBolehProyek(aktor, Number(projId))) throw error(403, 'SJ ini tidak berkaitan dengan Anda.');
 	// Query item dipisah dari header (Aturan #2)
-	const items = (await directusServerJson<{ data: any[] }>(
-		`/items/surat_jalan_items?filter[surat_jalan_id][_eq]=${id}&fields=id,nama_barang,qty_required,qty_delivered,unit&sort=id&limit=-1`
-	))?.data || [];
+	// PDI-67: urutan baris SJ = urutan baris Packing List (tanpa PL: urutan input).
+	const items = sortSjItemsLikePl((await directusServerJson<{ data: any[] }>(
+		`/items/surat_jalan_items?filter[surat_jalan_id][_eq]=${id}&fields=id,nama_barang,qty_required,qty_delivered,unit,packing_list_item_id&sort=id&limit=-1`
+	))?.data || []);
 	return { aktor, karyawan: aktor.karyawan, sj, id, projId: Number(projId), items };
 }
 

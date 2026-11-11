@@ -226,13 +226,14 @@ export async function createPengajuanAnggaran(
 	try {
 		// PA-09: apakah pemeriksa gate (preflight) benar-benar menjawab. Dipakai pagar fail-open bertingkat di bawah.
 		let preflightAvailable = false;
+		let preflightResult: any = options.preflightResultCached || null;
 		// Fase 4a (AI Analysis Engine v2.0): kunci keras gate G1 (department valid) lewat
 		// proxy pra-terbang yang sudah ada (Fase 3, /api/pengajuan-preflight — TIDAK diubah).
 		// Fail-OPEN bila proxy belum tersedia (ERP_EPI1_BASE_URL kosong) — itu keterbatasan
 		// infrastruktur, bukan alasan menahan pengajuan. Hanya block bila gate BENAR-BENAR
 		// dievaluasi dan G1 gagal.
 		try {
-			let preflightResult = options.preflightResultCached;
+			preflightResult = options.preflightResultCached;
 			if (!preflightResult) {
 				options.onProgress?.('preflight');
 				const token = await getIdToken();
@@ -259,7 +260,9 @@ export async function createPengajuanAnggaran(
 						// (lampiran_file_ids). lampiran_file_id tunggal dipertahankan utk kompat.
 						lampiran_count: (formData.lampiran_file_ids?.length || 0) + (formData.lampiran_file_id ? 1 : 0),
 						lampiran_exception_reason: formData.lampiran_exception_reason || null,
-						lampiran_exception_note: formData.lampiran_exception_note || null
+						lampiran_exception_note: formData.lampiran_exception_note || null,
+						is_emergency_cutoff: Boolean(formData.is_emergency_cutoff),
+						emergency_cutoff_reason: formData.emergency_cutoff_reason || null
 					})
 				});
 				preflightResult = await preflightRes.json().catch(() => ({ available: false }));
@@ -443,6 +446,9 @@ export async function createPengajuanAnggaran(
 			bank_account_name: formData.bank_account_name || '',
 			// Penajaman Penerima Dana & Track Record v2, Fase 4 (11 Sep)
 			rekening_penerima_id: formData.rekening_penerima_id || null,
+			batch_rilis_target: preflightResult?.batch_rilis_target || formData.batch_rilis_target || null,
+			is_emergency_cutoff: Boolean(formData.is_emergency_cutoff),
+			emergency_cutoff_reason: formData.emergency_cutoff_reason || null,
 			created_by_email: formData.created_by_email || null,
 			// PC3-08 (FLD-11): kategori petty_cash wajib membawa dana tujuan isi ulang — tanpa ini sistem menebak fund dari departemen.
 			petty_cash_fund_id: formData.petty_cash_fund_id || null,
