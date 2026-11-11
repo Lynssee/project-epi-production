@@ -20,6 +20,7 @@
 	import FieldStateAndGateCard from './FieldStateAndGateCard.svelte';
 	import KendalaSearch from './KendalaSearch.svelte';
 	import PdfFetchSheet from '$lib/components/shared/PdfFetchSheet.svelte';
+	import FieldAiGuidanceSheet from './FieldAiGuidanceSheet.svelte';
 
 	const DEFAULT_FLOW = 'sales_to_inventory';
 	const alurParam = page.url.searchParams.get('alur') ?? '';
@@ -28,6 +29,13 @@
 
 	let index = $state<FlowSummary[]>(PROCESS_FLOWS.map((f) => summarizeFlow(f)));
 	let filterProcedureType = $state<string>(sifatParam !== null ? sifatParam : '');
+	let showAiSheet = $state(false);
+	let aiSheetQuery = $state('');
+
+	function bukaAiSheet(query = '') {
+		aiSheetQuery = query;
+		showAiSheet = true;
+	}
 	let sumber = $state<FlowSource>('local');
 	let flowId = $state(alurParam || DEFAULT_FLOW);
 	// Tampil seketika dari salinan bawaan bila ada; diganti hasil server setelah dimuat.
@@ -465,7 +473,7 @@
 
 	<div class="p-4 space-y-3">
 		<!-- Cari kendala / pesan gate → loncat ke langkah SOP -->
-		<KendalaSearch onjump={lompatKe} />
+		<KendalaSearch onjump={lompatKe} ontanyaai={bukaAiSheet} />
 
 		<!-- Stepper 5 Tahap Proyek Lapangan (Mobile-First) -->
 		<FieldProjectStepper
@@ -680,3 +688,21 @@
 		onClose={() => (bukuSakuOpen = false)}
 	/>
 {/if}
+
+<!-- Floating Button AI Panduan (Mobile Quick Access) -->
+<button
+	type="button"
+	class="fixed bottom-6 right-5 z-40 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl rounded-full px-4 py-2.5 flex items-center gap-2 active:scale-95 transition-all text-xs font-bold border-2 border-white/80"
+	onclick={() => bukaAiSheet()}
+	title="Tanya AI Panduan Lapangan"
+>
+	<span class="text-base">✨</span>
+	<span>Tanya AI</span>
+</button>
+
+<FieldAiGuidanceSheet
+	open={showAiSheet}
+	initialQuery={aiSheetQuery}
+	onclose={() => (showAiSheet = false)}
+	onjump={lompatKe}
+/>

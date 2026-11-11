@@ -8,6 +8,8 @@
 //   ?gates=<alur> -> ringkasan GATE alur itu untuk kartu "Siklus Dokumen & Syarat Lolos Gate" { success, source:'directus', gates:{[gate_key]:{mode,nama,message,hint,owner_role,bypass,checklist}}, available, partial?, reason? }
 //                    dibaca dari admin (cache 5 mnt per scope, token pemanggil diteruskan); gagal → available:false (kartu tetap tampil tanpa detail)
 //   ?kendala=<kata> -> pencarian cepat kendala/gate/syarat lintas alur { success, hits:[{flow_id,flow_title,node_id,node_label,kind,snippet}] } (maks. 12; tanpa mengunduh alur)
+//   ?tahap=1 -> widget "Panduan SOP Tahap Ini": { success, source:'directus', stages:[...], flows:[{id,title,sop_code,kategori_sop,sub_kategori,tahap_proyek,approval_status,sosialisasi_end_date,node_count}] }
+//                (hanya alur ber-tahap_proyek; tak ada → stages & flows kosong)
 //   (tanpa param) -> semua alur lengkap, seperti semula  { success, source:'directus', flows }
 //   Directus gagal -> { success: true, source: 'fallback', flows: [] } → klien memakai salinan lokal (processGuidance.ts)
 import { json } from '@sveltejs/kit';
@@ -16,6 +18,7 @@ import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { loadPublishedFlowsForField } from '$lib/server/processGuidanceFlows';
 import { summarizeFlow } from '$lib/utils/processMyTasks';
 import { loadHandoffConfig } from '$lib/server/processHandoffConfig';
+import { loadProjectStagesConfig } from '$lib/server/processProjectStagesConfig';
 import { buildChain } from '$lib/utils/processHandoffChain';
 import { loadGateInfoForFlow } from './gateInfo';
 import { searchKendala, MIN_QUERY } from './kendalaSearch';
@@ -39,6 +42,27 @@ export const GET: RequestHandler = async (event) => {
 			if (!flow) return json({ success: false, error: 'Alur tidak ditemukan.' }, { status: 404 });
 			const info = await loadGateInfoForFlow(flow, event.request?.headers?.get('authorization') || '');
 			return json({ success: true, source: 'directus', ...info });
+		}
+		// ?tahap=1: HANYA alur ber-tahap_proyek (ringkas, tanpa definisi) + daftar tahap. Tak ada alur bertahap → kosong
+		// (klien tidak perlu membaca data proyek sama sekali).
+		if (params.get('tahap') === '1') {
+			const staged = flows.filter((f) => Array.isArray(f.tahap_proyek) && f.tahap_proyek.length > 0);
+			return json({
+				success: true,
+				source: 'directus',
+				stages: staged.length ? await loadProjectStagesConfig() : [],
+				flows: staged.map((f) => ({
+					id: f.id,
+					title: f.title,
+					sop_code: f.sop_code,
+					kategori_sop: f.kategori_sop,
+					sub_kategori: f.sub_kategori,
+					tahap_proyek: f.tahap_proyek,
+					approval_status: f.approval_status,
+					sosialisasi_end_date: f.sosialisasi_end_date,
+					node_count: f.nodes.length
+				}))
+			});
 		}
 		if (kendala !== null) return json({ success: true, hits: searchKendala(flows, kendala) });
 		const id = params.get('id');
