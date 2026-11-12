@@ -15,7 +15,7 @@ const intOrNull = (v: unknown, max: number) => {
 };
 
 /** Ringkas user-agent: OS + browser saja (tanpa versi build panjang). */
-export function ringkasAgen(ua: string | null): string | null {
+export function _ringkasAgen(ua: string | null): string | null {
 	if (!ua) return null;
 	const os = /Android\s[\d.]+/.exec(ua)?.[0] || /iPhone OS [\d_]+/.exec(ua)?.[0]?.replace(/_/g, '.') || (/Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : 'OS?');
 	const br = /(Chrome|Firefox|Safari|Edg)\/(\d+)/.exec(ua);
@@ -36,7 +36,7 @@ export const POST: RequestHandler = async (event) => {
 				ukuran_hasil_kb: intOrNull(b.ukuran_hasil_kb, 200_000),
 				perangkat_lemah: b.perangkat_lemah === true,
 				jaringan: ['slow', 'normal'].includes(b.jaringan) ? b.jaringan : 'unknown',
-				agen: ringkasAgen(event.request.headers.get('user-agent')),
+				agen: _ringkasAgen(event.request.headers.get('user-agent')),
 				konteks: (KONTEKS as readonly string[]).includes(b.konteks) ? b.konteks : null
 			})
 		});

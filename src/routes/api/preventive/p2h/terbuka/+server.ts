@@ -14,7 +14,7 @@ import { writeGateAudit } from '$lib/server/gates/gateAudit';
 
 // PMT-49 §4.3 — gate SHADOW: peringatan "sesi lama belum ditutup" + jejak di gate_audit_log. TIDAK menahan P2H baru
 // (kenaikan ke soft = keputusan terpisah setelah angka kepatuhan). Mode diatur Superadmin di erp-epi /settings/gates.
-export const GATE_SESI_LAMA = 'G_P2H_SESI_LAMA_TERBUKA';
+const GATE_SESI_LAMA = 'G_P2H_SESI_LAMA_TERBUKA';
 const LOG_THROTTLE_MS = 6 * 60 * 60 * 1000;
 const recentLogs = new Map<string, number>();
 const wibToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);

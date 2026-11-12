@@ -6,7 +6,7 @@
 	import { onMount } from 'svelte';
 	import { getActiveDepartmentSanctions, type SanksiKaryawan } from '$lib/services/sanksi';
 	import IconAlertTriangle from '@tabler/icons-svelte/icons/alert-triangle';
-	import IconShieldAlert from '@tabler/icons-svelte/icons/shield-alert';
+	import IconShieldAlert from '@tabler/icons-svelte/icons/shield-exclamation';
 	import IconFileText from '@tabler/icons-svelte/icons/file-text';
 	import IconArrowRight from '@tabler/icons-svelte/icons/arrow-right';
 

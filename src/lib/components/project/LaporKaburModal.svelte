@@ -2,7 +2,7 @@
 <!-- Modal Lapangan untuk Pelaporan Manpower Kabur / Mangkir Fatal (Fase 2) -->
 <script lang="ts">
 	import { fade, slide } from 'svelte/transition';
-	import { IconAlertTriangle, IconLoader2, IconX, IconShieldAlert } from '@tabler/icons-svelte';
+	import { IconAlertTriangle, IconLoader2, IconX, IconShieldExclamation as IconShieldAlert } from '@tabler/icons-svelte';
 	import { laporManpowerKabur } from '$lib/services/manpowerAssignment';
 
 	let {

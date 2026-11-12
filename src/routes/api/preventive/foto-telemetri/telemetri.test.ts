@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const dx = vi.fn();
 vi.mock('$lib/server/directus', () => ({ directusServerJson: (...a: any[]) => dx(...a) }));
 vi.mock('$lib/server/firebaseAuth', () => ({ requireUser: async () => ({ localId: 'u', email: 'a@x.id' }) }));
-const { POST, ringkasAgen } = await import('./+server');
+const { POST, _ringkasAgen: ringkasAgen } = await import('./+server');
 
 const call = async (body: any, ua = 'Mozilla/5.0 (Linux; Android 11; SM-A125F) AppleWebKit/537.36 Chrome/118.0.0.0 Mobile Safari/537.36') =>
 	(await (POST as any)({ request: { json: async () => body, headers: new Headers({ 'user-agent': ua }) } })).json();

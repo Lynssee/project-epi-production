@@ -920,6 +920,7 @@ export async function createCheckin(
 		}
 		throw e;
 	}
+}
 
 	// Paket 02 §3.10: baris ini LEBIH TUA dari check-in yang sedang aktif (replay offline
 	// terlambat) — tutup langsung tepat saat yang aktif mulai, supaya tidak ada 2 baris

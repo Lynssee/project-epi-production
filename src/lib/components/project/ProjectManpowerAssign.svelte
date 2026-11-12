@@ -863,7 +863,7 @@
 
 <!-- ── Tanda Tangan SPK Modal ── -->
 {#if ttdLinkTarget}
-  <SpkTtdLinkModal assignment={ttdLinkTarget} namaManpower={nama(ttdLinkTarget)} kruKandidat={kruDari(ttdLinkTarget)} on:close={() => (ttdLinkTarget = null)} on:changed={() => load()} />
+  <SpkTtdLinkModal assignment={ttdLinkTarget} namaManpower={nama(ttdLinkTarget)} kruKandidat={kruDari(ttdLinkTarget)} onclose={() => (ttdLinkTarget = null)} onchanged={() => load()} on:close={() => (ttdLinkTarget = null)} on:changed={() => load()} />
 {/if}
 
 {#if showSignModal && signTarget}

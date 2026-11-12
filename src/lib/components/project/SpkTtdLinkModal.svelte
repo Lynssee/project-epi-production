@@ -3,26 +3,45 @@
      Jalur: kirim tautan WA / salin tautan / tanda tangan di perangkat ini (kiosk) / dispensasi / cabut. -->
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
-  import { toast } from 'svelte-sonner';
   import { buatLinkSpk, daftarLinkSpk, cabutLinkSpk, dispensasiSpk } from '$lib/services/spkTtdLinkApi';
 
-  /** @type {{ id:number, nomor_spk?:string }} */
-  export let assignment;
-  export let namaManpower = '';
-  /** Anggota kru proyek yang sama (selain pemilik SPK): [{ manpowerId, nama }] — untuk pakta tata tertib tanpa harga. */
-  export let kruKandidat = [];
+  // Pola toast global repo ini: Toast.svelte lewat window.__showToast (bukan svelte-sonner)
+  const toast = {
+    success: (m) => typeof window !== 'undefined' && window.__showToast?.(m, 'success'),
+    error: (m) => typeof window !== 'undefined' && window.__showToast?.(m, 'error'),
+    info: (m) => typeof window !== 'undefined' && window.__showToast?.(m, 'info'),
+    warning: (m) => typeof window !== 'undefined' && (window.__showToast?.(m, 'info') || window.__showToast?.(m, 'error'))
+  };
+
+  let {
+    assignment,
+    namaManpower = '',
+    kruKandidat = [],
+    onclose,
+    onchanged
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let loading = true;
-  let aktif = true;
-  let links = [];
-  let busy = '';
-  let urlBaru = '';
-  let info = '';
-  let alasan = '';
-  let tampilDispensasi = false;
-  let kruId = '';
+  function triggerClose() {
+    if (typeof onclose === 'function') onclose();
+    dispatch('close');
+  }
+
+  function triggerChanged() {
+    if (typeof onchanged === 'function') onchanged();
+    dispatch('changed');
+  }
+
+  let loading = $state(true);
+  let aktif = $state(true);
+  let links = $state([]);
+  let busy = $state('');
+  let urlBaru = $state('');
+  let info = $state('');
+  let alasan = $state('');
+  let tampilDispensasi = $state(false);
+  let kruId = $state('');
 
   const fmt = (d) => (d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-');
 
@@ -108,8 +127,8 @@
     busy = '';
     if (!r.success) { toast.error(r.error || 'Gagal menyimpan dispensasi'); return; }
     toast.success('SPK diaktifkan dengan dispensasi');
-    dispatch('changed');
-    dispatch('close');
+    triggerChanged();
+    triggerClose();
   }
 </script>
 
@@ -120,7 +139,7 @@
         <h3 class="font-bold text-gray-900">TTD SPK via Tautan</h3>
         <p class="text-xs text-gray-500">{namaManpower || 'Manpower'} · {assignment.nomor_spk || `#${assignment.id}`}</p>
       </div>
-      <button class="text-gray-400 hover:text-gray-600 p-1" on:click={() => dispatch('close')} aria-label="Tutup">✕</button>
+      <button class="text-gray-400 hover:text-gray-600 p-1" onclick={triggerClose} aria-label="Tutup">✕</button>
     </div>
 
     <div class="p-4 space-y-4 text-sm">
@@ -137,9 +156,9 @@
         <div class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">Fitur TTD via tautan belum aktif. Gunakan tombol ✍️ TTD di layar, atau minta Lead mengaktifkannya.</div>
       {:else}
         <div class="grid grid-cols-1 gap-2">
-          <button class="px-3 py-2.5 rounded-xl bg-white border border-gray-300 hover:bg-gray-50 font-semibold text-xs disabled:opacity-50" disabled={!!busy} on:click={() => buat({ kirimWa: false })}
+          <button class="px-3 py-2.5 rounded-xl bg-white border border-gray-300 hover:bg-gray-50 font-semibold text-xs disabled:opacity-50" disabled={!!busy} onclick={() => buat({ kirimWa: false })}
             title="Membuat tautan lalu menyalinnya — kirim sendiri lewat chat lain">{busy === 'salin' ? 'Membuat…' : '🔗 Buat & salin tautan'}</button>
-          <button class="px-3 py-2.5 rounded-xl bg-white border border-gray-300 hover:bg-gray-50 font-semibold text-xs disabled:opacity-50" disabled={!!busy} on:click={kiosk}
+          <button class="px-3 py-2.5 rounded-xl bg-white border border-gray-300 hover:bg-gray-50 font-semibold text-xs disabled:opacity-50" disabled={!!busy} onclick={kiosk}
             title="Mandor tidak punya kuota/HP? Buka tautan di perangkat ini dan serahkan ke mandor. Tanpa OTP; pembuat tercatat.">{busy === 'kiosk' ? 'Membuka…' : '📱 Tanda tangan di perangkat ini (mandor tanpa HP/kuota)'}</button>
         </div>
 
@@ -152,7 +171,7 @@
               {#each kruKandidat as k (k.manpowerId)}<option value={String(k.manpowerId)}>{k.nama}</option>{/each}
             </select>
             <div class="flex flex-wrap gap-2">
-              <button class="px-3 py-2 rounded-lg bg-white border border-gray-300 hover:bg-gray-50 font-semibold text-xs disabled:opacity-50" disabled={!!busy || !kruId} on:click={() => buatPakta({ kirimWa: false })}>{busy === 'pakta' ? 'Membuat…' : '🔗 Buat & salin tautan pakta'}</button>
+              <button class="px-3 py-2 rounded-lg bg-white border border-gray-300 hover:bg-gray-50 font-semibold text-xs disabled:opacity-50" disabled={!!busy || !kruId} onclick={() => buatPakta({ kirimWa: false })}>{busy === 'pakta' ? 'Membuat…' : '🔗 Buat & salin tautan pakta'}</button>
             </div>
           </div>
         {/if}
@@ -161,8 +180,8 @@
           <div class="space-y-1">
             <div class="text-xs text-gray-600">{info}</div>
             <div class="flex gap-2">
-              <input readonly class="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-xs font-mono" value={urlBaru} on:focus={(e) => e.currentTarget.select()} />
-              <button class="px-3 py-1.5 text-xs font-semibold border border-gray-300 rounded-lg hover:bg-gray-50" on:click={() => salin(urlBaru)}>Salin</button>
+              <input readonly class="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-xs font-mono" value={urlBaru} onfocus={(e) => e.currentTarget.select()} />
+              <button class="px-3 py-1.5 text-xs font-semibold border border-gray-300 rounded-lg hover:bg-gray-50" onclick={() => salin(urlBaru)}>Salin</button>
             </div>
             <div class="text-[11px] text-amber-700">Tautan hanya ditampilkan sekarang (OTP dikirim otomatis ke WhatsApp mandor saat tautan dibuka). Jangan dibagikan ke orang lain.</div>
           </div>
@@ -171,7 +190,7 @@
         <div>
           <div class="flex items-center justify-between mb-1">
             <span class="text-xs font-semibold text-gray-700">Riwayat tautan</span>
-            <button class="text-[11px] text-red-600 hover:underline disabled:opacity-40" disabled={!!busy || !links.some((l) => !l.dicabut && !l.digunakan_at)} on:click={cabut}>Cabut semua tautan aktif</button>
+            <button class="text-[11px] text-red-600 hover:underline disabled:opacity-40" disabled={!!busy || !links.some((l) => !l.dicabut && !l.digunakan_at)} onclick={cabut}>Cabut semua tautan aktif</button>
           </div>
           {#if loading}
             <div class="text-xs text-gray-400">Memuat…</div>
@@ -191,14 +210,14 @@
         </div>
 
         <div class="border-t border-gray-100 pt-3">
-          <button class="text-xs font-semibold text-gray-600 hover:underline" on:click={() => (tampilDispensasi = !tampilDispensasi)}>
+          <button class="text-xs font-semibold text-gray-600 hover:underline" onclick={() => (tampilDispensasi = !tampilDispensasi)}>
             {tampilDispensasi ? '▾' : '▸'} Mandor benar-benar tidak bisa TTD? Gunakan dispensasi
           </button>
           {#if tampilDispensasi}
             <div class="mt-2 space-y-2">
               <p class="text-[11px] text-gray-500">SPK diaktifkan tanpa tanda tangan manpower. Alasan wajib dan tercatat permanen (beserta nama Anda).</p>
               <textarea rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs" placeholder="Contoh: mandor di lokasi tanpa sinyal, SPK dibacakan langsung oleh PL" bind:value={alasan}></textarea>
-              <button class="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold disabled:opacity-50" disabled={!!busy || alasan.trim().length < 10} on:click={dispensasi}>{busy === 'disp' ? 'Menyimpan…' : 'Aktifkan SPK dengan dispensasi'}</button>
+              <button class="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold disabled:opacity-50" disabled={!!busy || alasan.trim().length < 10} onclick={dispensasi}>{busy === 'disp' ? 'Menyimpan…' : 'Aktifkan SPK dengan dispensasi'}</button>
             </div>
           {/if}
         </div>
