@@ -10,6 +10,11 @@
 	import { IconAlertTriangle, IconArrowLeft, IconCheck, IconClock, IconFileText, IconLoader2, IconPaperclip, IconWifiOff } from '@tabler/icons-svelte';
 
 	const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_API_URL;
+	const ERP_BASE_URL =
+		import.meta.env.VITE_ERP_EPI1_BASE_URL ||
+		(typeof window !== 'undefined' && window.location.hostname.includes('localhost')
+			? 'http://localhost:9392'
+			: 'https://internal.eltamaprimaindo.com');
 
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -123,10 +128,22 @@
 			</div>
 		{/if}
 		<div class="glass-panel rounded-2xl p-5 space-y-4">
-			<div>
+			<div class="flex flex-wrap items-start justify-between gap-3">
+				<div>
 				<h1 class="text-xl font-extrabold">{sop.title}</h1>
 				<p class="text-xs mt-1" style="color: var(--sys-label3)">{sop.department || '-'} · Versi {sop.version} · Berlaku sejak {sop.effective_date || sop.last_updated || '-'}</p>
 			</div>
+			<a
+				href={`${ERP_BASE_URL}/print/sop/${sop.sop_code || sop.id}?format=quicksheet`}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="px-3 py-1.5 rounded-xl text-xs font-bold text-white gradient-bg flex items-center gap-1.5 shadow-md hover:opacity-90 transition-opacity shrink-0"
+				title="Buka atau Cetak Lembar Kerja Field Quick-Sheet A4"
+			>
+				<span>📄</span>
+				<span>Cetak Field Quick-Sheet (A4)</span>
+			</a>
+		</div>
 
 			{#if sop.keterangan}
 				<p class="text-sm" style="color: var(--sys-label2)">{sop.keterangan}</p>

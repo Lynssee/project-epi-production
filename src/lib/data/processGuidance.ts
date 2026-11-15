@@ -103,6 +103,8 @@ export interface ProcessFlow {
 	sop_code?: string;
 	kategori_sop?: 'master' | 'induk' | 'turunan';
 	sub_kategori?: string;
+	/** Kunci tahap proyek tempat alur ini relevan (kolom tahap_proyek; kosong = tidak terikat tahap). */
+	tahap_proyek?: string[];
 	approval_status?: string;
 	external_flowchart_url?: string;
 	external_doc_url?: string;

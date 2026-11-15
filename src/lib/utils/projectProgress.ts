@@ -78,6 +78,76 @@ export function calculateProjectProgressPercentage(project: any): number {
 	return Math.min(100, Math.max(0, total));
 }
 
+function toDateKey(value: any): string | null {
+	const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(value ?? ''));
+	return m ? m[1] : null;
+}
+
+export function computeHierarchicalPlannedProgress(categories: any[], todayKey: string): number | null {
+	let totalCat = 0;
+	let validCats = 0;
+	let hasPlan = false;
+	(categories || []).forEach((cat: any) => {
+		const subtasks = (cat.subtasks || []).filter((sub: any) =>
+			sub.executor_type !== 'external_prereq' &&
+			((parseFloat(sub.bobot_pct) || 0) !== 0 || !sub.wajib_key)
+		);
+		if (subtasks.length === 0) return;
+		let totalSub = 0;
+		subtasks.forEach((sub: any) => {
+			const plan = sub.daily_plan || {};
+			let planAll = 0;
+			let planToDate = 0;
+			Object.keys(plan).forEach((k: string) => {
+				const v = parseFloat(plan[k]) || 0;
+				planAll += v;
+				if (/^\d{4}-\d{2}-\d{2}/.test(k) && k.slice(0, 10) <= todayKey) planToDate += v;
+			});
+			if (planAll > 0) hasPlan = true;
+			const subVol = parseFloat(sub.volume) || 0;
+			const targetVol = subVol > 0 ? subVol : planAll;
+			totalSub += targetVol > 0 ? Math.min(100, (planToDate / targetVol) * 100) : 0;
+		});
+		totalCat += totalSub / subtasks.length;
+		validCats++;
+	});
+	return hasPlan && validCats > 0 ? totalCat / validCats : null;
+}
+
+export function calculateProjectPlannedPercentage(project: any, now: Date = new Date()): number | null {
+	if (!project) return null;
+	if (isTerminalStatus(project.status)) return 100;
+	const statusKey = normalizeStatusKey(project.status);
+	if (statusKey === 'waiting' || statusKey === 'draft') return 0;
+
+	const pad = (n: number) => String(n).padStart(2, '0');
+	const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+	const startKey = toDateKey(project.start_date);
+	const endKey = toDateKey(project.end_date);
+	if (startKey && todayKey < startKey) return 0;
+
+	let planning = project.timeline_planning;
+	if (typeof planning === 'string') {
+		try { planning = JSON.parse(planning); } catch { planning = null; }
+	}
+	const fromCurve = computeHierarchicalPlannedProgress(planning?.categories, todayKey);
+	if (fromCurve !== null) return parseFloat(fromCurve.toFixed(2));
+
+	if (!startKey || !endKey) return null;
+	const dayMs = 86400000;
+	const toMs = (k: string) => Date.parse(`${k}T00:00:00Z`);
+	const total = (toMs(endKey) - toMs(startKey)) / dayMs + 1;
+	if (!(total > 0)) return null;
+	const elapsed = (toMs(todayKey) - toMs(startKey)) / dayMs + 1;
+	return parseFloat(Math.min(100, Math.max(0, (elapsed / total) * 100)).toFixed(2));
+}
+
+export function calculateProjectDeviation(project: any, now: Date = new Date()): number | null {
+	const planned = calculateProjectPlannedPercentage(project, now);
+	if (planned === null) return null;
+	return parseFloat((calculateProjectProgressPercentage(project) - planned).toFixed(2));
+}
+
 function isActivityMatch(activityName: string, reportActivity: string): boolean {
 	if (!activityName || !reportActivity) return false;
 	const normalize = (str: string) => String(str).toLowerCase().replace(/[^a-z0-9]/g, '');

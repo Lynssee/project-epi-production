@@ -336,9 +336,10 @@
 
 			const userName = ($authStore?.user as any)?.first_name || 'Project Leader';
 
+			const kunciPesan = new Set<string>();
 			await Promise.all(
 				toSave.map(async (w) => {
-					await upsertTimesheetAbsensi({
+					const r: any = await upsertTimesheetAbsensi({
 						assignmentId: w.assignmentId,
 						manpowerId: w.manpowerId,
 						projectId: Number(projectId),
@@ -350,12 +351,25 @@
 						notes: w.notes,
 						status: w.status,
 						foto_masuk: fotoId,
+						jam_masuk: `${selectedDate}T08:00:00.000Z`,
+						jam_pulang: w.jam > 0 ? `${selectedDate}T17:00:00.000Z` : null,
+						metode_catat: 'leader',
+						verifikasi_leader_status: 'disetujui',
+						verifikasi_oleh_user: userName,
+						masuk_valid: true,
+						jarak_masuk_m: 0,
 						dicatatOleh: userName,
 						dobelProyekFlag: !!w.otherProjectConflict,
 						dobelProyekProyekLainId: w.otherProjectConflict?.id
 					});
+					if (r?.lockedPA) kunciPesan.add(`${w.nama || 'Pekerja'}: ${r.error}`);
+					else if (r?.peringatanPA) kunciPesan.add(`${w.nama || 'Pekerja'}: ${r.peringatanPA}`);
 				})
 			);
+			if (kunciPesan.size > 0) {
+				const daftar = [...kunciPesan].slice(0, 5).join('\n');
+				alert(`Perhatian — ${kunciPesan.size} pekerja menyangkut hari yang sudah ditagih di PA yang berjalan:\n${daftar}`);
+			}
 
 			onSuccess();
 
@@ -414,9 +428,17 @@
 				ot_hours: form.ot_hours,
 				is_standby: form.is_standby,
 				status: form.is_standby ? 'standby' : (form.jam === 4 ? 'setengah_hari' : 'hadir'),
+				jam_masuk: `${form.tanggal}T08:00:00.000Z`,
+				jam_pulang: form.jam > 0 ? `${form.tanggal}T17:00:00.000Z` : null,
+				metode_catat: 'leader',
+				verifikasi_leader_status: 'disetujui',
+				verifikasi_oleh_user: userName,
+				masuk_valid: true,
+				jarak_masuk_m: 0,
 				dicatatOleh: userName
 			});
 			if (res.success) {
+				if ((res as any).peringatanPA) alert((res as any).peringatanPA);
 				onSuccess();
 			} else {
 				alert(res.error || 'Gagal menyimpan absensi');

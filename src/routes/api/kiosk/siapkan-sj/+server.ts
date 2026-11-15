@@ -12,13 +12,16 @@ import { requireKioskSession } from '$lib/server/kioskAuth';
 import { requireKioskMenu } from '$lib/server/kioskMenuAccess';
 import { directusServerJson } from '$lib/server/directus';
 import { decidePracetakAction } from '$lib/server/sjPracetakRule';
+import { sortSjItemsLikePl } from '$lib/utils/sjItemOrder.js';
 
 const SJ_FIELDS = 'id,nomor_sj,status,print_count,reprint_status,pracetak_gudang,delivery_address';
 
 async function loadItems(sjId: number) {
-	return (await directusServerJson<{ data: any[] }>(
-		`/items/surat_jalan_items?filter[surat_jalan_id][_eq]=${sjId}&fields=id,nama_barang,qty_delivered,qty_required,unit&sort=id&limit=-1`
+	const rows = (await directusServerJson<{ data: any[] }>(
+		`/items/surat_jalan_items?filter[surat_jalan_id][_eq]=${sjId}&fields=id,nama_barang,qty_delivered,qty_required,unit,packing_list_item_id&sort=id&limit=-1`
 	).catch(() => ({ data: [] as any[] })))?.data || [];
+	// PDI-67: urutan baris SJ = urutan baris Packing List (tanpa PL: urutan input).
+	return sortSjItemsLikePl(rows);
 }
 
 export const GET: RequestHandler = async (event) => {
@@ -63,6 +66,9 @@ export const POST: RequestHandler = async (event) => {
 		by: session.karyawanId,
 		by_name: session.nama,
 		at: new Date().toISOString(),
+		// PDI-66: sama dengan endpoint admin — konfirmasi tanpa foto wajib; cetak SJ menulis "dikonfirmasi di sistem".
+		// Otorisasi posisi di kiosk = menu `siapkan_sj` (requireKioskMenu di atas), bukan daftar jabatan admin.
+		metode: 'konfirmasi',
 		signature_file: null,
 		checklist: ['Barang sudah terkumpul di area muat', ...(catatan ? [catatan] : [])],
 		source: 'kiosk'

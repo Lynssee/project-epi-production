@@ -84,6 +84,18 @@
 			Plafon mandiri bukan uang gratis: semua pengajuan otomatis tetap diaudit, nota wajib diunggah maks H+3.
 			Kategori yang boleh mandiri: {(data.kategoriDiizinkan || []).join(', ') || '—'}.
 		</div>
+
+		{#if data.safeSpendZone === 'talangan'}
+			<div class="mt-2 p-1.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-[10.5px] flex items-center gap-1.5 leading-tight">
+				<span class="text-xs shrink-0">🛡️</span>
+				<span><strong>Zona Talangan Kantor:</strong> {data.safeSpendNotice || 'Kas proyek saat ini mengandalkan talangan kantor. Utamakan belanja operasional primer (material & upah).'}</span>
+			</div>
+		{:else if data.safeSpendZone === 'mandiri'}
+			<div class="mt-2 p-1.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-900 dark:text-emerald-200 text-[10.5px] flex items-center gap-1.5 leading-tight">
+				<span class="text-xs shrink-0">🟢</span>
+				<span><strong>Arus Kas Mandiri:</strong> {data.safeSpendNotice || 'Kas proyek surplus mandiri. Pengeluaran berjalan aman dalam koridor pagu.'}</span>
+			</div>
+		{/if}
 	</div>
 {:else if loading}
 	<p class="text-[11px] text-slate-400 mt-1.5">Memeriksa plafon mandiri…</p>

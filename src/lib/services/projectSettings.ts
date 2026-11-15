@@ -224,6 +224,21 @@ export const PROJECT_SETTINGS_DEFAULTS: ProjectSettingsMap = {
 	// (erp-epi-1) projectSettings.js: nilai sama, jangan diubah sepihak. Additive murni —
 	// hanya memvisualisasikan gate yang sudah ada, tidak menambah gate baru. Default OFF.
 	'project.wizard.enabled': false,
+	// Persen target durasi fase tempat penanda kuning "mendekati target" muncul di wizard (tampilan saja, bukan gate).
+	'project.wizard.timing_warn_pct': 80,
+	// Kesiapan Dokumentasi Lapangan (kartu di halaman proyek leader) — TAMPILAN saja, bukan gate.
+	'project.field_dossier.enabled': true,
+	'project.field_dossier.window_days': 7, // jendela hari kalender terakhir (hari ini tidak dihitung)
+	'project.field_dossier.off_weekdays': [0], // hari libur mingguan, 0 = Minggu ... 6 = Sabtu
+	'project.field_dossier.ok_pct': 90, // >= ini hijau
+	'project.field_dossier.warn_pct': 60, // >= ini kuning, di bawahnya merah
+	// Ambang lampu SLA antrean birokrasi di kartu PaStatusCard (lapangan) — TAMPILAN saja, tidak memblokir proses.
+	'project.field_birokrasi.sla_default_hours': 48, // PA tanpa SLA tahap & Packing List in-flight
+	'project.field_birokrasi.sla_draft_pl_hours': 24, // Packing List Draft belum diajukan (juga batas nudge draft tertunda)
+	'project.field_birokrasi.sla_local_purchase_hours': 24, // Pembelian Lokal menunggu approval
+	'project.field_birokrasi.sla_reimbursement_hours': 48, // Klaim Reimbursement menunggu review
+	'project.field_birokrasi.yellow_ratio': 0.5, // umur/SLA >= ini kuning; >= 1 merah
+	'project.field_dossier.lpj_grace_days': 7, // hari sejak dana cair sebelum LPJ yang belum masuk dihitung "lewat masa tenggang"
 	'project.wizard.phases': [
 		{
 			phase_key: 'inisiasi', phase_order: 1, phase_label: 'Inisiasi', phase_icon: '🚀', phase_color: '#3B82F6',
@@ -267,6 +282,118 @@ export const PROJECT_SETTINGS_DEFAULTS: ProjectSettingsMap = {
 			gate_type: 'closure_approval', checklist_items: [], pic_roles: ['admin', 'leader'], target_duration_days: 3, enabled: true
 		}
 	],
+	// --- Fase workshop (Ciketing) — SATU sumber dgn admin (erp-epi) projectSettings.js. Dipakai wizard lapangan
+	// bila project.workshop === 'ciketing'; dapat diubah superadmin lewat UI Settings > Project Management.
+	'project.wizard.phases_workshop': [
+		{
+			phase_key: 'inisiasi',
+			phase_order: 1,
+			phase_label: 'Inisiasi & Spek Benda Kerja',
+			phase_icon: '🚀',
+			phase_color: '#3B82F6',
+			description: 'Order workshop terdaftar, customer & spesifikasi benda kerja ditentukan',
+			hint_text: 'Pastikan SO / PO Jasa terhubung, customer terisi, serta dimensi & jenis pengerjaan (blasting/coating) terdata',
+			gate_type: 'auto',
+			checklist_items: [
+				{ id: 'so_linked', label: 'SO / PO Jasa terhubung', source: 'auto', wajib: true },
+				{ id: 'customer_set', label: 'Customer terisi', source: 'auto', wajib: true },
+				{ id: 'jenis_project_set', label: 'Jenis Pekerjaan ditentukan', source: 'auto', wajib: true }
+			],
+			pic_roles: ['admin', 'sales'],
+			target_duration_days: 2,
+			enabled: true
+		},
+		{
+			phase_key: 'perencanaan',
+			phase_order: 2,
+			phase_label: 'Perencanaan Workshop',
+			phase_icon: '📝',
+			phase_color: '#8B5CF6',
+			description: 'RAP workshop, spesifikasi coating & slot kerja disusun',
+			hint_text: 'Lengkapi Charter, RAP Konsolidasi Workshop, dan estimasi luasan m² sebelum pengerjaan dimulai',
+			gate_type: 'readiness',
+			checklist_items: [],
+			pic_roles: ['pm', 'admin'],
+			target_duration_days: 3,
+			enabled: true
+		},
+		{
+			phase_key: 'persiapan',
+			phase_order: 3,
+			phase_label: 'Inbound & Penerimaan Benda Kerja',
+			phase_icon: '📥',
+			phase_color: '#F59E0B',
+			description: 'Penerimaan fisik benda kerja customer di Workshop Ciketing & staging rak',
+			hint_text: 'Pastikan Surat Jalan Masuk (SJ Masuk) tercatat, fisik barang diverifikasi, dan ditempatkan di rak/zona staging',
+			gate_type: 'workshop_inbound',
+			checklist_items: [
+				{ id: 'ws_sj_masuk', label: 'Surat Jalan Masuk (Inbound) tercatat', source: 'auto', wajib: true },
+				{ id: 'ws_cek_fisik', label: 'Verifikasi fisik benda kerja & foto kedatangan', source: 'manual', wajib: true },
+				{ id: 'ws_staging_rak', label: 'Penempatan di Rak / Zona Staging Workshop', source: 'manual', wajib: false },
+				{ id: 'ws_kesiapan_bahan', label: 'Kesiapan Cat, Thinner, & Pasir di Gudang Ciketing', source: 'manual', wajib: true }
+			],
+			pic_roles: ['gudang', 'mandor', 'admin'],
+			target_duration_days: 2,
+			enabled: true
+		},
+		{
+			phase_key: 'eksekusi',
+			phase_order: 4,
+			phase_label: 'Produksi & Monitoring',
+			phase_icon: '⚙️',
+			phase_color: '#10B981',
+			description: 'Pengerjaan Sandblasting & Coating berjalan, laporan harian dipantau',
+			hint_text: 'Isi Laporan Harian Workshop Ciketing secara rutin — pantau progres Blasting Sa 2.5, Primer, Second, dan Topcoat',
+			gate_type: 'workshop_production',
+			checklist_items: [
+				{ id: 'ws_daily_report_active', label: 'Laporan Harian Workshop Ciketing terisi', source: 'auto', wajib: true },
+				{ id: 'ws_blasting_done', label: 'Pekerjaan Sandblasting (Sa 2.5) berjalan / selesai', source: 'auto', wajib: true },
+				{ id: 'ws_coating_done', label: 'Aplikasi Coating (Primer / Second / Topcoat) berjalan / selesai', source: 'auto', wajib: true },
+				{ id: 'ws_progress_100', label: 'Volume pengerjaan tercapai 100% atau target tanggal', source: 'auto', wajib: true }
+			],
+			pic_roles: ['leader', 'mandor', 'admin'],
+			target_duration_days: null,
+			enabled: true
+		},
+		{
+			phase_key: 'evaluasi',
+			phase_order: 5,
+			phase_label: 'QC & Pengujian DFT',
+			phase_icon: '🔬',
+			phase_color: '#6366F1',
+			description: 'Inspeksi kualitas, pengukuran DFT mikron, dan evaluasi hasil pengecatan',
+			hint_text: 'Lakukan uji ketebalan cat (DFT mikron), visual inspection Sa 2.5, dan evaluasi pemakaian bahan',
+			gate_type: 'workshop_qc',
+			checklist_items: [
+				{ id: 'ws_qc_submitted', label: 'Inspeksi QC / DFT Mikron diinput', source: 'auto', wajib: true },
+				{ id: 'ws_qc_passed', label: 'Hasil Inspeksi QC disetujui (Quality Pass)', source: 'auto', wajib: true },
+				{ id: 'ws_konsumsi_material', label: 'Rekonsiliasi konsumsi cat & pasir tercatat', source: 'manual', wajib: false }
+			],
+			pic_roles: ['qc', 'leader', 'admin'],
+			target_duration_days: 3,
+			enabled: true
+		},
+		{
+			phase_key: 'closing',
+			phase_order: 6,
+			phase_label: 'Delivery & Serah Terima',
+			phase_icon: '🚚',
+			phase_color: '#059669',
+			description: 'Surat Jalan Keluar (SJ Keluar), pengiriman barang jadi, dan BAST customer',
+			hint_text: 'Terbitkan Surat Jalan Keluar Ciketing, approval finance, pengiriman kembali ke customer, dan penandatanganan BAST',
+			gate_type: 'workshop_delivery',
+			checklist_items: [
+				{ id: 'ws_sj_keluar_created', label: 'Surat Jalan Keluar (SJ Keluar) diterbitkan', source: 'auto', wajib: true },
+				{ id: 'ws_sj_keluar_approved', label: 'SJ Keluar disetujui Finance & status terkirim', source: 'auto', wajib: true },
+				{ id: 'ws_bast_signed', label: 'BAST Serah Terima Benda Kerja selesai', source: 'manual', wajib: true },
+				{ id: 'closed', label: 'Status proyek closed', source: 'auto', wajib: true }
+			],
+			pic_roles: ['admin', 'finance', 'leader'],
+			target_duration_days: 3,
+			enabled: true
+		}
+	],
+
 
 	// --- Standarisasi Spek Teknis Subtask, BOM & Equipment per Fase, Forecast Kebutuhan ke
 	// Admin Dept, Mobilisasi Bertahap v2 (TAJAM), Fase 6 (dashboard lapangan) — SATU sumber,

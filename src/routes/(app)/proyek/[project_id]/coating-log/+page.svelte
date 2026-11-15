@@ -11,7 +11,7 @@
 	import { getProjectById } from '$lib/services/projects';
 	import { createCoatingLog, fetchProjectCoatingLogs } from '$lib/services/projectCoatingLogApi';
 	import { fetchGrandPoLapangan } from '$lib/services/grandPoLapangan';
-	import type { PilihanProduk } from '$lib/utils/grandPoLapangan';
+	import { poOptionsForProduct, type PilihanProduk } from '$lib/utils/grandPoLapangan';
 	import { IconArrowLeft, IconLoader2 } from '@tabler/icons-svelte';
 
 	let projectId = $derived($page.params.project_id as string);
@@ -27,6 +27,11 @@
 	let pilihanProduk = $state<PilihanProduk[]>([]);
 	let selectedProductId = $state('');
 	let pilihanError = $state('');
+	// Grand PO: PO material yang memasok produk terpilih (bila >1, operator memilih PO asal cat agar kuota per PO akurat).
+	let materialPo = $state<Array<{ so_id: number; nomor_po: string; items: any[] }>>([]);
+	let selectedSoId = $state('');
+	const poOptions = $derived(selectedProductId ? poOptionsForProduct(materialPo as any, Number(selectedProductId)) : []);
+	const nomorPoBySo = $derived(new Map(materialPo.map((m) => [m.so_id, m.nomor_po])));
 	const selectedProduk = $derived(pilihanProduk.find((p) => String(p.product_id) === selectedProductId) || null);
 
 	function onPilihProduk() {
@@ -35,6 +40,9 @@
 			form.productName = p.nama_barang;
 			form.satuan = p.unit; // satuan dikunci ke satuan PO agar rekonsiliasi konsisten
 		}
+		// Hanya 1 PO memasok produk ini → otomatis terisi; >1 → operator memilih (default kosong = "tidak tahu").
+		const opts = selectedProductId ? poOptionsForProduct(materialPo as any, Number(selectedProductId)) : [];
+		selectedSoId = opts.length === 1 ? String(opts[0].so_id) : '';
 	}
 
 	async function load() {
@@ -55,9 +63,11 @@
 		try {
 			const gp = await fetchGrandPoLapangan(Number(projectId));
 			pilihanProduk = gp?.pilihan_produk || [];
+			materialPo = (gp?.material || []) as any;
 		} catch (e) {
 			console.error('[coating-log] gagal memuat pilihan produk PO material:', e);
 			pilihanProduk = [];
+			materialPo = [];
 			pilihanError = 'Daftar produk PO material belum bisa dimuat — isi nama produk manual.';
 		}
 	}
@@ -74,6 +84,7 @@
 				supplierName: form.supplierName || undefined,
 				productName: form.productName || undefined,
 				productId: selectedProduk ? selectedProduk.product_id : undefined,
+				soCustomerId: selectedProduk && selectedSoId ? Number(selectedSoId) : undefined,
 				qtyUsed: form.qtyUsed ? Number(form.qtyUsed) : undefined,
 				satuan: form.satuan || undefined,
 				notes: form.notes || undefined,
@@ -81,6 +92,7 @@
 			});
 			form = { batchNo: '', supplierName: '', productName: '', qtyUsed: '', satuan: '', notes: '' };
 			selectedProductId = '';
+			selectedSoId = '';
 			showForm = false;
 			await load();
 		} finally {
@@ -122,6 +134,19 @@
 							{/each}
 						</select>
 						<p class="mt-1 text-[11px] text-gray-400">Pilih produk dari PO material customer agar pemakaian tercatat & terhitung di panel Dikirim vs Dipakai vs Sisa. Satuan otomatis mengikuti PO.</p>
+						{#if poOptions.length > 1}
+							<div class="mt-2" data-testid="coating-po-asal">
+								<select class="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-sm" bind:value={selectedSoId}>
+									<option value="">Tidak tahu / campur beberapa PO</option>
+									{#each poOptions as po (po.so_id)}
+										<option value={String(po.so_id)}>Dari PO {po.nomor_po}</option>
+									{/each}
+								</select>
+								<p class="mt-1 text-[11px] text-gray-400">Produk ini dipasok lebih dari satu PO. Pilih PO asal kaleng/pail yang dipakai agar sisa kuota tiap PO akurat; bila tidak tahu, biarkan kosong (dihitung per produk).</p>
+							</div>
+						{:else if poOptions.length === 1}
+							<p class="mt-1 text-[11px] text-emerald-600" data-testid="coating-po-auto">Otomatis dicatat ke PO {poOptions[0].nomor_po}.</p>
+						{/if}
 					</div>
 				{:else if pilihanError}
 					<p class="text-[11px] text-amber-600" data-testid="coating-pilihan-error">{pilihanError}</p>
@@ -146,7 +171,7 @@
 						<span class="text-gray-400">{log.date_applied}</span>
 					</div>
 					{#if log.product_name}<p class="mt-1 text-gray-600">{log.product_name}{log.supplier_name ? ` — ${log.supplier_name}` : ''}</p>{/if}
-					{#if log.qty_used}<p class="text-gray-400">{log.qty_used} {log.satuan || ''}</p>{/if}
+					{#if log.qty_used}<p class="text-gray-400">{log.qty_used} {log.satuan || ''}{log.so_customer_id && nomorPoBySo.get(Number(log.so_customer_id)) ? ` · PO ${nomorPoBySo.get(Number(log.so_customer_id))}` : ''}</p>{/if}
 				</div>
 			{:else}
 				<p class="text-xs text-gray-400">Belum ada catatan coating log.</p>

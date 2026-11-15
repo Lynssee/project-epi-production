@@ -22,7 +22,10 @@
 		IconFileText,
 		IconBook,
 		IconChevronRight,
-		IconAlertTriangle
+		IconAlertTriangle,
+		IconCalculator,
+		IconShieldCheck,
+		IconAlertCircle
 	} from '@tabler/icons-svelte';
 
 	type Tab = 'cari' | 'campur';
@@ -113,6 +116,11 @@
 		mixPicked = f;
 		mixQuery = f.kode_fg_nama;
 		mixResults = [];
+	}
+	function goToMix(namaKode: string) {
+		tab = 'campur';
+		mixQuery = namaKode;
+		onMixSearch();
 	}
 	const mixComponents = $derived.by((): MixComponent[] => {
 		if (!mixPicked || !mixTargetQty || parseFloat(mixTargetQty) <= 0) return [];
@@ -244,6 +252,20 @@
 									<p class="mt-0.5">Suhu permukaan substrat wajib ≥ Dew Point + 3°C (RH ≤ 85%). Habiskan adukan 2K dalam 1–1.5 jam (jangan tambah thinner jika sudah mengental).</p>
 								</div>
 							</div>
+
+							<!-- Rekomendasi APD K3 Lapangan -->
+							<div class="mt-2.5 p-2.5 rounded-lg text-[11px] bg-slate-50 border border-slate-200 dark:bg-slate-800/60 dark:border-slate-700/60 text-slate-800 dark:text-slate-200">
+								<div class="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-400 mb-1">
+									<IconShieldCheck size={15} />
+									<span>APD Wajib Keselamatan (K3):</span>
+								</div>
+								<p class="leading-relaxed text-slate-600 dark:text-slate-300">
+									Masker Respirator Kimia (Uap Organik), Kacamata Goggles, Sarung Tangan Nitrile tahan pelarut, dan Wearpack kerja.
+									{#if selected.spec.flash_point_celsius != null}
+										Titik Nyala (Flash Point): <strong>{selected.spec.flash_point_celsius}°C</strong> (Jauhkan dari percikan api &amp; rokok).
+									{/if}
+								</p>
+							</div>
 						</div>
 					{:else}
 						<p class="text-[11px] mt-2" style="color: var(--sys-label-2)">Belum ada panduan aplikasi tercatat untuk produk ini.</p>
@@ -251,19 +273,33 @@
 
 					<div class="flex flex-wrap gap-2 mt-3 pt-2" style="border-top: 1px solid var(--sys-sep)">
 						<button
-							class="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-semibold text-white"
+							class="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-semibold text-white bg-indigo-600 hover:bg-indigo-500"
+							onclick={() => goToMix(selected.namaKode)}
+							title="Buka kalkulator rasio pencampuran base & hardener"
+						>
+							<IconCalculator size={14} /> Hitung Campuran
+						</button>
+						<button
+							class="flex-1 min-w-[110px] flex items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-semibold text-white"
 							style="background: #2563EB"
 							onclick={() => goto('/panduan')}
 						>
 							<IconBook size={14} /> SOP Lapangan
 						</button>
+						<button
+							class="flex-1 min-w-[110px] flex items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800"
+							onclick={() => goto(`/support/baru?tipe=Komplain&departemen=QC%20%2F%20R%26D&judul=${encodeURIComponent('Kendala Aplikasi Cat: ' + selected.namaKode)}`)}
+							title="Laporkan masalah aplikasi (menggumpal, blistering, beda warna) ke tim QC/R&D"
+						>
+							<IconAlertCircle size={14} /> Lapor Kendala
+						</button>
 						{#if selected.tds?.tds_url}
-							<a href={selected.tds.tds_url} target="_blank" rel="noopener" class="flex-1 min-w-[90px] flex items-center justify-center gap-1 rounded-lg py-2 text-[12px] font-semibold text-white" style="background: var(--g)">
+							<a href={selected.tds.tds_url} target="_blank" rel="noopener" class="flex-1 min-w-[80px] flex items-center justify-center gap-1 rounded-lg py-2 text-[12px] font-semibold text-white" style="background: var(--g)">
 								<IconFileText size={14} /> TDS
 							</a>
 						{/if}
 						{#if selected.tds?.msds_url}
-							<a href={selected.tds.msds_url} target="_blank" rel="noopener" class="flex-1 min-w-[90px] flex items-center justify-center gap-1 rounded-lg py-2 text-[12px] font-semibold text-white" style="background: #DC2626">
+							<a href={selected.tds.msds_url} target="_blank" rel="noopener" class="flex-1 min-w-[80px] flex items-center justify-center gap-1 rounded-lg py-2 text-[12px] font-semibold text-white" style="background: #DC2626">
 								<IconFileText size={14} /> MSDS
 							</a>
 						{/if}

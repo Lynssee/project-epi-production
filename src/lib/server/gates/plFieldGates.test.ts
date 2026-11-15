@@ -170,8 +170,8 @@ describe('mode gate mengikuti Kalibrasi Gate', () => {
 		const fetcher = vi.fn(async () => ({ data: [{ id: 10, status: 'on progress' }] }));
 		const resolveMode = vi.fn(async () => 'shadow' as const);
 		const r = await evaluateFieldPLGatesFor([unlinked], fetcher, { resolveMode });
-		// 4 gate lama + 3 gate rasionalitas qty (COVERAGE_M2, TIMELINE_RUNRATE, SITE_STOCK_RECON) = FIELD_PL_GATE_KEYS.length
-		expect(resolveMode).toHaveBeenCalledTimes(7);
+		// 4 gate lama + G_PKL_MASTER_PRICE + 3 gate rasionalitas qty = FIELD_PL_GATE_KEYS.length
+		expect(resolveMode).toHaveBeenCalledTimes(8);
 		expect(r.blocking).toEqual([]);
 	});
 });
@@ -229,5 +229,61 @@ describe('loadTemplateFlags', () => {
 		const map = await loadTemplateFlags([1], vi.fn(async () => { throw new Error('HTTP 403'); }));
 		expect(map.size).toBe(0);
 		expect(spy).toHaveBeenCalled();
+	});
+});
+
+describe('G_PKL_MASTER_PRICE — harga master/RAB (hanya peringatan dari lapangan)', () => {
+	const priced = (rows: FieldPLRow[], prices: Array<[string, number]>, extra: any = {}) =>
+		evaluateFieldPLGates({ ...ctx('on progress', rows), priceById: new Map(prices), ...extra });
+	const mp = (r: ReturnType<typeof evaluateFieldPLGates>) => r.gates.find((g) => g.gate_key === 'G_PKL_MASTER_PRICE');
+
+	it('barang bertaut master tanpa harga → peringatan, tidak memblokir (APAR #21801)', () => {
+		const r = priced([row({ identitas_barang_id: 21801, material_name: 'APAR' })], [['21801', 0]]);
+		expect(r.warnings).toContain('G_PKL_MASTER_PRICE');
+		expect(r.blocking).toEqual([]);
+		expect(mp(r)?.status).toBe('failed');
+		expect(mp(r)?.message).toContain('APAR');
+		expect(mp(r)?.message).toContain('tetap bisa dikirim');
+	});
+
+	it('mode hard dari Kalibrasi Gate TETAP hanya peringatan di lapangan (harga = tanggung jawab Admin)', () => {
+		const r = priced([row({ identitas_barang_id: 21801, material_name: 'APAR' })], [['21801', 0]], { modes: { G_PKL_MASTER_PRICE: 'hard' } });
+		expect(r.blocking).toEqual([]);
+		expect(r.warnings).toContain('G_PKL_MASTER_PRICE');
+	});
+
+	it('shadow → tidak tampil, tercatat di shadowed', () => {
+		const r = priced([row({ identitas_barang_id: 21801 })], [['21801', 0]], { modes: { G_PKL_MASTER_PRICE: 'shadow' } });
+		expect(r.warnings).not.toContain('G_PKL_MASTER_PRICE');
+		expect(r.shadowed).toContain('G_PKL_MASTER_PRICE');
+	});
+
+	it('lulus bila master berharga atau harga RAB terisi', () => {
+		expect(mp(priced([row({ identitas_barang_id: 6 })], [['6', 239038]]))?.status).toBe('passed');
+		expect(mp(priced([row({ identitas_barang_id: 21801, unit_price: 285000 })], [['21801', 0]]))?.status).toBe('passed');
+		expect(mp(priced([row({ identitas_barang_id: 21801, planned_amount: 570000, qty: 2 })], [['21801', 0]]))?.status).toBe('passed');
+	});
+
+	it('alat, non-barang, non-katalog, dan harga tak dimuat tidak dinilai', () => {
+		const eq = priced([row({ identitas_barang_id: 19898 })], [['19898', 0]], { equipmentById: new Set(['19898']) });
+		expect(mp(eq)).toBeUndefined();
+		expect(mp(priced([row({ identitas_barang_id: 1, is_manpower: true })], [['1', 0]]))).toBeUndefined();
+		expect(mp(priced([row({ identitas_barang_id: null })], []))).toBeUndefined();
+		expect(mp(evaluateFieldPLGates(ctx('on progress', [row({ identitas_barang_id: 21801 })])))).toBeUndefined(); // priceById tak dimuat
+	});
+
+	it('evaluateFieldPLGatesFor: harga dari query stok yang sama; respons tanpa kolom harga / lookup gagal = tidak dinilai', async () => {
+		const mk = (stock: any[] | Error) => vi.fn(async (path: string) => {
+			if (path.includes('/items/projects')) return { data: [{ id: 10, status: 'on progress' }] };
+			if (stock instanceof Error) throw stock;
+			return { data: stock };
+		});
+		const withPrice = await evaluateFieldPLGatesFor([row({ identitas_barang_id: 21801, material_name: 'APAR' })], mk([{ id: 21801, stok_tersedia: 5, avg_cost: null, harga_beli: 0, harga: null, is_borrowable: false, id_equipment: null }]));
+		expect(withPrice.warnings).toContain('G_PKL_MASTER_PRICE');
+		const noCols = await evaluateFieldPLGatesFor([row({ identitas_barang_id: 21801 })], mk([{ id: 21801, stok_tersedia: 5 }]));
+		expect(noCols.gates.find((g) => g.gate_key === 'G_PKL_MASTER_PRICE')).toBeUndefined();
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		const failed = await evaluateFieldPLGatesFor([row({ identitas_barang_id: 21801 })], mk(new Error('boom')));
+		expect(failed.gates.find((g) => g.gate_key === 'G_PKL_MASTER_PRICE')).toBeUndefined();
 	});
 });

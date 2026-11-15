@@ -164,3 +164,30 @@ test('G_LH_ANTI_SALIN not_applicable tanpa previousReport, failed (WARN) kalau n
 	assert.equal(g?.status, 'failed');
 	assert.equal(g?.severity, 'WARN');
 });
+
+test('G_FLD_MANPOWER_ATTENDANCE_CONFIRMED gagal jika ada pekerja aktif SPK tapi 0 kehadiran dikonfirmasi', () => {
+	const { gates } = evaluateLaporanHarianRules(baseSnapshot({
+		assigned_workers_count: 5,
+		manpower: [{ role: 'Tukang', count: 5, workers: [] }]
+	}));
+	const g = gates.find((g) => g.gate_key === 'G_FLD_MANPOWER_ATTENDANCE_CONFIRMED');
+	assert.equal(g?.status, 'failed');
+	assert.equal(g?.severity, 'WARN');
+	assert.ok(g?.message.includes('5 pekerja aktif di SPK'));
+});
+
+test('G_FLD_MANPOWER_ATTENDANCE_CONFIRMED passed jika pekerja aktif SPK diabsenkan', () => {
+	const { gates } = evaluateLaporanHarianRules(baseSnapshot({
+		assigned_workers_count: 5,
+		manpower: [{ role: 'Tukang', count: 5, workers: [{ id: 1, nama: 'Budi' }] }]
+	}));
+	const g = gates.find((g) => g.gate_key === 'G_FLD_MANPOWER_ATTENDANCE_CONFIRMED');
+	assert.equal(g?.status, 'passed');
+	assert.ok(g?.message.includes('1 dari 5 pekerja SPK terkonfirmasi'));
+});
+
+test('G_FLD_MANPOWER_ATTENDANCE_CONFIRMED not_applicable jika tidak ada penugasan pekerja aktif', () => {
+	const { gates } = evaluateLaporanHarianRules(baseSnapshot({ assigned_workers_count: 0 }));
+	const g = gates.find((g) => g.gate_key === 'G_FLD_MANPOWER_ATTENDANCE_CONFIRMED');
+	assert.equal(g?.status, 'not_applicable');
+});

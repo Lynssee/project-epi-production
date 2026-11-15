@@ -14,6 +14,35 @@
 export const DEFAULT_SLA_HOURS = 48;
 const HOUR = 3_600_000;
 
+/**
+ * Ambang SLA birokrasi — diatur Admin lewat setelan project.field_birokrasi.* (tanpa ubah kode). Default = perilaku lama.
+ * Hanya penanda lampu hijau/kuning/merah di lapangan; TIDAK memblokir proses apa pun.
+ */
+export interface BirokrasiSlaConfig {
+	/** SLA PA (bila tahap approval tak punya sla_hours) & Packing List in-flight. */
+	defaultHours: number;
+	/** Packing List Draft yang belum diajukan ke gudang (juga batas "draft tertunda" untuk nudge). */
+	draftHours: number;
+	localPurchaseHours: number;
+	reimbursementHours: number;
+	/** Rasio umur/SLA mulai kuning (0–1). Merah selalu saat rasio >= 1. */
+	yellowRatio: number;
+}
+
+export const DEFAULT_SLA_CONFIG: BirokrasiSlaConfig = {
+	defaultHours: DEFAULT_SLA_HOURS,
+	draftHours: 24,
+	localPurchaseHours: 24,
+	reimbursementHours: 48,
+	yellowRatio: 0.5
+};
+
+export function levelForRatio(ratio: number, yellowRatio: number = DEFAULT_SLA_CONFIG.yellowRatio): PaLevel {
+	if (!Number.isFinite(ratio)) return 'unknown';
+	const y = yellowRatio > 0 && yellowRatio < 1 ? yellowRatio : DEFAULT_SLA_CONFIG.yellowRatio;
+	return ratio >= 1 ? 'red' : ratio >= y ? 'yellow' : 'green';
+}
+
 export type PaLevel = 'green' | 'yellow' | 'red' | 'unknown';
 
 export type BirokrasiChannel =
@@ -97,8 +126,10 @@ export function buildPaStatusLapangan(
 		localPurchases?: any[] | null;
 		reimbursements?: any[] | null;
 		now?: Date;
+		sla?: Partial<BirokrasiSlaConfig>;
 	} = {}
 ): PaStatusResult {
+	const cfg: BirokrasiSlaConfig = { ...DEFAULT_SLA_CONFIG, ...(p.sla || {}) };
 	const {
 		lastActionByReq = {},
 		stepsByWorkflow = {},
@@ -123,12 +154,12 @@ export function buildPaStatusLapangan(
 			const wfId = req ? idOf(req.workflow_id) : null;
 			const stepRow = wfId && step ? (stepsByWorkflow[String(wfId)] || []).find((s) => num(s.step_order) === step) : null;
 			const slaFromData = stepRow && num(stepRow.sla_hours) > 0 ? num(stepRow.sla_hours) : null;
-			const slaHours = slaFromData ?? DEFAULT_SLA_HOURS;
+			const slaHours = slaFromData ?? cfg.defaultHours;
 
 			let level: PaLevel = 'unknown';
 			if (ageHours != null) {
 				const ratio = ageHours / slaHours;
-				level = ratio >= 1 ? 'red' : ratio >= 0.5 ? 'yellow' : 'green';
+				level = levelForRatio(ratio, cfg.yellowRatio);
 			}
 
 			const isOverdue = level === 'red';
@@ -194,15 +225,15 @@ export function buildPaStatusLapangan(
 		const isRequested = pStatus === 'requested' || pStatus === 'pending_project';
 		const isApprovedOrPartial = pStatus === 'approved' || pStatus === 'partial';
 
-		const slaHours = isDraft ? 24 : 48;
+		const slaHours = isDraft ? cfg.draftHours : cfg.defaultHours;
 		let level: PaLevel = 'unknown';
 		if (ageHours != null) {
 			const ratio = ageHours / slaHours;
-			level = ratio >= 1 ? 'red' : ratio >= 0.5 ? 'yellow' : 'green';
+			level = levelForRatio(ratio, cfg.yellowRatio);
 		}
 		const isOverdue = level === 'red';
 		const melewatiJam = ageHours != null && ageHours > slaHours ? Math.floor(ageHours - slaHours) : null;
-		const isStaleDraft = isDraft && ageHours != null && ageHours >= 24;
+		const isStaleDraft = isDraft && ageHours != null && ageHours >= cfg.draftHours;
 
 		if (isDraft) {
 			draftPlCount++;
@@ -256,11 +287,11 @@ export function buildPaStatusLapangan(
 		const enteredIso = lp.date_created;
 		const entered = enteredIso ? new Date(enteredIso).getTime() : NaN;
 		const ageHours = Number.isFinite(entered) ? Math.max(0, (now.getTime() - entered) / HOUR) : null;
-		const slaHours = 24;
+		const slaHours = cfg.localPurchaseHours;
 		let level: PaLevel = 'unknown';
 		if (ageHours != null) {
 			const ratio = ageHours / slaHours;
-			level = ratio >= 1 ? 'red' : ratio >= 0.5 ? 'yellow' : 'green';
+			level = levelForRatio(ratio, cfg.yellowRatio);
 		}
 		const isOverdue = level === 'red';
 		const melewatiJam = ageHours != null && ageHours > slaHours ? Math.floor(ageHours - slaHours) : null;
@@ -291,11 +322,11 @@ export function buildPaStatusLapangan(
 		const enteredIso = r.date_created;
 		const entered = enteredIso ? new Date(enteredIso).getTime() : NaN;
 		const ageHours = Number.isFinite(entered) ? Math.max(0, (now.getTime() - entered) / HOUR) : null;
-		const slaHours = 48;
+		const slaHours = cfg.reimbursementHours;
 		let level: PaLevel = 'unknown';
 		if (ageHours != null) {
 			const ratio = ageHours / slaHours;
-			level = ratio >= 1 ? 'red' : ratio >= 0.5 ? 'yellow' : 'green';
+			level = levelForRatio(ratio, cfg.yellowRatio);
 		}
 		const isOverdue = level === 'red';
 		const melewatiJam = ageHours != null && ageHours > slaHours ? Math.floor(ageHours - slaHours) : null;

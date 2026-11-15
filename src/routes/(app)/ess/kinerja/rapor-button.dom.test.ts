@@ -52,3 +52,26 @@ describe('/ess/kinerja — Rapor PDF', () => {
 		expect(btn().title).toContain('Belum ada scorecard final');
 	});
 });
+
+describe('/ess/kinerja — pemilih periode rapor', () => {
+	it('lebih dari satu scorecard → pilihan periode; pilihan dikirim sebagai ?scorecard=', async () => {
+		getKpiList.mockResolvedValue({ ...base, kpiList: [rec, { ...rec, id: 'sc0', periode: 'September' }] });
+		const f = vi.fn(async () => ({ ok: true, blob: async () => new Blob(['%PDF']) }));
+		vi.stubGlobal('fetch', f);
+		await render();
+		const sel = box!.querySelector('[data-testid="rapor-periode"]') as HTMLSelectElement;
+		expect(sel).not.toBeNull();
+		expect(sel.options.length).toBe(3); // Terbaru + 2 periode
+		sel.value = 'sc0';
+		sel.dispatchEvent(new Event('change', { bubbles: true }));
+		await settle();
+		btn().click();
+		await settle();
+		const call = (f.mock.calls as any[]).find((c) => String(c[0]).includes('kinerja-rapor-pdf'));
+		expect(call[0]).toBe('/api/ess/kinerja-rapor-pdf?scorecard=sc0');
+	});
+	it('hanya satu scorecard → tanpa pemilih (tetap terbaru)', async () => {
+		await render();
+		expect(box!.querySelector('[data-testid="rapor-periode"]')).toBeNull();
+	});
+});

@@ -27,7 +27,9 @@ export const PKL_COVERAGE_SETTING_DEFS = Object.freeze({
   'pkl_coverage.unreported_usage_days': { type: 'number', label: 'Pengiriman Terkirim Lebih dari (hari) Tanpa Laporan Pemakaian = Perlu Rekonsiliasi', def: 3, min: 0, max: 60 },
   'pkl_coverage.thinner_ratio_pct': { type: 'number', label: 'Maks. Thinner terhadap Volume Cat (%)', def: 10, min: 0, max: 100 },
   'pkl_coverage.extreme_alert_pct': { type: 'number', label: 'Kirim Alert n8n Bila Permintaan Melebihi Plafon (%) — 0 = nonaktif', def: 150, min: 0, max: 100000 },
+  'pkl_coverage.efficiency_min_progress_pct': { type: 'number', label: 'Radar Efisiensi: Bandingkan dengan Progres Hanya Bila Progres Pelapisan ≥ (%)', def: 10, min: 0, max: 100 },
   'pkl_coverage.efficiency_warn_pct': { type: 'number', label: 'Radar Efisiensi: Peringatan Bila Pemakaian Aktual ≥ (% dari plafon teoritis proyek)', def: 80, min: 1, max: 100 },
+  'pkl_coverage.alert_recipients': { type: 'json', label: 'Penerima WhatsApp Alert & Rekap Anomali (daftar nomor HP, mis. ["0812...", "0813..."])', def: [] },
   'pkl_coverage.pack_default_kg': {
     type: 'json',
     label: 'Bobot Default per Kemasan (Kg) bila master & nama barang tidak menyebut ukuran',
@@ -60,7 +62,10 @@ export function resolvePklCoverageSettings(rows) {
       } else if (d.type === 'json') {
         try {
           const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          if (Array.isArray(d.def)) {
+            // setelan berbentuk daftar (mis. penerima WA): buang entri kosong, ubah ke string
+            if (Array.isArray(parsed)) v = parsed.map((x) => String(x ?? '').trim()).filter(Boolean);
+          } else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             // Gabung ke default: kunci yang hilang tetap punya nilai; nilai non-positif dibuang.
             const merged = { ...d.def };
             for (const [k, val] of Object.entries(parsed)) {

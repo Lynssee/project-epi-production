@@ -1,6 +1,7 @@
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import {
 		IconArrowLeft, IconPackage, IconClipboardCheck, IconBox,
 		IconChevronDown, IconChevronRight, IconLoader2, IconPlus,
@@ -11,7 +12,7 @@
 		IconLayersSubtract, IconArrowRight, IconShieldCheck, IconTools,
 		IconPaint, IconReceipt, IconRefresh, IconSearch, IconX, IconFilter
 	} from '@tabler/icons-svelte';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { authStore, shouldFilterProjectsByLeader } from '$lib/stores/auth';
 	import { getProjectsForCurrentUser } from '$lib/services/projectScope';
 	import {
@@ -666,6 +667,23 @@
 		return grouped;
 	});
 
+	// Deep-link dari tautan pelacakan (/lacak/pl/<id> -> /packing-list?proyek=<id proyek>): buka & gulirkan kartu proyek-nya SEKALI.
+	// Daftar dimuat bertahap (infinite scroll) -> bila proyek belum termuat, tampilkan petunjuk (bukan diam).
+	const proyekDeepLink = Number(page.url.searchParams.get('proyek')) || null;
+	let deepLinkDone = $state(false);
+	let deepLinkMissing = $state(false);
+	$effect(() => {
+		if (!proyekDeepLink || deepLinkDone || loading) return;
+		deepLinkDone = true;
+		activeTab = 'pengajuan';
+		if (requestProjectIds().includes(proyekDeepLink)) {
+			expandedPengajuanProject = proyekDeepLink;
+			tick().then(() => document.getElementById(`pl-proyek-${proyekDeepLink}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+		} else {
+			deepLinkMissing = true;
+		}
+	});
+
 	let requestProjectIds = $derived(() => {
 		const keys = Object.keys(requestsByProject()).map(Number);
 		if (reqSort === 'progress_desc') {
@@ -1048,6 +1066,11 @@
 						</button>
 					</div>
 				{:else}
+					{#if deepLinkMissing}
+						<div class="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800" role="status">
+							Packing List dari tautan belum ada di daftar yang termuat. Gulir ke bawah untuk memuat lebih banyak, atau cari proyeknya secara manual.
+						</div>
+					{/if}
 					<div class="space-y-2.5">
 						{#each requestProjectIds() as pid}
 							{@const items = requestsByProject()[pid] || []}
@@ -1055,7 +1078,7 @@
 							{@const summary = getProjectStageSummary(items)}
 							{@const isExpanded = expandedPengajuanProject === pid}
 
-							<div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs transition-all {isExpanded ? 'ring-1 ring-[var(--g)]/30 border-[var(--g)]/40 shadow-sm' : 'hover:border-slate-300'}">
+							<div id="pl-proyek-{pid}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs transition-all {isExpanded ? 'ring-1 ring-[var(--g)]/30 border-[var(--g)]/40 shadow-sm' : 'hover:border-slate-300'}">
 								
 								<!-- Project Header Bar (Accordion Toggle) -->
 								<button

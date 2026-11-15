@@ -10,6 +10,9 @@
 	import { getActiveAssignmentsForProjects, type ActiveAssignmentRange } from '$lib/services/manpowerAssignment';
 	import { getAbsensiForProjectsInRange, type AbsensiRangeRow } from '$lib/services/manpowerAbsensi';
 	import ManualAbsensiModal from '$lib/components/project/ManualAbsensiModal.svelte';
+	import Tooltip from '$lib/components/ui/Tooltip.svelte';
+	import { fetchMobSyncForProjects, type FulfillmentMobSync } from '$lib/services/projectFulfillment';
+	import { mobSyncView, mobSyncReason } from '$lib/utils/mobSyncLapangan';
 
 	let loading = $state(true);
 	let projects = $state<any[]>([]);
@@ -115,6 +118,18 @@
 		return { l: 'Sesuai Rencana', c: 'bg-green-100 text-green-700' };
 	}
 
+	// Sinkronisasi Mobilisasi (G_MOB_SYNC): dimuat latar belakang, dibatasi 15 proyek & konkurensi 3 (cache 60 dtk dipakai bersama).
+	// Gagal per proyek → sel "—"; tidak mengganggu perbandingan rencana vs realisasi.
+	let mobSyncMap = $state<Map<string, FulfillmentMobSync | null>>(new Map());
+	let mobSyncKey = '';
+	$effect(() => {
+		const ids = projectRows.map((r) => r.projectId);
+		const key = ids.join(',');
+		if (!ids.length || key === mobSyncKey) return;
+		mobSyncKey = key;
+		fetchMobSyncForProjects(ids).then((m) => (mobSyncMap = m));
+	});
+
 	function fmt1(v: number) {
 		return v.toFixed(1);
 	}
@@ -174,12 +189,16 @@
 						<th class="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase">Realisasi (org/hari)</th>
 						<th class="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase">Selisih</th>
 						<th class="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase">Status</th>
+						<th class="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase">
+							<span class="inline-flex items-center">Sinkron Material<Tooltip text="Apakah material tiba sebelum tim mulai (dibandingkan tanggal mulai SPK dengan ETA ekspedisi). Merah = tim berpotensi menunggu material. Rincian ada di kartu Muatan Menuju Site pada Checklist Pra-Mobilisasi."><span class="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold cursor-help normal-case">?</span></Tooltip></span>
+						</th>
 						<th class="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase">Detail</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-100">
 					{#each projectRows as r (r.projectId)}
 						{@const gap = gapLabel(r.gap, r.avgRencana)}
+						{@const ms = mobSyncMap.get(String(r.projectId))}
 						<tr class="hover:bg-gray-50">
 							<td class="px-4 py-3 font-medium text-gray-800">{r.projectName}</td>
 							<td class="px-4 py-3 text-center text-gray-700">{fmt1(r.avgRencana)}</td>
@@ -189,6 +208,14 @@
 							</td>
 							<td class="px-4 py-3 text-center">
 								<span class="px-2.5 py-1 rounded-full text-xs font-semibold {gap.c}">{gap.l}</span>
+							</td>
+							<td class="px-4 py-3 text-center">
+								{#if ms}
+									{@const v = mobSyncView(ms.status)}
+									<Tooltip text={ms.status === 'unknown' ? mobSyncReason(ms.reason) : v.help}><span class="px-2.5 py-1 rounded-full border text-xs font-semibold {v.cls}">{v.icon} {v.short}</span></Tooltip>
+								{:else}
+									<span class="text-gray-300">—</span>
+								{/if}
 							</td>
 							<td class="px-4 py-3 text-center">
 								<button
@@ -203,7 +230,7 @@
 						</tr>
 						{#if expandedProjectId === r.projectId}
 							<tr>
-								<td colspan="6" class="px-4 py-3 bg-gray-50">
+								<td colspan="7" class="px-4 py-3 bg-gray-50">
 									<div class="flex flex-wrap gap-2">
 										{#each r.daily as d}
 											{@const dGap = d.realisasi - d.rencana}

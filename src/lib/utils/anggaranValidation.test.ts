@@ -9,7 +9,7 @@ const base = (): ValidationInput => ({
 	isPettyCashCategory: false, pettyCashFundId: null, projectRequired: false, selectedProject: '', projectRequiredLabel: 'Jasa',
 	isRilisHutang: false, hasSelectedPayableInvoice: false, rilisNominal: 0, sisaHutang: 0,
 	needsAttachment: false, hasLampiran: false, hasLampiranException: false, minExceptionNoteLength: 20, uploadingLampiran: false,
-	bbmSplitEnabled: false, bbmSplits: [], formatCurrency: (n) => `Rp${n}`
+	bbmSplitEnabled: false, bbmSplits: [], formatCurrency: (n) => `Rp${n}`, isEmergencyCutoff: false, emergencyCutoffReason: '', minEmergencyCutoffReasonLength: 20
 });
 const fields = (v: ValidationInput) => collectErrors(v).map((e) => e.field);
 
@@ -50,5 +50,14 @@ describe('collectErrors (PRJ-25)', () => {
 		const v = { ...base(), isRilisHutang: true, hasSelectedPayableInvoice: true, rilisNominal: 500, sisaHutang: 100, needsAttachment: true, uploadingLampiran: true, bbmSplitEnabled: true, bbmSplits: [{ project_id: 1, persentase: 60 }, { project_id: 2, persentase: 30 }] };
 		expect(fields(v)).toEqual(['rilis_nominal', 'lampiran', 'upload', 'bbm_split']);
 		expect(collectErrors({ ...v, needsAttachment: true, hasLampiranException: true, uploadingLampiran: false, bbmSplits: [{ project_id: 1, persentase: 50 }, { project_id: 2, persentase: 50 }], rilisNominal: 50 })).toEqual([]);
+	});
+	it('darurat cutoff: alasan minimal 20 karakter bila opsi darurat aktif', () => {
+		const vShort = { ...base(), isEmergencyCutoff: true, emergencyCutoffReason: 'Terlalu pendek' };
+		const issuesShort = collectErrors(vShort);
+		expect(fields(vShort)).toContain('emergency_cutoff_reason');
+		expect(issuesShort.find((e) => e.field === 'emergency_cutoff_reason')!.anchorId).toBe('f-emergency-cutoff');
+
+		const vValid = { ...base(), isEmergencyCutoff: true, emergencyCutoffReason: 'Kebutuhan genset mati mendesak untuk operasional lapangan' };
+		expect(collectErrors(vValid)).toEqual([]);
 	});
 });

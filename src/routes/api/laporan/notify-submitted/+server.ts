@@ -34,9 +34,10 @@ export const POST: RequestHandler = async (event) => {
 	// Alert defisit manpower lapangan jika terdeteksi defisit tenaga kerja
 	const actual = Number(body?.headcountActual);
 	const plan = Number(body?.headcountPlan);
+	const thresholdPct = Number(body?.thresholdPct) > 0 ? Number(body.thresholdPct) : 20;
 	if (plan > 0 && actual >= 0) {
 		const deficitPct = Math.round(((plan - actual) / plan) * 100);
-		if (deficitPct > 20) {
+		if (deficitPct >= thresholdPct) {
 			notifyProjectManpowerDeficit(projectId, projectName, actual, plan, deficitPct).catch((e) =>
 				console.warn('[laporan/notify-submitted] notifyProjectManpowerDeficit gagal (diabaikan):', e?.message)
 			);

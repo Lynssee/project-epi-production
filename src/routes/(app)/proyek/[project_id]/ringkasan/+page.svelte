@@ -211,6 +211,16 @@
 			{STATUS_STYLE[digest.overallStatus].label} — periode {period}
 		</div>
 
+		<!-- Fase 3 Laporan Keuangan Formal: lembar pagu vs realisasi, komitmen, LPJ (tanpa nilai PO klien/laba) -->
+		<a
+			href="/rap-aktual/cetak?project={projectId}"
+			title="Cetak 1 lembar A4 untuk pertanggungjawaban anggaran proyek ini. Tidak memuat nilai kontrak klien maupun laba."
+			class="mb-3 flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800"
+		>
+			<span>🖨️ Cetak Lembar Pertanggungjawaban Anggaran</span>
+			<span class="text-xs font-normal">Pagu • komitmen • LPJ →</span>
+		</a>
+
 		<!-- Forecast Laju Fisik & Estimasi Selesai (Field-friendly) -->
 		{#if forecastInfo}
 			<div class="rounded-xl border border-gray-200 bg-white p-4 mb-3">

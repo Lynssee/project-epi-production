@@ -216,3 +216,78 @@ describe('buildRekonsiliasi: pembanding satuan (PRJ-26)', () => {
 		expect(run('drum 200', 'drum 20').satuanBeda).toBe(1);
 	});
 });
+
+describe('tambahSumberPo — tag PO pada rekonsiliasi (tanpa Rupiah)', () => {
+	const item = (product_id: number, qty_pesan: number, qty_kirim: number) => ({ so_detail_id: 1, product_id, nama_barang: 'EPOXY', unit: 'kg', qty_pesan, qty_kirim, qty_terima: 0, qty_belum: qty_pesan - qty_kirim });
+	const baris = [{ product_id: 7, nama_barang: 'EPOXY', unit: 'kg', qty_pesan: 200, qty_kirim: 120, qty_dipakai: 50, qty_sisa: 70, level: 'ok' as const, catatan: '' }];
+
+	it('memecah kuota pesan/kirim per PO material yang memasok produk sama', async () => {
+		const { tambahSumberPo } = await import('./grandPoLapangan');
+		const out = tambahSumberPo(baris, [
+			{ so_id: 1, nomor_po: 'PO-A', items: [item(7, 150, 100)] },
+			{ so_id: 2, nomor_po: 'PO-B', items: [item(7, 30, 20), item(7, 20, 0), item(9, 5, 5)] },
+			{ so_id: 3, nomor_po: 'PO-C', items: [item(9, 5, 5)] }
+		]);
+		expect(out[0].sumber_po).toEqual([
+			{ so_id: 1, nomor_po: 'PO-A', qty_pesan: 150, qty_kirim: 100 },
+			{ so_id: 2, nomor_po: 'PO-B', qty_pesan: 50, qty_kirim: 20 }
+		]);
+		// pemakaian TIDAK dipecah per PO (coating log belum bertag PO)
+		expect(out[0].qty_dipakai).toBe(50);
+	});
+
+	it('tanpa material → sumber_po kosong; tidak mengubah baris asal; tanpa kunci Rupiah', async () => {
+		const { tambahSumberPo, findMoneyKeys } = await import('./grandPoLapangan');
+		const out = tambahSumberPo(baris, []);
+		expect(out[0].sumber_po).toEqual([]);
+		expect((baris[0] as any).sumber_po).toBeUndefined();
+		expect(findMoneyKeys(tambahSumberPo(baris, [{ so_id: 1, nomor_po: 'X', items: [item(7, 1, 1)] }]))).toEqual([]);
+	});
+});
+
+describe('Pemakaian per PO (coating log bertag so_customer_id)', () => {
+	const item = (product_id: number, qty_pesan: number, qty_kirim: number) => ({ so_detail_id: 1, product_id, nama_barang: 'EPOXY', unit: 'kg', qty_pesan, qty_kirim, qty_terima: 0, qty_belum: qty_pesan - qty_kirim });
+	const material = [
+		{ so_id: 1, nomor_po: 'PO-A', items: [item(7, 150, 100)] },
+		{ so_id: 2, nomor_po: 'PO-B', items: [item(7, 50, 20)] }
+	];
+	const baris = [{ product_id: 7, nama_barang: 'EPOXY', unit: 'kg', qty_pesan: 200, qty_kirim: 120, qty_dipakai: 70, qty_sisa: 50, level: 'ok' as const, catatan: '' }];
+
+	it('memecah pemakaian per PO dari log bertag; log tak bertag dilaporkan terpisah (tidak dibagi)', async () => {
+		const { tambahSumberPo } = await import('./grandPoLapangan');
+		const logs = [
+			{ product_id: 7, so_customer_id: 1, qty_used: 40, satuan: 'kg' },
+			{ product_id: 7, so_customer_id: 2, qty_used: 25, satuan: 'KG' }, // > kirim 20 PO-B
+			{ product_id: 7, so_customer_id: null, qty_used: 5, satuan: 'kg' }, // tak bertag
+			{ product_id: 9, so_customer_id: 1, qty_used: 99, satuan: 'kg' } // produk lain
+		];
+		const [b] = tambahSumberPo(baris, material, { logs, toleransiPct: 5 });
+		expect(b.sumber_po![0]).toMatchObject({ so_id: 1, qty_dipakai: 40, qty_sisa: 60, level: 'ok' });
+		expect(b.sumber_po![1]).toMatchObject({ so_id: 2, qty_dipakai: 25, qty_sisa: -5, level: 'perhatian' });
+		expect(b.qty_dipakai_tanpa_po).toBe(5); // 70 − (40+25)
+	});
+
+	it('log dengan satuan beda tidak dijumlahkan; PO yang bukan pemasok tidak mendapat pemakaian', async () => {
+		const { tambahSumberPo } = await import('./grandPoLapangan');
+		const [b] = tambahSumberPo(baris, material, { logs: [{ product_id: 7, so_customer_id: 1, qty_used: 10, satuan: 'liter' }, { product_id: 7, so_customer_id: 99, qty_used: 10, satuan: 'kg' }] });
+		expect(b.sumber_po![0].qty_dipakai).toBe(0);
+		expect(b.sumber_po!.some((s) => s.so_id === 99)).toBe(false);
+	});
+
+	it('melebihi total pesan PO → level melebihi_po; tanpa opsi logs → tak ada field pemakaian (kompatibel)', async () => {
+		const { tambahSumberPo } = await import('./grandPoLapangan');
+		const [b] = tambahSumberPo(baris, material, { logs: [{ product_id: 7, so_customer_id: 2, qty_used: 60, satuan: 'kg' }] });
+		expect(b.sumber_po![1].level).toBe('melebihi_po');
+		const [c] = tambahSumberPo(baris, material);
+		expect(c.sumber_po![0].qty_dipakai).toBeUndefined();
+		expect(c.qty_dipakai_tanpa_po).toBeUndefined();
+	});
+
+	it('poOptionsForProduct: hanya PO yang memuat produk; null → []; tanpa kunci Rupiah', async () => {
+		const { poOptionsForProduct, findMoneyKeys, tambahSumberPo } = await import('./grandPoLapangan');
+		expect(poOptionsForProduct(material, 7)).toEqual([{ so_id: 1, nomor_po: 'PO-A' }, { so_id: 2, nomor_po: 'PO-B' }]);
+		expect(poOptionsForProduct(material, 8)).toEqual([]);
+		expect(poOptionsForProduct(material, null)).toEqual([]);
+		expect(findMoneyKeys(tambahSumberPo(baris, material, { logs: [{ product_id: 7, so_customer_id: 1, qty_used: 1 }] }))).toEqual([]);
+	});
+});

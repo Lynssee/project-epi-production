@@ -19,6 +19,7 @@
 	import { fetchProjectFulfillment, type ChecklistSource, type ProjectFulfillment } from '$lib/services/projectFulfillment';
 	import { IconArrowLeft, IconLoader2, IconCheck } from '@tabler/icons-svelte';
 	import { fetchKesiapanDokumen, KESIAPAN_UI, type KesiapanDokumen } from '$lib/services/kesiapanDokumen';
+	import MuatanMenujuSiteCard from '$lib/components/project/MuatanMenujuSiteCard.svelte';
 
 	const KATEGORI_LABEL: Record<string, string> = {
 		umum: 'Umum',
@@ -166,7 +167,9 @@
 		</div>
 	{:else}
 		<div class="scroll-body px-4 py-4 flex flex-col gap-3" style="background: var(--sys-bg)">
-			<a href="/pra-mobilisasi/{projectId}/survei" class="card-section flex items-center justify-between no-underline" title="Isi data lokasi & foto survei dari HP; otomatis jadi acuan Charter">
+			<MuatanMenujuSiteCard {projectId} />
+
+				<a href="/pra-mobilisasi/{projectId}/survei" class="card-section flex items-center justify-between no-underline" title="Isi data lokasi & foto survei dari HP; otomatis jadi acuan Charter">
 				<span class="text-[13px] font-semibold" style="color: var(--sys-label)">📸 Survei Lapangan &amp; Foto</span>
 				<span class="text-[11px]" style="color: var(--sys-label3)">Isi data lokasi, listrik, air, foto →</span>
 			</a>

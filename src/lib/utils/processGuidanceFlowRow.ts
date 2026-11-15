@@ -290,6 +290,9 @@ export function normalizeFlowRow(row: any): NormalizedFlow | null {
 	const sop_code = str(row?.sop_code, 50);
 	const kategori_sop = ['master', 'induk', 'turunan'].includes(row?.kategori_sop) ? row.kategori_sop : undefined;
 	const sub_kategori = str(row?.sub_kategori, 100);
+	// Kolom tahap_proyek (json array kunci tahap): hanya kunci valid, unik, maks. 12; selain array → diabaikan.
+	const rawTahap = typeof row?.tahap_proyek === 'string' ? (() => { try { return JSON.parse(row.tahap_proyek); } catch { return []; } })() : row?.tahap_proyek;
+	const tahap_proyek = Array.isArray(rawTahap) ? [...new Set(rawTahap.map((k: unknown) => String(k ?? '').trim()).filter((k: string) => /^[a-z][a-z0-9_]{1,39}$/.test(k)))].slice(0, 12) : [];
 	const approval_status = str(row?.approval_status, 40);
 	const external_flowchart_url = str(row?.external_flowchart_url, 1000);
 	const external_doc_url = str(row?.external_doc_url, 1000);
@@ -316,6 +319,7 @@ export function normalizeFlowRow(row: any): NormalizedFlow | null {
 			...(sop_code ? { sop_code } : {}),
 			...(kategori_sop ? { kategori_sop } : {}),
 			...(sub_kategori ? { sub_kategori } : {}),
+			...(tahap_proyek.length ? { tahap_proyek } : {}),
 			...(approval_status ? { approval_status } : {}),
 			...(external_flowchart_url ? { external_flowchart_url } : {}),
 			...(external_doc_url ? { external_doc_url } : {}),

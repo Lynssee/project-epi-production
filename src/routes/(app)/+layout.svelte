@@ -397,7 +397,7 @@
 					title: 'Project',
 					icon: IconBuildingFactory2,
 					href: '/proyek/hub',
-					activePrefixes: ['/proyek', '/laporan', '/anggaran', '/biaya-lapangan', '/packing-list', '/rap-aktual', '/timeline', '/leader', '/regu', '/inventory-proyek', '/mutasi-barang', '/kontrak-terpusat', '/spk-terpusat', '/manpower-rencana-realisasi', '/manpower-dobel-override-log', '/kasbon-terpusat', '/todo-terpusat', '/closing-evaluasi-terpusat', '/pengiriman-workshop', '/workshop'],
+					activePrefixes: ['/proyek', '/laporan', '/anggaran', '/biaya-lapangan', '/packing-list', '/rap-aktual', '/timeline', '/leader', '/regu', '/inventory-proyek', '/mutasi-barang', '/kontrak-terpusat', '/spk-terpusat', '/manpower-rencana-realisasi', '/manpower-dobel-override-log', '/tbm-rollcall', '/kasbon-terpusat', '/todo-terpusat', '/closing-evaluasi-terpusat', '/pengiriman-workshop', '/workshop'],
 					permissions: ['view_all_projects', 'view_own_projects', 'input_laporan', 'approve_laporan', 'request_budget', 'approve_budget', 'view_manpower', 'view_rap', 'manage_packing'],
 					children: [
 						{ title: 'Hub Project', href: '/proyek/hub', exact: true },
@@ -415,6 +415,7 @@
 						{ title: 'Kontrak Jatuh Tempo', href: '/kontrak-terpusat', permissions: ['view_all_projects', 'view_own_projects'] },
 						{ title: 'SPK Jatuh Tempo', href: '/spk-terpusat', permissions: ['view_all_projects', 'view_own_projects', 'view_manpower'] },
 						{ title: 'Manpower Rencana vs Realisasi', href: '/manpower-rencana-realisasi', permissions: ['view_all_projects', 'view_own_projects', 'view_manpower'] },
+						{ title: 'TBM Roll-Call Pagi', href: '/tbm-rollcall', permissions: ['view_all_projects', 'view_own_projects', 'view_manpower', 'input_laporan'] },
 						{ title: 'Audit Log Override Dobel-Proyek', href: '/manpower-dobel-override-log', permissions: ['view_all_projects', 'view_own_projects', 'view_manpower'] },
 						{ title: 'Packing List Proyek', href: '/packing-list', permissions: ['manage_packing'] },
 						{ title: 'Opname Inventaris', href: '/inventory-proyek/opname', permissions: ['view_all_projects', 'view_own_projects'] },

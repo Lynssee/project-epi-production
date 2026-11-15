@@ -109,3 +109,24 @@ describe('buildPaStatusLapangan — multi-channel birokrasi & komitmen tertahan 
 		expect(json).not.toContain('harga');
 	});
 });
+
+describe('ambang SLA dari setelan (levelForRatio & sla override)', () => {
+	it('levelForRatio: default 0,5 = kuning, >= 1 merah, ambang tak valid -> default', async () => {
+		const { levelForRatio } = await import('./paStatusLapangan');
+		expect(levelForRatio(0.49)).toBe('green');
+		expect(levelForRatio(0.5)).toBe('yellow');
+		expect(levelForRatio(1)).toBe('red');
+		expect(levelForRatio(0.3, 0.25)).toBe('yellow');
+		expect(levelForRatio(0.3, 5)).toBe('green'); // ambang >= 1 tak valid -> 0,5
+		expect(levelForRatio(NaN)).toBe('unknown');
+	});
+	it('sla.localPurchaseHours mengubah lampu pembelian lokal; tanpa sla = perilaku lama', async () => {
+		const { buildPaStatusLapangan } = await import('./paStatusLapangan');
+		const now = new Date('2026-11-10T12:00:00Z');
+		const lp = [{ id: 1, nomor_pembelian: 'BL-1', nama_barang: 'Kuas', status: 'Menunggu Approval', date_created: '2026-11-09T06:00:00Z' }]; // 30 jam
+		const lvl = (sla?: any) => buildPaStatusLapangan({ localPurchases: lp, now, sla }).birokrasi_items.find((i) => i.channel === 'pembelian_lokal')!.level;
+		expect(lvl()).toBe('red');
+		expect(lvl({ localPurchaseHours: 72 })).toBe('green');
+		expect(lvl({ localPurchaseHours: 48 })).toBe('yellow');
+	});
+});

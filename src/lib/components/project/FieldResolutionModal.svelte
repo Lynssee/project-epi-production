@@ -80,16 +80,16 @@
 			transition:slide={{ duration: 200 }}
 		>
 			<!-- Header -->
-			<div class="p-4 border-b border-slate-200 dark:border-slate-800 bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-between">
+			<div class="p-4 border-b border-slate-200 dark:border-slate-800 {actionItem.is_gate_blocker ? 'bg-rose-50 dark:bg-rose-950/40' : 'bg-emerald-50 dark:bg-emerald-950/40'} flex items-center justify-between">
 				<div class="flex items-center gap-2">
-					<div class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-sm font-bold">
-						✓
+					<div class="w-8 h-8 rounded-full {actionItem.is_gate_blocker ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200' : 'bg-emerald-100 text-emerald-800'} flex items-center justify-center text-sm font-bold">
+						{actionItem.is_gate_blocker ? '🔒' : '✓'}
 					</div>
 					<div>
 						<h3 class="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-							Laporan Pelaksanaan Arahan / Selesai
+							{actionItem.is_gate_blocker ? 'Tindak Lanjut Feedback Manajemen' : 'Laporan Pelaksanaan Arahan / Selesai'}
 						</h3>
-						<p class="text-[11px] font-mono text-emerald-700 dark:text-emerald-300">
+						<p class="text-[11px] font-mono {actionItem.is_gate_blocker ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}">
 							{actionItem.nomor_dokumen}
 						</p>
 					</div>
@@ -97,7 +97,7 @@
 				<button
 					type="button"
 					onclick={onClose}
-					class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 flex items-center justify-center"
+					class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 flex items-center justify-center cursor-pointer"
 				>
 					<IconX size={16} />
 				</button>
@@ -105,6 +105,17 @@
 
 			<!-- Body -->
 			<form onsubmit={handleSubmit} class="p-4 space-y-4 overflow-y-auto flex-1 text-xs">
+				{#if actionItem.is_gate_blocker}
+					<div class="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex items-start gap-2">
+						<span class="text-base leading-none">⛔</span>
+						<div class="leading-relaxed">
+							<strong class="font-bold text-rose-200">Perhatian Gate Blocker:</strong>
+							Pengiriman bukti ini akan mengubah status tiket menjadi <em>Menunggu Verifikasi</em>.
+							<strong>Penguncian pengajuan (Gate) baru akan terbuka setelah disetujui oleh Direksi / Manajemen.</strong>
+						</div>
+					</div>
+				{/if}
+
 				<!-- Ringkasan Instruksi -->
 				<div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
 					<div class="font-bold text-slate-800 dark:text-slate-100 mb-0.5">{actionItem.judul}</div>
@@ -203,14 +214,14 @@
 					<button
 						type="submit"
 						disabled={submitting}
-						class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm transition disabled:opacity-50 flex items-center gap-1.5"
+						class="px-5 py-2 rounded-xl {actionItem.is_gate_blocker ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white font-semibold shadow-sm transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
 					>
 						{#if submitting}
 							<IconLoader2 size={16} class="animate-spin" />
 							<span>Mengirim Laporan...</span>
 						{:else}
 							<IconCheck size={16} />
-							<span>Laporkan Sudah Dilaksanakan</span>
+							<span>{actionItem.is_gate_blocker ? 'Kirim Bukti untuk Approval Manajemen' : 'Laporkan Sudah Dilaksanakan'}</span>
 						{/if}
 					</button>
 				</div>

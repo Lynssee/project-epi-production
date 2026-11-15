@@ -13,6 +13,7 @@ import { auth } from '$lib/firebase';
 import { compressPhoto } from '$lib/utils/photoCompress';
 import { watermarkPhoto } from '$lib/utils/photoWatermark';
 import { decodeFlags, encodeCatatan } from '$lib/shared/kioskFlags';
+import { petaStatusIdentitas, type StatusIdentitas } from '$lib/shared/ktpStatus';
 
 export const PERAN_LEADER = 'manpower_leader';
 export const PERAN_WAKIL = 'wakil_leader';
@@ -144,6 +145,31 @@ export async function getAnggotaRegu(projectId: number) {
 
 
 /**
+ * PDP-25 — status NIK + KTP tiap anggota regu (satu panggilan per koleksi, relasi dipisah — Aturan #2).
+ * Fail-soft DENGAN log: layar Regu tetap jalan tanpa lencana bila gagal, tetapi penyebabnya terlihat di konsol.
+ */
+export async function getStatusIdentitasRegu(manpowerIds: number[]): Promise<Record<number, StatusIdentitas>> {
+	const ids = [...new Set((manpowerIds || []).filter((n) => Number.isFinite(n)))];
+	if (ids.length === 0) return {};
+	try {
+		const [mp, dok] = await Promise.all([
+			directus.request(readItems('manpower', { filter: { id: { _in: ids } }, fields: ['id', 'NIK'], limit: -1 })),
+			directus.request(
+				readItems('manpower_dokumen', {
+					filter: { manpower_id: { _in: ids }, jenis_dokumen: { _eq: 'ktp' } },
+					fields: ['id', 'manpower_id', 'jenis_dokumen', 'status_verifikasi', 'catatan_verifikasi'],
+					limit: -1
+				})
+			)
+		]);
+		return petaStatusIdentitas((mp as any[]) || [], (dok as any[]) || []);
+	} catch (e) {
+		console.warn('[regu] status NIK/KTP anggota tidak termuat (lencana disembunyikan):', e);
+		return {};
+	}
+}
+
+/**
  * Absenkan seorang anggota regu (absensi representatif).
  *
  * WAJIB lewat endpoint server `/api/manpower-leader/absen-regu`, TIDAK menulis
@@ -203,6 +229,55 @@ export async function absenkanAnggota(params: {
 		return { success: true, ...data };
 	} catch (e: any) {
 		return { success: false, error: e?.message || 'Gagal mengirim absensi' };
+	}
+}
+
+/**
+ * PDP-24 — absen regu massal ("Hadir Semua" lalu kecualikan): satu foto regu + GPS untuk semua yang hadir,
+ * tiap pekerja tetap satu baris per nama. Server memakai inti absensi yang sama dengan absenkanAnggota.
+ * Hasil per orang dikembalikan: yang gagal bisa dikirim ulang tanpa mengulang yang berhasil.
+ */
+export async function absenkanReguMassal(params: {
+	projectId: number;
+	tanggal: string;
+	entries: { assignment_id: number; manpower_id: number; status: string }[];
+	lat?: number | null;
+	lng?: number | null;
+	accuracy?: number | null;
+	photoFile?: File | null;
+}): Promise<{
+	success: boolean;
+	error?: string;
+	ringkasan?: { total: number; berhasil: number; gagal: number; sudah: number; per_status: Record<string, number> };
+	hasil?: { manpower_id: number; ok: boolean; hasil: string; status: string; message: string }[];
+}> {
+	try {
+		const idToken = await auth.currentUser?.getIdToken();
+		if (!idToken) return { success: false, error: 'Sesi tidak ditemukan. Login ulang.' };
+
+		const fd = new FormData();
+		fd.append('project_id', String(params.projectId));
+		fd.append('tanggal', params.tanggal);
+		fd.append('entries', JSON.stringify(params.entries));
+		if (params.photoFile && params.lat != null && params.lng != null) {
+			const stamped = await watermarkPhoto(params.photoFile, { lat: params.lat, lng: params.lng, accuracy: params.accuracy ?? 0 });
+			const compressed = await compressPhoto(stamped);
+			fd.append('lat', String(params.lat));
+			fd.append('lng', String(params.lng));
+			if (params.accuracy != null) fd.append('accuracy', String(params.accuracy));
+			fd.append('foto', compressed, compressed.name || 'absen-regu-massal.jpg');
+		}
+
+		const res = await fetch('/api/manpower-leader/absen-regu-massal', {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${idToken}` },
+			body: fd
+		});
+		const data = await res.json().catch(() => ({}));
+		if (!res.ok) return { success: false, error: data?.message || `Gagal (${res.status})` };
+		return { success: true, ringkasan: data.ringkasan, hasil: data.hasil };
+	} catch (e: any) {
+		return { success: false, error: e?.message || 'Gagal mengirim absensi regu' };
 	}
 }
 

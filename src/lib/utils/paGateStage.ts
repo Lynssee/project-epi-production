@@ -52,3 +52,29 @@ export function canRequestDispensasi(
 export function deferredHandlerLabel(g: { target_stage?: string | null } | null | undefined): string | null {
 	return g?.target_stage ? DEFERRED_HANDLER[g.target_stage] || null : null;
 }
+
+// ── PDP-36 — pemilik gate (peran tim proyek). Server (/api/pengajuan/validate) mengirim `pemilik` per gate
+//    (leader / admin_project / tim_sentral / hrd / finance; kosong = leader) dan `pic` {nama} untuk gate Admin Project.
+//    Kembar erp-epi src/lib/data/paGateOwner.js::pecahGatePerPemilik — jaga keduanya tetap sama.
+
+type GatePemilik = { status?: string; pemilik?: string | null; severity?: string };
+
+/** Gate milik Admin Project yang GAGAL → ditampilkan sebagai kartu "Menunggu Admin Project", bukan syarat leader. */
+export function menungguAdminProject(g: GatePemilik | null | undefined): boolean {
+	return !!g && g.pemilik === 'admin_project' && g.status === 'failed';
+}
+
+/** Gate milik Admin Project yang lulus / tidak berlaku: tidak perlu dilihat leader sama sekali. */
+export function sembunyikDariLeader(g: GatePemilik | null | undefined): boolean {
+	return !!g && g.pemilik === 'admin_project';
+}
+
+/** Gate GAGAL milik pihak lain (HRD / Finance / tim sentral) → kelompok "Akan diperiksa pihak lain". */
+export function milikPihakLainGagal(g: GatePemilik | null | undefined): boolean {
+	return !!g && g.status === 'failed' && (g.pemilik === 'hrd' || g.pemilik === 'finance' || g.pemilik === 'tim_sentral');
+}
+
+/** Teks kartu "menunggu Admin Project" (PIC dari server; tanpa PIC → arahkan ke PM). */
+export function teksMenungguAdmin(pic: { nama?: string | null } | null | undefined): string {
+	return pic?.nama ? `Menunggu Admin Project — ${pic.nama}` : 'Proyek ini belum punya Admin Project. Hubungi PM.';
+}

@@ -7,6 +7,8 @@ import { getPatrolControlSettings } from '$lib/server/patrolControlSettings';
 import { resolveGateMode } from '$lib/server/gateDefinitionsMode';
 import { evaluateSecurityHandoverGate } from '$lib/server/gates/securityHandoverGate';
 import { writeGateAudit } from '$lib/server/gates/gateAudit';
+import { evaluateKeyHandoverGate, type KeyOutstanding } from '$lib/server/gates/securityKeyGate';
+import { fetchOperationalKeys } from '$lib/server/keyService';
 
 const SHIFTS = ['pagi', 'siang', 'malam'] as const;
 
@@ -99,6 +101,59 @@ export const POST: RequestHandler = async (event) => {
 		console.error('[serah-terima] evaluasi G_SEC7 gagal, dilewati (fail-open):', err);
 	}
 
+	// --- G_SEC8 (rekonsiliasi kunci): kunci masih berstatus dipinjam saat shift diserahkan ---
+	// Terpisah dari G_SEC7 agar mode & alasan bisa diatur sendiri-sendiri oleh superadmin.
+	const gateReasonKey = String((body as any).gate_sec8_reason ?? '').trim();
+	// Checklist per slot: id kunci yang dicentang satpam sebagai "ada di slot" (boleh tidak dikirim oleh klien lama).
+	const dicekRaw = (body as any).kunci_dicek_ids;
+	const dicekIds: number[] | null = Array.isArray(dicekRaw) ? dicekRaw.map(Number).filter((n) => Number.isInteger(n) && n > 0) : null;
+	let auditKey: { decision: 'shadow' | 'warn'; reason: string | null; summary: string; violations: unknown } | null = null;
+	let bukti: { dicek: number; di_slot: number; total: number } | null = null;
+	try {
+		const ps = await getPatrolControlSettings();
+		if (ps.secKeyWajibRekonSerahTerima) {
+			const mode = await resolveGateMode('G_SEC8', 'security_lifecycle');
+			let outstanding: KeyOutstanding[] | null = null;
+			let belumDicek: KeyOutstanding[] | null = null;
+			try {
+				const ops = await fetchOperationalKeys();
+				outstanding = ops.filter((k) => k.status !== 'tersedia').map((k) => ({ kode: k.kode, nama: k.nama, status: k.status }));
+				const diSlot = ops.filter((k) => k.status === 'tersedia');
+				if (dicekIds) {
+					const dicek = new Set(dicekIds);
+					bukti = { dicek: diSlot.filter((k) => dicek.has(k.id)).length, di_slot: diSlot.length, total: ops.length };
+					// Aturan "wajib cek fisik" default MATI (Aturan #3): hanya dievaluasi bila superadmin menyalakannya
+					// dan klien memang mengirim checklist (klien lama tanpa checklist tidak dikunci mendadak).
+					if (ps.secKeyWajibCekFisik) {
+						belumDicek = diSlot.filter((k) => !dicek.has(k.id)).map((k) => ({ kode: k.kode, nama: k.nama, status: k.status }));
+					}
+				}
+			} catch (err) {
+				console.error('[serah-terima] gagal membaca kunci operasional untuk G_SEC8, aturan dilewati:', err);
+			}
+			const verdict = evaluateKeyHandoverGate({ outstanding, belumDicek });
+			if (!verdict.passed) {
+				const snapshot = { shift, tanggal, satpam_masuk_id: masukId, mode, violations: verdict.violations };
+				if (mode === 'hard') {
+					await writeGateAudit({ gate: 'G_SEC8', collection: 'security_shift_handover', recordId: null, decision: 'block', reason: verdict.summary, snapshot, email: user.email ?? null });
+					throw error(400, `Serah-terima belum bisa: ${verdict.summary}. Selesaikan checklist kotak kunci di halaman ini, kembalikan kunci ke slot, atau beri izin bawa pulang di menu Kunci.`);
+				}
+				if (mode === 'soft' && gateReasonKey.length < ps.secKeyMinAlasan) {
+					throw error(422, `${verdict.summary}. Selesaikan checklist/kembalikan kunci ke slot, atau isi alasan (minimal ${ps.secKeyMinAlasan} karakter) untuk tetap menyerahkan.`);
+				}
+				auditKey = {
+					decision: mode === 'soft' ? 'warn' : 'shadow',
+					reason: mode === 'soft' ? gateReasonKey : verdict.summary,
+					summary: verdict.summary,
+					violations: verdict.violations
+				};
+			}
+		}
+	} catch (err) {
+		if (isHttpError(err)) throw err;
+		console.error('[serah-terima] evaluasi G_SEC8 gagal, dilewati (fail-open):', err);
+	}
+
 	const created = await directusServerJson<{ data: any }>('/items/security_shift_handover', {
 		method: 'POST',
 		body: JSON.stringify({
@@ -124,5 +179,34 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	return json({ record: created?.data ?? created, gate: audit ? { decision: audit.decision, summary: audit.summary } : null });
+	// Bukti rekonsiliasi: satpam menyerahkan checklist kotak kunci dan semuanya lolos → catat sebagai 'allow'.
+	if (!auditKey && bukti) {
+		await writeGateAudit({
+			gate: 'G_SEC8',
+			collection: 'security_shift_handover',
+			recordId,
+			decision: 'allow',
+			reason: null,
+			snapshot: { shift, tanggal, satpam_masuk_id: masukId, ...bukti },
+			email: user.email ?? null
+		});
+	}
+
+	if (auditKey) {
+		await writeGateAudit({
+			gate: 'G_SEC8',
+			collection: 'security_shift_handover',
+			recordId,
+			decision: auditKey.decision,
+			reason: auditKey.reason,
+			snapshot: { shift, tanggal, satpam_masuk_id: masukId, summary: auditKey.summary, violations: auditKey.violations },
+			email: user.email ?? null
+		});
+	}
+
+	return json({
+		record: created?.data ?? created,
+		gate: audit ? { decision: audit.decision, summary: audit.summary } : null,
+		gate_kunci: auditKey ? { decision: auditKey.decision, summary: auditKey.summary } : null
+	});
 };

@@ -30,12 +30,24 @@ export interface PhaseChecklistResult {
 	pct: number;
 	passed: boolean;
 	readOnly: boolean;
+	/** true = daftar syarat fase yang dicek sistem/Admin (bukan centang leader): tampil sebagai panduan tanpa kotak centang. */
+	informational?: boolean;
 }
 
-/** Definisi fase dari settings (project.wizard.phases), urut phase_order, hanya yang enabled. */
-export async function getPhaseDefinitions(): Promise<PhaseDefinition[]> {
+/** Proyek Workshop Ciketing? Hanya sinyal eksplisit `projects.workshop` (sama seperti isCiketingProject() admin). */
+export function isWorkshopProject(project: { workshop?: string | null } | null | undefined): boolean {
+	return String(project?.workshop ?? '').trim().toLowerCase() === 'ciketing';
+}
+
+/**
+ * Definisi fase dari settings, urut phase_order, hanya yang enabled. Proyek Workshop Ciketing memakai
+ * project.wizard.phases_workshop (fallback ke project.wizard.phases bila kosong) — sama dengan admin.
+ */
+export async function getPhaseDefinitions(project?: { workshop?: string | null } | null): Promise<PhaseDefinition[]> {
 	await loadProjectSettings();
-	const phases = (getProjectSetting('project.wizard.phases') || []) as PhaseDefinition[];
+	const workshop = isWorkshopProject(project) ? getProjectSetting('project.wizard.phases_workshop') : null;
+	const generic = getProjectSetting('project.wizard.phases');
+	const phases = ((Array.isArray(workshop) && workshop.length ? workshop : generic) || []) as PhaseDefinition[];
 	return phases.filter((p) => p.enabled !== false).sort((a, b) => (a.phase_order || 0) - (b.phase_order || 0));
 }
 
@@ -43,11 +55,12 @@ export function isWizardEnabled(): boolean {
 	return !!getProjectSetting('project.wizard.enabled');
 }
 
-/** Baris project_phase_progress untuk satu proyek (read-only — ditulis oleh admin), key = phase_key. */
+/** Baris project_phase_progress untuk satu proyek (read-only — ditulis oleh admin), key = phase_key.
+ * Data live punya baris ganda per fase; diurut id naik sehingga baris TERBARU yang dipakai. */
 export async function getProjectPhases(projectId: number): Promise<Record<string, any>> {
 	try {
 		const rows: any[] = await directus.request(
-			readItems('project_phase_progress', { filter: { project_id: { _eq: projectId } }, limit: -1 })
+			readItems('project_phase_progress', { filter: { project_id: { _eq: projectId } }, sort: ['id'], limit: -1 })
 		);
 		return Object.fromEntries(rows.map((r) => [r.phase_key, r]));
 	} catch (error) {
@@ -83,8 +96,12 @@ export async function computeCurrentPhase(project: {
  * Checklist untuk satu fase — delegasi ke service yang sudah ada sesuai gate_type. Fase yang
  * bukan wewenang leader (readiness/evaluation) dikembalikan read-only tanpa item interaktif.
  */
-export async function getPhaseChecklist(projectId: number, phaseKey: string): Promise<PhaseChecklistResult> {
-	const defs = await getPhaseDefinitions();
+export async function getPhaseChecklist(
+	projectId: number,
+	phaseKey: string,
+	project?: { workshop?: string | null } | null
+): Promise<PhaseChecklistResult> {
+	const defs = await getPhaseDefinitions(project);
 	const def = defs.find((p) => p.phase_key === phaseKey);
 	if (!def) return { items: [], pct: 0, passed: false, readOnly: true };
 
@@ -119,8 +136,15 @@ export async function getPhaseChecklist(projectId: number, phaseKey: string): Pr
 		case 'readiness':
 		case 'auto':
 		default:
-			// Wewenang Admin/PM — leader melihat status saja, tanpa checklist interaktif di sini.
-			return { items: [], pct: 0, passed: false, readOnly: true };
+			// Wewenang Admin/PM (atau dicek otomatis sistem, mis. gate workshop_*) — leader melihat syarat
+			// fase sebagai panduan saja, tanpa kotak centang yang bisa menyesatkan.
+			return {
+				items: (def.checklist_items || []).map((i) => ({ id: i.id, label: i.label, wajib: !!i.wajib, checked: false })),
+				pct: 0,
+				passed: false,
+				readOnly: true,
+				informational: true
+			};
 	}
 }
 
@@ -130,9 +154,10 @@ export async function setPhaseCheck(
 	phaseKey: string,
 	itemId: string,
 	checked: boolean,
-	actorName: string
+	actorName: string,
+	project?: { workshop?: string | null } | null
 ): Promise<void> {
-	const defs = await getPhaseDefinitions();
+	const defs = await getPhaseDefinitions(project);
 	const def = defs.find((p) => p.phase_key === phaseKey);
 	if (!def) throw new Error(`Fase "${phaseKey}" tidak ditemukan`);
 

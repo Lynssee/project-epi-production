@@ -1,13 +1,15 @@
 // src/lib/services/grandPoLapangan.ts
 // Grand PO Fase 5 — klien tipis untuk /api/proyek/[id]/grand-po (read-only, tanpa Rupiah).
 import { getIdToken } from './secureDirectus';
-import type { AnggotaPaket, BarisMaterial, BarisRekon, PilihanProduk, RingkasSj } from '$lib/utils/grandPoLapangan';
+import type { AnggotaPaket, SubGrandPoLapangan, BarisMaterial, BarisRekon, PilihanProduk, RingkasSj } from '$lib/utils/grandPoLapangan';
+export type { SubGrandPoLapangan };
 
 export interface PaketLapangan {
 	grand_po_id: number;
 	nama: string;
 	nomor_gpo: string | null;
 	anggota: AnggotaPaket[];
+	sub_grand_po?: SubGrandPoLapangan[];
 }
 export interface MaterialLapangan {
 	so_id: number;

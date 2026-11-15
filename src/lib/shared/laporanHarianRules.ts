@@ -160,6 +160,24 @@ export function evaluateLaporanHarianRules(
 		? gate('G_LH_TENAGA_KERJA', 'Daftar pekerja terisi', 'A', 'passed', 'Minimal 1 pekerja terisi', { tab: 'tenaga' })
 		: gate('G_LH_TENAGA_KERJA', 'Daftar pekerja terisi', 'A', 'failed', 'Daftar pekerja wajib diisi minimal 1 orang.', { tab: 'tenaga' }));
 
+	// G_FLD_MANPOWER_ATTENDANCE_CONFIRMED — verifikasi seluruh pekerja aktif SPK telah diabsenkan (tidak 0 kehadiran)
+	const assignedWorkersCount = Number(s.assigned_workers_count ?? 0);
+	if (isHold) {
+		gates.push(gate('G_FLD_MANPOWER_ATTENDANCE_CONFIRMED', 'Presensi pekerja SPK dikonfirmasi', 'A', 'not_applicable', 'N/A — status Hold (pekerja otomatis standby)', { tab: 'tenaga', severity: 'WARN' }));
+	} else if (assignedWorkersCount > 0) {
+		const confirmedWorkersCount = manpower.reduce((acc: number, m: any) => {
+			const workers = Array.isArray(m?.workers) ? m.workers : [];
+			return acc + workers.filter((w: any) => (w?.id != null && w?.id !== '' && w?.id !== 0) || (w?.nama && String(w.nama).trim() !== '')).length;
+		}, 0);
+		if (confirmedWorkersCount === 0) {
+			gates.push(gate('G_FLD_MANPOWER_ATTENDANCE_CONFIRMED', 'Presensi pekerja SPK dikonfirmasi', 'A', 'failed', `Proyek memiliki ${assignedWorkersCount} pekerja aktif di SPK, tetapi belum ada yang diabsenkan di tab Tenaga. Gunakan tombol Hadirkan Semua atau pilih pekerja yang hadir.`, { tab: 'tenaga', severity: 'WARN' }));
+		} else {
+			gates.push(gate('G_FLD_MANPOWER_ATTENDANCE_CONFIRMED', 'Presensi pekerja SPK dikonfirmasi', 'A', 'passed', `${confirmedWorkersCount} dari ${assignedWorkersCount} pekerja SPK terkonfirmasi`, { tab: 'tenaga', severity: 'WARN' }));
+		}
+	} else {
+		gates.push(gate('G_FLD_MANPOWER_ATTENDANCE_CONFIRMED', 'Presensi pekerja SPK dikonfirmasi', 'A', 'not_applicable', 'N/A — tidak ada penugasan pekerja aktif (SPK) di proyek ini', { tab: 'tenaga', severity: 'WARN' }));
+	}
+
 	const attendancePhotoCount = s.attendance_photos_count ?? (s.attendance_photos || []).length;
 	gates.push(attendancePhotoCount > 0
 		? gate('G_LH_FOTO_ABSENSI', 'Foto bukti absensi terlampir', 'A', 'passed', `${attendancePhotoCount} foto`, { tab: 'tenaga' })
@@ -399,7 +417,7 @@ export function evaluateLaporanHarianRules(
 
 export const LAPORAN_HARIAN_GATE_KEYS = [
 	'G_LH_JADWAL', 'G_LH_RENCANA_BESOK', 'G_LH_PROGRESS', 'G_LH_FOTO_PROGRESS',
-	'G_LH_MATERIAL_TERPAKAI', 'G_LH_TENAGA_KERJA', 'G_LH_FOTO_ABSENSI',
+	'G_LH_MATERIAL_TERPAKAI', 'G_LH_TENAGA_KERJA', 'G_FLD_MANPOWER_ATTENDANCE_CONFIRMED', 'G_LH_FOTO_ABSENSI',
 	'G_WEEKEND_RECAP', 'G_WEEKEND_FOTO',
 	'G_LH_FOTO_TOOLBOX', 'G_LH_FOTO_AREA_KERJA', 'G_LH_FOTO_KENDALA',
 	'G_LH_HSE_CHECKLIST', 'G_LH_DOWNTIME_REASON', 'G_LH_QC_AMBIENT', 'G_LH_MATERIAL_VARIANCE',

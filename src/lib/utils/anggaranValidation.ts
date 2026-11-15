@@ -50,6 +50,9 @@ export interface ValidationInput {
 	bbmSplitEnabled: boolean;
 	bbmSplits: Array<{ project_id?: unknown; persentase?: unknown }>;
 	formatCurrency: (n: number) => string;
+	isEmergencyCutoff?: boolean;
+	emergencyCutoffReason?: string;
+	minEmergencyCutoffReasonLength?: number;
 }
 
 const NUMERIC_NAME = (s: string) => /^[\d.,\s]+$/.test(s) || /^Rp\.?\s*[\d.,]+$/i.test(s);
@@ -124,6 +127,13 @@ export function collectErrors(v: ValidationInput): FormIssue[] {
 		const total = v.bbmSplits.reduce((s, r) => s + (parseFloat(String(r.persentase)) || 0), 0);
 		if (v.bbmSplits.length < 2 || v.bbmSplits.some((r) => !r.project_id) || Math.abs(total - 100) > 0.5) {
 			err('bbm_split', 'f-bbm', 'Alokasi split BBM belum valid — pastikan minimal 2 proyek dipilih dan total persentase tepat 100%.');
+		}
+	}
+	if (v.isEmergencyCutoff) {
+		const minLen = v.minEmergencyCutoffReasonLength ?? 20;
+		const reason = (v.emergencyCutoffReason || '').trim();
+		if (reason.length < minLen) {
+			err('emergency_cutoff_reason', 'f-emergency-cutoff', `Alasan kebutuhan darurat harus diisi minimal ${minLen} karakter.`);
 		}
 	}
 	return out;

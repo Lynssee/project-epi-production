@@ -12,15 +12,26 @@
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
-import { authenticateProjectLeader } from '$lib/server/goodsReceived/guard';
+import { requireUser } from '$lib/server/firebaseAuth';
+import { resolveFieldProjectScope } from '$lib/server/fieldProjectScope';
 import { directusServerJson } from '$lib/server/directus';
-import { buildPaStatusLapangan } from '$lib/utils/paStatusLapangan';
+import { buildPaStatusLapangan, DEFAULT_SLA_CONFIG } from '$lib/utils/paStatusLapangan';
+import { readSettingsNamespace, positiveNumber } from '$lib/server/fieldSettings';
 
 export async function GET(event: RequestEvent) {
-	const { projectIds } = await authenticateProjectLeader(event);
+	const user = await requireUser(event);
 	const projectId = Number(event.params.project_id);
 	if (!Number.isSafeInteger(projectId) || projectId <= 0) throw error(400, 'project_id tidak valid.');
-	if (!projectIds.includes(projectId)) throw error(403, 'Anda bukan leader proyek ini.');
+
+	// Visibilitas Leader Fase 1: scope SAMA dengan gerbang halaman proyek di klien (bolehAksesProyek) —
+	// role manajemen (read-only, tanpa nominal), Project Leader & Co-Leader (id/nama), Manpower Leader/Wakil.
+	// Sebelumnya hanya leader_id/nama utama + proyek aktif, sehingga co-leader, manpower leader, dan
+	// admin/manajer yang lolos gerbang halaman justru mendapat 403 dan kartu birokrasi "gagal dimuat".
+	const idToken = (event.request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+	const scope = await resolveFieldProjectScope(idToken, user.localId, user.email);
+	if (!scope.unrestricted && !scope.projectIds.includes(projectId)) {
+		throw error(403, 'Anda tidak memegang proyek ini (bukan Leader, Co-Leader, atau Manpower Leader proyek ini).');
+	}
 
 	const warnings: string[] = [];
 
@@ -36,6 +47,8 @@ export async function GET(event: RequestEvent) {
 			(r) => ({ ok: true as const, rows: r?.data || [] }),
 			(e: any) => ({ ok: false as const, message: e?.message as string | undefined })
 		);
+	// Ambang SLA dari setelan project.field_birokrasi.* (satu query, bersamaan dengan sumber lain). Gagal -> default lama.
+	const settingsPromise = readSettingsNamespace('project.field_birokrasi.');
 	const plPromise = optional(
 		`/items/project_budgets?filter[project_id][_eq]=${projectId}&filter[packing_status][_nin]=complete&fields=id,project_id,material_name,description,qty,qty_sudah_dikirim,unit,packing_status,reference_number,date_created&limit=-1`
 	);
@@ -117,7 +130,20 @@ export async function GET(event: RequestEvent) {
 		console.warn(`[pa-status] proyek ${projectId}: gagal baca klaim reimbursement:`, reimbRes.message);
 	}
 
+	const settings = await settingsPromise;
+	const c = settings.cfg;
+	const NS = 'project.field_birokrasi.';
+	const yr = Number(c[NS + 'yellow_ratio']);
+	const sla = {
+		defaultHours: positiveNumber(c[NS + 'sla_default_hours'], DEFAULT_SLA_CONFIG.defaultHours),
+		draftHours: positiveNumber(c[NS + 'sla_draft_pl_hours'], DEFAULT_SLA_CONFIG.draftHours),
+		localPurchaseHours: positiveNumber(c[NS + 'sla_local_purchase_hours'], DEFAULT_SLA_CONFIG.localPurchaseHours),
+		reimbursementHours: positiveNumber(c[NS + 'sla_reimbursement_hours'], DEFAULT_SLA_CONFIG.reimbursementHours),
+		yellowRatio: yr > 0 && yr < 1 ? yr : DEFAULT_SLA_CONFIG.yellowRatio
+	};
+
 	const result = buildPaStatusLapangan({
+		sla,
 		pas,
 		requests,
 		lastActionByReq,

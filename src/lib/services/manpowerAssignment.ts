@@ -28,7 +28,7 @@ export interface ManpowerAssignment {
 const ASSIGN_FIELDS = [
 	'*',
 	'manpower_id.id', 'manpower_id.nama', 'manpower_id.posisi', 'manpower_id.NIK',
-	'manpower_id.no_telpon', 'manpower_id.foto', 
+	'manpower_id.no_telpon', 'manpower_id.foto', 'manpower_id.status_komitmen', 'manpower_id.reliability_score', 'manpower_id.total_kabur_count', 'penjamin_mandor_id.id', 'penjamin_mandor_id.nama', 'status_penyelesaian', 'lapor_kabur_at', 'lapor_kabur_catatan', 
 	'project_id.id', 'project_id.name', 'project_id.lokasi', 'project_id.nomor_po',
 	'project_id.jenis_project', 'project_id.geo_lat', 'project_id.geo_lng', 'project_id.geo_radius_m',
 ];
@@ -229,6 +229,27 @@ export async function createAssignment(data: any) {
 	try {
 		const initialStatus = data.status || 'menunggu_validasi';
 
+		// Anti-Kabur & Blacklist Guard (Fase 2)
+		try {
+			const mpCheck: any[] = await directus.request(
+				readItems('manpower', {
+					fields: ['id', 'nama', 'status_komitmen', 'blacklist_alasan'],
+					filter: { id: { _eq: data.manpower_id } },
+					limit: 1
+				})
+			);
+			const mp = mpCheck?.[0];
+			if (mp && (mp.status_komitmen === 'blacklisted_kabur' || mp.status_komitmen === 'blacklisted_indisipliner')) {
+				return {
+					data: null,
+					success: false,
+					error: `Tenaga kerja "${mp.nama}" masuk dalam daftar BLACKLIST (${mp.status_komitmen.replace('_', ' ')}). Alasan: ${mp.blacklist_alasan || 'Pelanggaran komitmen'}. Penugasan SPK ditolak.`
+				};
+			}
+		} catch (mpErr) {
+			console.warn('[createAssignment] Gagal verifikasi blacklist manpower:', mpErr);
+		}
+
 		if (initialStatus === 'aktif') {
 			const cek = await cekBentrokJadwal(data.manpower_id, data.tanggal_mulai, data.tanggal_selesai, null, {
 				rateTipe: data.rate_tipe,
@@ -373,7 +394,7 @@ function dataUrlToFile(dataUrl: string, filename: string) {
 	return new File([u8arr], filename, { type: mime });
 }
 
-export async function signAssignment(id: number, signatureDataUrl: string, nama: string = '') {
+export async function signAssignment(id: number, signatureDataUrl: string, nama: string = '', opts: { signBundle?: boolean } = { signBundle: true }) {
 	try {
 		const file = dataUrlToFile(signatureDataUrl, `ttd-spk-${id}-${Date.now()}.png`);
 		const formData = new FormData();
@@ -397,6 +418,37 @@ export async function signAssignment(id: number, signatureDataUrl: string, nama:
 			return { data: null, success: false, error: res.error || 'Gagal menyimpan tanda tangan' };
 		}
 
+		// Single Signature Bundle Grand PO di Dashboard Lapangan:
+		// Jika baris penugasan ini memiliki saudara dalam 1 nomor SPK bundle untuk personil yang sama,
+		// otomatis ikut disahkan aktif dengan tanda tangan yang sama
+		if (opts?.signBundle !== false && res.data?.nomor_spk && res.data?.manpower_id) {
+			try {
+				const mid = typeof res.data.manpower_id === 'object' ? res.data.manpower_id?.id : res.data.manpower_id;
+				const siblings: any[] = await directus.request(
+					readItems('manpower_assignment', {
+						fields: ['id'],
+						filter: {
+							manpower_id: { _eq: mid },
+							nomor_spk: { _eq: res.data.nomor_spk },
+							status: { _in: ['menunggu_ttd', 'menunggu_validasi'] },
+							id: { _neq: id }
+						},
+						limit: -1
+					})
+				);
+				for (const sib of siblings) {
+					await directus.request(updateItem('manpower_assignment', sib.id, {
+						ttd_manpower: fileId,
+						ttd_manpower_at: new Date().toISOString(),
+						ttd_nama: nama,
+						status: 'aktif',
+					}));
+				}
+			} catch (errSib: any) {
+				console.warn('[signAssignment Lapangan] gagal bundle auto-sign:', errSib?.message);
+			}
+		}
+
 		return { data: res.data, success: true, message: 'SPK berhasil ditandatangani' };
 	} catch (error: any) {
 		console.error('signAssignment:', error);
@@ -410,5 +462,38 @@ export async function deleteAssignment(id: number) {
 		return { success: true, message: 'Penugasan dihapus' };
 	} catch (error: any) {
 		return { success: false, error: error.message };
+	}
+}
+
+/**
+ * Lapor Manpower Kabur / Mangkir Fatal (Fase 2)
+ * Mengunci NIK pekerja ke blacklist_kabur, memutus SPK, dan mentrigger broadcast n8n.
+ */
+export async function laporManpowerKabur(params: {
+	assignmentId: number;
+	manpowerId: number;
+	projectId?: number;
+	pelaporNama?: string;
+	catatan: string;
+	sisaKasbon?: number;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+	try {
+		const res = await fetch('/api/manpower/lapor-kabur', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				assignment_id: params.assignmentId,
+				manpower_id: params.manpowerId,
+				project_id: params.projectId,
+				catatan: params.catatan,
+				pelapor_nama: params.pelaporNama,
+				sisa_kasbon: params.sisaKasbon || 0
+			})
+		});
+		const result = await res.json();
+		return result;
+	} catch (error: any) {
+		console.error('laporManpowerKabur client error:', error);
+		return { success: false, error: error.message || 'Gagal mengirim laporan kabur' };
 	}
 }

@@ -11,6 +11,10 @@ import { directusServerJson, directusServerUpload } from '$lib/server/directus';
 import { withinRadius } from '$lib/server/ess/geo';
 import { hitungBiayaHarian, pilihRate, rateKosong } from '$lib/shared/manpowerAccrualCalc';
 import { mergeFlags } from '$lib/shared/kioskFlags';
+import {
+	STATUS_PA_MENAGIH, KUNCI_PA_MODE_KEY, normKunciPaMode, cariBentrokPA, pesanKunciPA,
+	type KunciPaMode, type RincianPaAktif
+} from '$lib/shared/paKunciAbsensi';
 
 export const idOf = (v: any) => (v && typeof v === 'object' ? v.id : v);
 
@@ -39,6 +43,48 @@ export async function geofenceMode(type: string): Promise<GeoMode> {
 		return v === 'longgar' || v === 'off' ? v : 'wajib';
 	} catch {
 		return fallback;
+	}
+}
+
+/**
+ * Kunci lunak absensi selama PA upah berjalan (setelan manpower.absensi.kunci_saat_pa_mode: off|warn|block, default warn;
+ * SATU sumber dengan erp-epi). Server = pintu semua absen HP/kiosk/regu, jadi dicek di sini. Satu hari = satu penugasan, jadi
+ * maksimal 1–2 query (PA hanya dibaca bila ada rincian yang meliputi hari itu). Gagal baca = fail-open + log (bukan syarat operasional).
+ */
+export async function cekKunciPAServer(assignmentId: number, tanggal: string): Promise<{ mode: KunciPaMode; bentrok: RincianPaAktif | null }> {
+	let mode: KunciPaMode = normKunciPaMode(undefined);
+	try {
+		const st = await directusServerJson<{ data: any[] }>(
+			`/items/system_settings?filter[setting_key][_eq]=${KUNCI_PA_MODE_KEY}&limit=1&fields=setting_value`
+		);
+		let v: any = st?.data?.[0]?.setting_value;
+		if (typeof v === 'string') { try { v = JSON.parse(v); } catch { /* string polos */ } }
+		mode = normKunciPaMode(v);
+		if (mode === 'off') return { mode, bentrok: null };
+
+		const pamRes = await directusServerJson<{ data: any[] }>(
+			`/items/pengajuan_anggaran_manpower?filter[assignment_id][_eq]=${assignmentId}` +
+				`&filter[periode_dari][_lte]=${tanggal}&filter[periode_sampai][_gte]=${tanggal}&fields=id,assignment_id,pengajuan_anggaran_id,periode_dari,periode_sampai&limit=-1`
+		);
+		const pam = pamRes?.data || [];
+		const paIds = [...new Set(pam.map((r) => idOf(r.pengajuan_anggaran_id)).filter(Boolean))];
+		if (!paIds.length) return { mode, bentrok: null };
+		const paRes = await directusServerJson<{ data: any[] }>(
+			`/items/pengajuan_anggaran?filter[id][_in]=${paIds.join(',')}&fields=id,nomor_pengajuan,status&limit=-1`
+		);
+		const paMap = new Map((paRes?.data || []).map((p) => [String(p.id), p]));
+		const rincian: RincianPaAktif[] = pam
+			.map((r): RincianPaAktif | null => {
+				const pa: any = paMap.get(String(idOf(r.pengajuan_anggaran_id)));
+				return pa && STATUS_PA_MENAGIH.includes(pa.status)
+					? { assignmentId: idOf(r.assignment_id), dari: String(r.periode_dari).slice(0, 10), sampai: String(r.periode_sampai).slice(0, 10), nomor: pa.nomor_pengajuan || `PA #${pa.id}`, status: pa.status }
+					: null;
+			})
+			.filter((x): x is RincianPaAktif => !!x);
+		return { mode, bentrok: cariBentrokPA(rincian, assignmentId, tanggal) };
+	} catch (e) {
+		console.warn('[kunci-pa] gagal membaca PA aktif (kunci dilewati):', e);
+		return { mode, bentrok: null };
 	}
 }
 
@@ -103,8 +149,16 @@ export interface ProyekGeo {
 }
 
 /** Validasi bukti (foto + GPS + titik geofence). Lempar 400/409 dengan pesan yang sama seperti absen-regu. */
-export function validasiBukti(p: { geoMode: GeoMode; project: ProyekGeo; lat: number; lng: number; foto: unknown }): void {
-	if (!(p.foto instanceof File) || p.foto.size === 0) {
+export function validasiBukti(p: {
+	geoMode: GeoMode;
+	project: ProyekGeo;
+	lat: number;
+	lng: number;
+	foto: unknown;
+	/** PDP-24: foto regu sudah diunggah sekali oleh pemanggil (batch) — tidak perlu File lagi. */
+	fotoSudahAda?: boolean;
+}): void {
+	if (!p.fotoSudahAda && (!(p.foto instanceof File) || p.foto.size === 0)) {
 		throw error(400, 'Foto bukti wajib untuk status hadir / setengah hari.');
 	}
 	if (p.geoMode !== 'off' && (!Number.isFinite(p.lat) || !Number.isFinite(p.lng))) {
@@ -154,6 +208,8 @@ export interface AbsenMasukInput {
 	lng: number;
 	accuracy: number | null;
 	foto: unknown;
+	/** PDP-24: id berkas foto yang SUDAH diunggah (absen regu massal: satu foto regu untuk banyak orang). */
+	fotoFileId?: string | null;
 	pencatat: Pencatat;
 	/** 'overwrite' = perilaku absen-regu; 'idempotent' = kiosk (tidak menimpa absen sah, ulang = no-op). */
 	existingPolicy?: 'overwrite' | 'idempotent';
@@ -173,6 +229,8 @@ export interface AbsenResult {
 	butuhBukti: boolean;
 	sudahAda: boolean;
 	message: string;
+	/** PDP-24: id foto bukti yang dipakai (diunggah di sini atau diterima dari pemanggil) — dipakai ulang oleh batch. */
+	fotoId?: string | null;
 }
 
 export async function catatAbsenMasuk(i: AbsenMasukInput): Promise<AbsenResult> {
@@ -186,7 +244,7 @@ export async function catatAbsenMasuk(i: AbsenMasukInput): Promise<AbsenResult> 
 
 	const wcType = assignment.work_context_type || 'project';
 	const geoMode = await geofenceMode(wcType);
-	if (butuhBukti) validasiBukti({ geoMode, project: i.project, lat: i.lat, lng: i.lng, foto: i.foto });
+	if (butuhBukti) validasiBukti({ geoMode, project: i.project, lat: i.lat, lng: i.lng, foto: i.foto, fotoSudahAda: !!i.fotoFileId });
 
 	// Baris hari ini sudah ada? Jangan buat ganda (mencegah akrual dobel). Dicek SEBELUM unggah foto.
 	const existingRes = await directusServerJson<{ data: any[] }>(
@@ -208,6 +266,11 @@ export async function catatAbsenMasuk(i: AbsenMasukInput): Promise<AbsenResult> 
 		}
 	}
 
+	// Kunci lunak PA berjalan: block menolak (jalan keluar: PA ditolak/direvisi dulu); warn jalan terus + jejak untuk Admin Project.
+	const kunciPA = await cekKunciPAServer(assignment.id, i.tanggal);
+	if (kunciPA.bentrok && kunciPA.mode === 'block') throw error(409, pesanKunciPA(kunciPA.bentrok, i.tanggal, 'block'));
+	const peringatanKunciPA = kunciPA.bentrok && kunciPA.mode === 'warn' ? pesanKunciPA(kunciPA.bentrok, i.tanggal, 'warn') : null;
+
 	if (i.sebelumTulis) await i.sebelumTulis({ assignment, existing });
 
 	let valid: boolean | null = null;
@@ -215,7 +278,7 @@ export async function catatAbsenMasuk(i: AbsenMasukInput): Promise<AbsenResult> 
 	let fotoId: string | null = null;
 	if (butuhBukti) {
 		({ valid, jarak } = hitungLokasi({ geoMode, project: i.project, lat: i.lat, lng: i.lng }));
-		fotoId = await unggahFoto(i.foto as File, `absen-regu-${i.targetManpowerId}-${i.tanggal}.jpg`, i.fotoTitle);
+		fotoId = i.fotoFileId || (await unggahFoto(i.foto as File, `absen-regu-${i.targetManpowerId}-${i.tanggal}.jpg`, i.fotoTitle));
 	}
 
 	const kiosk = i.pencatat.metode !== 'leader';
@@ -258,6 +321,7 @@ export async function catatAbsenMasuk(i: AbsenMasukInput): Promise<AbsenResult> 
 		absensiId = created?.data?.id;
 	}
 
+	if (peringatanKunciPA) await catatJejakKunciPA(absensiId, peringatanKunciPA);
 	await postAccrual(absensiId, assignment, i.status);
 
 	return {
@@ -268,6 +332,7 @@ export async function catatAbsenMasuk(i: AbsenMasukInput): Promise<AbsenResult> 
 		radius,
 		butuhBukti,
 		sudahAda: false,
+		fotoId,
 		message: !butuhBukti
 			? 'Tercatat & masuk antrean verifikasi'
 			: valid == null
@@ -428,6 +493,27 @@ export async function postAccrual(absensiId: number, assignment: any, status: st
 	} catch (e) {
 		console.error('[absen-regu] akrual gagal (absensi tetap tercatat):', e);
 		await catatJejakAkrual(absensiId, 'akrual_gagal', String((e as any)?.message || e).slice(0, 500));
+	}
+}
+
+/** Jejak server: absensi diubah padahal harinya sudah ditagih PA yang berjalan (mode warn). Best-effort: tak boleh menggagalkan absensi. */
+export async function catatJejakKunciPA(absensiId: number, detail: string) {
+	try {
+		await directusServerJson('/items/activity_log', {
+			method: 'POST',
+			body: JSON.stringify({
+				module: 'manpower',
+				collection: 'manpower_absensi',
+				record_id: String(absensiId),
+				action: 'update',
+				activity_type: 'warning',
+				description: `[kunci_pa] absensi #${absensiId}: ${detail}`.slice(0, 2000),
+				actor_name: 'absen-regu-kunci-pa',
+				created_at: new Date().toISOString()
+			})
+		});
+	} catch (e) {
+		console.warn('[kunci-pa] gagal menulis jejak:', e);
 	}
 }
 

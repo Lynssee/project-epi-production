@@ -64,6 +64,97 @@ async function canvasResizeFallback(file: File, maxDim: number, quality: number)
 }
 
 /**
+ * Ukuran target (sisi terpanjang <= maxDim, rasio dipertahankan, tidak pernah diperbesar).
+ * Murni (tanpa DOM) supaya bisa diuji.
+ */
+export function computeTargetSize(width: number, height: number, maxDim: number): { width: number; height: number } {
+	if (!(width > 0) || !(height > 0) || !(maxDim > 0)) return { width: 0, height: 0 };
+	const longest = Math.max(width, height);
+	if (longest <= maxDim) return { width: Math.round(width), height: Math.round(height) };
+	const scale = maxDim / longest;
+	return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
+/** Ukuran asli foto (sudah memperhitungkan orientasi EXIF di browser modern) tanpa mendekode penuh ke canvas. */
+function readNaturalSize(file: File): Promise<{ width: number; height: number } | null> {
+	return new Promise((resolve) => {
+		const img = new Image();
+		const url = URL.createObjectURL(file);
+		const done = (v: { width: number; height: number } | null) => {
+			URL.revokeObjectURL(url);
+			resolve(v);
+		};
+		img.onload = () => done(img.naturalWidth > 0 && img.naturalHeight > 0 ? { width: img.naturalWidth, height: img.naturalHeight } : null);
+		img.onerror = () => done(null);
+		img.src = url;
+	});
+}
+
+/**
+ * PMT-52 — decode BERSKALA: createImageBitmap(file, {resizeWidth, resizeHeight}) meminta browser
+ * mendekode langsung ke ukuran kecil (JPEG scaled decode), tanpa menahan bitmap 12–48 MP di RAM
+ * seperti `new Image()` + drawImage. Mengembalikan null bila API/hasil tidak meyakinkan
+ * (caller lanjut ke jalur lama) — tidak pernah melempar.
+ */
+async function bitmapResizeCompress(file: File, maxDim: number, quality: number): Promise<File | null> {
+	if (typeof window === 'undefined' || typeof document === 'undefined') return null;
+	if (typeof createImageBitmap !== 'function') return null;
+	let bitmap: ImageBitmap | null = null;
+	try {
+		const natural = await readNaturalSize(file);
+		if (!natural) return null;
+		const target = computeTargetSize(natural.width, natural.height, maxDim);
+		if (!target.width || !target.height) return null;
+		bitmap = await createImageBitmap(file, {
+			resizeWidth: target.width,
+			resizeHeight: target.height,
+			resizeQuality: 'medium',
+			imageOrientation: 'from-image'
+		});
+		// Penjaga distorsi: bila browser menerapkan orientasi/resize dalam urutan berbeda, dimensi hasil
+		// tidak sama dengan yang diminta -> jangan dipakai (jalur lama yang menangani).
+		if (Math.abs(bitmap.width - target.width) > 1 || Math.abs(bitmap.height - target.height) > 1) {
+			console.warn('[photoCompress] Dimensi bitmap tidak sesuai permintaan, pakai jalur lama.', {
+				diminta: target,
+				hasil: { width: bitmap.width, height: bitmap.height }
+			});
+			return null;
+		}
+		const canvas = document.createElement('canvas');
+		canvas.width = bitmap.width;
+		canvas.height = bitmap.height;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return null;
+		ctx.drawImage(bitmap, 0, 0);
+		const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+		if (!blob) return null;
+		const outName = file.name ? file.name.replace(/\.[^.]+$/, '') + '.jpg' : 'photo.jpg';
+		return new File([blob], outName, { type: 'image/jpeg' });
+	} catch (err) {
+		console.warn('[photoCompress] Decode berskala gagal, pakai jalur lama:', err);
+		return null;
+	} finally {
+		try {
+			bitmap?.close();
+		} catch {
+			// abaikan
+		}
+	}
+}
+
+/**
+ * PMT-52 — kompresi DARURAT (sisi terpanjang 800 px, kualitas 0,6, tanpa Web Worker). Dipanggil
+ * halaman P2H saat kompresi utama gagal/timeout, SEBELUM menawarkan kirim file asli.
+ * Mengembalikan null bila semua cara gagal.
+ */
+export async function compressPhotoEmergency(file: File): Promise<File | null> {
+	if (file.type && !file.type.startsWith('image/')) return file;
+	const viaBitmap = await bitmapResizeCompress(file, 800, 0.6);
+	if (viaBitmap) return viaBitmap;
+	return canvasResizeFallback(file, 800, 0.6);
+}
+
+/**
  * Kompresi foto sisi klien.
  * Target default ~0.35 MB (350 KB) / max 1200px agar aman di bawah limit default adapter-node (512 KB)
  * dan reverse proxy nginx (1 MB).
@@ -77,6 +168,14 @@ export async function compressPhoto(file: File, customOptions?: CompressPhotoOpt
 	const targetMaxSizeMB = customOptions?.maxSizeMB ?? (lambat ? 0.25 : 0.35);
 	const targetMaxDim = customOptions?.maxWidthOrHeight ?? (lambat ? 800 : 1200);
 	const initialQuality = customOptions?.initialQuality ?? 0.75;
+
+	// 0. Decode berskala (hemat RAM, tercepat). Hasil <= 450 KB langsung dipakai; bila masih besar,
+	//    hasil yang sudah kecil ini menjadi input tier berikutnya (bukan foto mentah 12–48 MP).
+	const scaled = await bitmapResizeCompress(file, targetMaxDim, initialQuality);
+	if (scaled) {
+		if (scaled.size <= 450 * 1024) return scaled;
+		if (scaled.size < file.size) file = scaled;
+	}
 
 	// 1. Coba browser-image-compression dengan Web Worker
 	try {

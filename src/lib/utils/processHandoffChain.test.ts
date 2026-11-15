@@ -32,7 +32,7 @@ describe('buildChain', () => {
 		expect(ch.downstream[0]).toMatchObject({ code: 'H1', doc_label: 'Dari alur', handoff_type: 'barang' });
 		expect(ch.downstream[1]).toMatchObject({ code: '', flow_id: 'c', node_id: '', node_label: '' });
 	});
-	it('tanpa konfigurasi & tanpa handoff → kosong; 28 bawaan: sales_to_inventory punya hulu & hilir bila alur lengkap', () => {
+	it('tanpa konfigurasi & tanpa handoff → kosong; 29 bawaan: sales_to_inventory punya hulu & hilir bila alur lengkap', () => {
 		expect(buildChain('a', FLOWS, [])).toEqual({ upstream: [], downstream: [] });
 		const ids = new Map<string, Set<string>>();
 		for (const h of DEFAULT_HANDOFFS) for (const [f, n] of [[h.from_flow, h.from_node], [h.to_flow, h.to_node]]) ids.set(f, (ids.get(f) ?? new Set()).add(n));
@@ -44,9 +44,9 @@ describe('buildChain', () => {
 });
 
 describe('bawaan & parse', () => {
-	it('28 bawaan: kode H01..H28 unik, jenis valid', () => {
-		expect(DEFAULT_HANDOFFS).toHaveLength(28);
-		expect(new Set(DEFAULT_HANDOFFS.map((h) => h.code)).size).toBe(28);
+	it('29 bawaan: kode H01..H29 unik, jenis valid', () => {
+		expect(DEFAULT_HANDOFFS).toHaveLength(29);
+		expect(new Set(DEFAULT_HANDOFFS.map((h) => h.code)).size).toBe(29);
 		expect(DEFAULT_HANDOFFS.every((h) => ['dokumen', 'barang', 'dana', 'otorisasi'].includes(h.handoff_type))).toBe(true);
 	});
 	it('parseHandoffConfig: teks/objek; tanpa daftar → null (pakai bawaan); entri rusak dibuang; handoffs [] → daftar kosong', () => {

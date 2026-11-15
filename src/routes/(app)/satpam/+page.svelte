@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { fetchActiveCheckpoints } from '$lib/services/security';
-	import { IconShieldCheck, IconLoader2, IconQrcode, IconDoorEnter, IconUsers, IconAlertTriangle, IconRepeat, IconDeviceMobile } from '@tabler/icons-svelte';
+	import { IconShieldCheck, IconLoader2, IconQrcode, IconDoorEnter, IconUsers, IconAlertTriangle, IconRepeat, IconDeviceMobile, IconKey } from '@tabler/icons-svelte';
 
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -24,6 +24,7 @@
 		{ label: 'Gate Log', icon: IconDoorEnter, href: '/satpam/gate' },
 		{ label: 'Tamu', icon: IconUsers, href: '/satpam/tamu' },
 		{ label: 'Insiden', icon: IconAlertTriangle, href: '/satpam/insiden' },
+		{ label: 'Kotak Kunci', icon: IconKey, href: '/satpam/kunci' },
 		{ label: 'Serah-Terima', icon: IconRepeat, href: '/satpam/serah-terima' },
 		{ label: 'Deposit HP', icon: IconDeviceMobile, href: '/satpam/deposit-hp' }
 	];

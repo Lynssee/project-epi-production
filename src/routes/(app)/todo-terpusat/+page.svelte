@@ -16,12 +16,17 @@
 		type LaporanHarianStatusRow
 	} from '$lib/services/todoTerpusatApi';
 	import type { KasbonManpowerRow } from '$lib/services/kasbonManpowerTerpusat';
+	import {
+		fetchActiveDirectivesForProjects,
+		type ProjectActionItem
+	} from '$lib/services/projectActionApi';
 
 	let loading = $state(true);
 	let projects = $state<any[]>([]);
 	let maintenanceRows = $state<MaintenanceReviewRow[]>([]);
 	let laporanRows = $state<LaporanHarianStatusRow[]>([]);
 	let kasbonRows = $state<KasbonManpowerRow[]>([]);
+	let directiveRows = $state<ProjectActionItem[]>([]);
 
 	let rejectingId = $state<string | null>(null);
 	let rejectNote = $state('');
@@ -35,10 +40,11 @@
 		try {
 			projects = (await getProjectsForCurrentUser(false, { limit: -1 })) || [];
 			const projectIds = projects.map((p) => p.id);
-			[maintenanceRows, laporanRows, kasbonRows] = await Promise.all([
+			[maintenanceRows, laporanRows, kasbonRows, directiveRows] = await Promise.all([
 				getMaintenanceReviewForProjects(projects),
 				getLaporanHarianStatusForProjects(projects),
-				getKasbonManpowerInfoForProjects(projectIds)
+				getKasbonManpowerInfoForProjects(projectIds),
+				fetchActiveDirectivesForProjects(projectIds)
 			]);
 		} finally {
 			loading = false;
@@ -107,6 +113,63 @@
 			<p class="text-[14px] text-gray-500">Anda belum ditugaskan ke proyek manapun.</p>
 		</div>
 	{:else}
+		<!-- Seksi 0: Instruksi Manajemen & Disposisi Task Proyek -->
+		<div class="space-y-3">
+			<div class="flex items-center justify-between">
+				<h2 class="text-sm font-bold text-gray-700 uppercase tracking-wide">📋 Instruksi Manajemen & Disposisi Proyek</h2>
+				{#if directiveRows.length > 0}
+					<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-mono">
+						{directiveRows.length} Pending
+					</span>
+				{/if}
+			</div>
+
+			{#if directiveRows.length === 0}
+				<div class="bg-white rounded-xl border border-gray-100 py-6 text-center text-[13px] text-gray-400">
+					✓ Tidak ada instruksi manajemen atau task khusus yang menunggu tindakan Anda.
+				</div>
+			{:else}
+				<div class="space-y-2.5">
+					{#each directiveRows as item (item.id)}
+						<div class="bg-white rounded-xl border border-gray-100 p-4 hover:border-gray-200 transition-all">
+							<div class="flex items-start justify-between gap-3">
+								<div class="space-y-1 min-w-0">
+									<div class="flex items-center gap-2 flex-wrap">
+										<span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded font-mono {item.tingkat_urgensi === 'kritis' ? 'bg-red-100 text-red-800' : item.tingkat_urgensi === 'tinggi' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}">
+											{item.tingkat_urgensi || 'Normal'}
+										</span>
+										{#if item.nama_proyek}
+											<span class="text-[11px] font-semibold text-gray-500 truncate max-w-xs">{item.nama_proyek}</span>
+										{/if}
+									</div>
+									<h3 class="text-[14px] font-bold text-gray-900 leading-snug">{item.judul}</h3>
+									{#if item.deskripsi}
+										<p class="text-[12px] text-gray-600 line-clamp-2 leading-relaxed">{item.deskripsi}</p>
+									{/if}
+									<div class="flex items-center gap-4 text-[11px] text-gray-400 pt-1 font-mono">
+										{#if item.target_selesai}
+											<span>Batas: <strong class="text-gray-700">{new Date(item.target_selesai).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</strong></span>
+										{/if}
+										{#if item.pic_pelaksana_nama}
+											<span>PIC: <strong class="text-gray-700">{item.pic_pelaksana_nama}</strong></span>
+										{/if}
+									</div>
+								</div>
+								<div class="shrink-0 pt-1">
+									<a
+										href={`/proyek/${item.project_id}`}
+										class="px-3 py-1.5 rounded-lg text-[12px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 flex items-center gap-1 transition-colors"
+									>
+										Tindak Lanjuti →
+									</a>
+								</div>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
 		<!-- Seksi 1: Perlu Tindakan Anda -->
 		<div class="space-y-3">
 			<h2 class="text-sm font-bold text-gray-700 uppercase tracking-wide">⚡ Perlu Tindakan Anda — Review Maintenance</h2>

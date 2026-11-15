@@ -32,6 +32,7 @@
 		type AvailabilityBlock
 	} from '$lib/services/ess/fleetBooking';
 	import { getMyProjects, type SiteCheckinProjectOption } from '$lib/services/siteCheckin';
+	import { fetchKunciSlotKendaraan, type KunciSlotKendaraan } from '$lib/services/kunci';
 	import { SectionGuide, FieldHint, HelpIcon } from '$lib/components/hints';
 	import { essHints } from '$lib/data/hints/ess';
 	import { getHint } from '$lib/data/hints/getHint';
@@ -63,6 +64,31 @@
 	} from '@tabler/icons-svelte';
 
 	const h = (key: string) => getHint(essHints, key, 'ess');
+
+	// Slot kunci kendaraan (Key Management): "Ambil kunci di Slot B-03, Key Box Pos Satpam". Informasi tambahan;
+	// kendaraan tanpa kunci terdaftar tidak menampilkan apa pun, dan gagal memuat tidak mengganggu daftar booking.
+	let kunciSlots = $state<Record<number, KunciSlotKendaraan>>({});
+	const kunciDiminta = new Set<number>();
+	$effect(() => {
+		const ids = [
+			...new Set(
+				bookings
+					.filter((b) => (b.status === 'disetujui' || b.status === 'aktif') && b.vehicle_id)
+					.map((b) => Number(b.vehicle_id))
+					.filter((n) => Number.isInteger(n) && n > 0)
+			)
+		].filter((id) => !kunciDiminta.has(id));
+		if (ids.length === 0) return;
+		ids.forEach((id) => kunciDiminta.add(id));
+		fetchKunciSlotKendaraan(ids)
+			.then((r) => {
+				kunciSlots = { ...kunciSlots, ...(r.slots || {}) };
+			})
+			.catch((err) => {
+				console.warn('[ess/kendaraan] slot kunci kendaraan tidak dapat dimuat:', err);
+				ids.forEach((id) => kunciDiminta.delete(id));
+			});
+	});
 
 	// State Data
 	let loading = $state(true);
@@ -1162,6 +1188,21 @@
 											Unit: <strong style="color: var(--sys-label)">{b.vehicle?.name ? `${b.vehicle.name} (${b.vehicle.nomor_polisi})` : (b.status === 'diajukan' ? 'Menunggu GA' : 'Tidak Ditentukan')}</strong>
 										</span>
 									</div>
+									{#if (b.status === 'disetujui' || b.status === 'aktif') && b.vehicle_id && kunciSlots[Number(b.vehicle_id)]}
+										{@const ks = kunciSlots[Number(b.vehicle_id)]}
+										<div class="flex items-start gap-1.5" title="Kunci kendaraan disimpan di kotak kunci pos satpam. Tunjukkan tiket ini ke satpam, lalu kunci dipindai dan dicatat atas nama Anda.">
+											<span class="shrink-0" aria-hidden="true">🔑</span>
+											<span>
+												{#if ks.status === 'tersedia'}
+													Ambil kunci di <strong style="color: var(--sys-label)">{ks.nomor_hook ? `Slot ${ks.nomor_hook}` : 'pos satpam'}</strong>{ks.lokasi_kotak ? `, ${ks.lokasi_kotak}` : ''}
+												{:else if ks.status === 'dipinjam' || ks.status === 'overnight_ijin'}
+													Kunci <strong style="color: var(--sys-label)">sedang dipinjam</strong> (Slot {ks.nomor_hook ?? '-'}) — tanyakan satpam/GA bila unit akan Anda pakai.
+												{:else}
+													Kunci berstatus <strong style="color: var(--sys-label)">{ks.status}</strong> — hubungi GA sebelum berangkat.
+												{/if}
+											</span>
+										</div>
+									{/if}
 									<div class="flex items-center gap-1.5">
 										<IconSteeringWheel size={14} class="text-purple-500 shrink-0" />
 										<span>

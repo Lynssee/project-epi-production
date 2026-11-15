@@ -473,6 +473,10 @@ export async function submitShiftHandover(payload: {
 	satpam_masuk_id: number;
 	catatan: string;
 	gate_sec7_reason?: string;
+	/** G_SEC8: alasan tetap menyerahkan walau masih ada kunci belum kembali (mode soft). */
+	gate_sec8_reason?: string;
+	/** G_SEC8: id kunci yang dicentang satpam "ada di slot" pada checklist rekonsiliasi. */
+	kunci_dicek_ids?: number[];
 }) {
 	const user = auth.currentUser;
 	if (!user) throw new Error('Sesi tidak ditemukan. Silakan login ulang.');

@@ -10,7 +10,7 @@ const TTL_MS = 5 * 60 * 1000;
 let cache: { at: number; flows: ProcessFlow[] } | null = null;
 
 const FIELDS =
-	'id,parent_flow_id,flow_key,title,description,target_app,urutan,version,definition,sop_code,kategori_sop,sub_kategori,approval_status,external_flowchart_url,external_doc_url,sosialisasi_end_date,procedure_type';
+	'id,parent_flow_id,flow_key,title,description,target_app,urutan,version,definition,sop_code,kategori_sop,sub_kategori,approval_status,external_flowchart_url,external_doc_url,sosialisasi_end_date,procedure_type,tahap_proyek';
 
 export async function loadPublishedFlowsForField({ now = Date.now(), useCache = true } = {}): Promise<ProcessFlow[]> {
 	if (useCache && cache && now - cache.at < TTL_MS) return cache.flows;

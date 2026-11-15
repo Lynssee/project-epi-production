@@ -35,5 +35,6 @@ export const DEFAULT_HANDOFFS: ConfigHandoff[] = [
 	H('H25', 'hrd_payroll_lifecycle', 'pay_verif_manajer', 'budget_and_finance_approval', 'fin_cair', 'dana', 'Rekap Payroll Disetujui + CSV Transfer Bank'),
 	H('H26', 'petty_cash_and_lpj_settlement', 'pc_verifikasi_lpj', 'budget_and_finance_approval', 'fin_jurnal_rekon', 'dokumen', 'LPJ + Nota Asli'),
 	H('H27', 'accounts_payable_and_supplier_settlement', 'ap_eksekusi_dan_lunas', 'procurement_to_pay', 'p2p_pay', 'dana', 'Bukti Transfer Pelunasan Supplier & Jurnal AP'),
-	H('H28', 'invoicing_and_ar_collection', 'ar_penerimaan_lunas', 'sales_to_inventory', 'so', 'otorisasi', 'Jurnal Pelunasan Piutang & Pembukaan Credit Hold')
+	H('H28', 'invoicing_and_ar_collection', 'ar_penerimaan_lunas', 'sales_to_inventory', 'so', 'otorisasi', 'Jurnal Pelunasan Piutang & Pembukaan Credit Hold'),
+	H('H29', 'fleet_and_vehicle_management', 'flt_verifikasi_kelaikan', 'ga_key_custody_and_shift_reconciliation', 'kunci_pinjam_di_pos_jaga', 'barang', 'Kunci Kendaraan — slot tertera di tiket booking (ambil di pos jaga)')
 ];

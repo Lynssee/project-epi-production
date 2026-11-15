@@ -206,17 +206,31 @@
         </h1>
         <p class="text-xs sm:text-sm text-gray-500 mt-0.5 hidden sm:block">Panduan lengkap penggunaan aplikasi Dashboard Lapangan</p>
       </div>
-      <!-- Hamburger untuk sidebar di mobile -->
-      <button
-        onclick={() => mobileSidebarOpen = !mobileSidebarOpen}
-        class="md:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-        aria-label="Buka menu panduan"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
+      <div class="flex items-center gap-2">
+        <a
+          href="/bantuan?tab=sop"
+          class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+        >
+          <span>📜 Direktori SOP &amp; K3 Lapangan →</span>
+        </a>
+        <!-- Hamburger untuk sidebar di mobile -->
+        <button
+          onclick={() => mobileSidebarOpen = !mobileSidebarOpen}
+          class="md:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+          aria-label="Buka menu panduan"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+      </div>
     </div>
+  </div>
+
+  <!-- Mobile quick link banner -->
+  <div class="sm:hidden bg-indigo-50 border-b border-indigo-100 px-4 py-2 flex items-center justify-between text-xs">
+    <span class="text-indigo-900 font-medium">Butuh SOP K3 atau instruksi proyek?</span>
+    <a href="/bantuan?tab=sop" class="font-bold text-indigo-700 underline">Buka SOP Lapangan →</a>
   </div>
 
   <!-- Mobile sidebar backdrop -->

@@ -15,7 +15,11 @@ export type PaStatusResponse = PaStatusResult & { warnings: string[]; generated_
 export async function loadPaStatus(projectId: number | string): Promise<PaStatusResponse> {
 	const token = await getIdToken();
 	const res = await fetch(`/api/proyek/${encodeURIComponent(String(projectId))}/pa-status`, { headers: { Authorization: `Bearer ${token}` } });
-	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+	if (!res.ok) {
+		const err = new Error(`HTTP ${res.status}`) as Error & { status?: number };
+		err.status = res.status;
+		throw err;
+	}
 	const body = await res.json();
 	if (!body?.success) throw new Error(body?.error || 'Gagal memuat status pengajuan anggaran');
 	return body.data as PaStatusResponse;

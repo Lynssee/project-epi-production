@@ -7,11 +7,19 @@
 	import { IconArrowLeft, IconLoader2 } from '@tabler/icons-svelte';
 	import { getProjectsForCurrentUser } from '$lib/services/projectScope';
 	import { getAssignmentExpiryForProjects, type AssignmentExpiryRow } from '$lib/services/manpowerAssignment';
+	import LaporKaburModal from '$lib/components/project/LaporKaburModal.svelte';
 
 	let loading = $state(true);
 	let projects = $state<any[]>([]);
 	let assignments = $state<AssignmentExpiryRow[]>([]);
 	let agingFilter = $state<'' | 'expired' | 'under7' | 'd7to30' | 'over30'>('');
+	let showLaporKaburModal = $state(false);
+	let laporKaburTarget = $state<any>(null);
+
+	function openLaporKabur(row: any) {
+		laporKaburTarget = row;
+		showLaporKaburModal = true;
+	}
 
 	onMount(load);
 
@@ -156,7 +164,17 @@
 								{/if}
 							</td>
 							<td class="px-4 py-3 text-center">
-								<a href={`/proyek/${projectIdOf(r)}?tab=keuangan`} class="text-[12px] font-semibold text-green-700 hover:underline">Lihat Proyek</a>
+								<div class="flex items-center justify-center gap-1.5 flex-wrap">
+									<a href={`/proyek/${projectIdOf(r)}?tab=keuangan`} class="text-[12px] font-semibold text-green-700 hover:underline">Lihat Proyek</a>
+									<button
+										type="button"
+										onclick={() => openLaporKabur(r)}
+										class="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200"
+										title="Laporkan pekerja kabur / mangkir fatal"
+									>
+										🚨 Lapor Kabur
+									</button>
+								</div>
 							</td>
 						</tr>
 					{/each}
@@ -165,3 +183,10 @@
 		</div>
 	{/if}
 </div>
+
+<LaporKaburModal
+	show={showLaporKaburModal}
+	assignment={laporKaburTarget}
+	onSuccess={load}
+	onClose={() => { showLaporKaburModal = false; laporKaburTarget = null; }}
+/>

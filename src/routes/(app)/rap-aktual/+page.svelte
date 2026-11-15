@@ -8,7 +8,7 @@
 	import WorkshopManpowerSummaryCard from '$lib/components/project/WorkshopManpowerSummaryCard.svelte';
 	import ProjectBepTrackerCard from '$lib/components/project/ProjectBepTrackerCard.svelte';
 	import WsRapAktualStatusCard from '$lib/components/project/WsRapAktualStatusCard.svelte';
-	import { IconChartBar, IconLoader2, IconBuildingFactory2, IconChevronDown, IconBuildingSkyscraper, IconMapPin } from '@tabler/icons-svelte';
+	import { IconChartBar, IconLoader2, IconBuildingFactory2, IconChevronDown, IconBuildingSkyscraper, IconMapPin, IconPrinter } from '@tabler/icons-svelte';
 
 	let loading = $state(true);
 	let projects = $state<any[]>([]);
@@ -105,6 +105,20 @@
 						</div>
 					</div>
 				</div>
+
+				{#if selectedProject}
+					<!-- Fase 3 Laporan Keuangan Formal: lembar pertanggungjawaban pagu & komitmen (tanpa nilai PO klien/laba) -->
+					<a
+						href="/rap-aktual/cetak?project={selectedProject.id}"
+						title="Cetak 1 lembar A4: Pagu RAP vs Realisasi vs Sisa, komitmen terbuka (pengajuan/PR), dan LPJ belum selesai. Tidak memuat nilai kontrak klien maupun laba."
+						class="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30 px-4 py-3 text-sm hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition"
+					>
+						<span class="flex items-center gap-2 font-semibold text-emerald-800 dark:text-emerald-300">
+							<IconPrinter size={18} /> Cetak Lembar Pertanggungjawaban Anggaran
+						</span>
+						<span class="text-[11px] text-emerald-700/80 dark:text-emerald-300/70">Pagu vs realisasi • komitmen • LPJ →</span>
+					</a>
+				{/if}
 
 				<!-- Ringkasan Manpower lintas-PO (RAP Ciketing v2, Fase 5 #2) — lampu & persen, tanpa rupiah -->
 				<WorkshopManpowerSummaryCard {projects} />

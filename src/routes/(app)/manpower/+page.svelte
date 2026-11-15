@@ -528,6 +528,21 @@
 		let waNum = str.startsWith('0') ? '62' + str.slice(1) : str;
 		return { formatted: str, raw: waNum };
 	}
+
+	function getCommitmentBadge(mp: Manpower) {
+		const status = mp.status_komitmen || 'aktif';
+		const score = mp.reliability_score ?? 100;
+		if (status === 'blacklisted_kabur') {
+			return { label: 'Blacklist (Kabur)', bg: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30', icon: '🚨' };
+		}
+		if (status === 'blacklisted_indisipliner') {
+			return { label: 'Blacklist Indisipliner', bg: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30', icon: '⛔' };
+		}
+		if (status === 'dalam_pengawasan' || score < 80) {
+			return { label: `Pengawasan (${score}%)`, bg: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30', icon: '⚠️' };
+		}
+		return { label: `Komitmen Baik (${score}%)`, bg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30', icon: '✅' };
+	}
 </script>
 
 <div class="flex-1 flex flex-col h-full">
@@ -812,10 +827,20 @@
 
 {#snippet manpowerCard(mp: Manpower)}
 	{@const phone = cleanPhoneNumber(mp.no_telpon)}
+	{@const cBadge = getCommitmentBadge(mp)}
+	{@const isBlacklisted = mp.status_komitmen === 'blacklisted_kabur' || mp.status_komitmen === 'blacklisted_indisipliner'}
 	<div 
 		class="rounded-xl border transition-all duration-150 overflow-hidden" 
-		style="background: var(--sys-bg2); border-color: var(--sys-sep)"
+		style="background: var(--sys-bg2); border-color: {isBlacklisted ? 'rgba(239, 68, 68, 0.4)' : 'var(--sys-sep)'}"
 	>
+		{#if isBlacklisted}
+			<div class="px-3 py-1.5 bg-rose-500/15 border-b border-rose-500/25 flex items-center justify-between text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+				<span class="flex items-center gap-1.5">
+					<span>🚨</span>
+					<span>PERINGATAN BLACKLIST: Pekerja ini memiliki catatan pelanggaran / kabur. Dilarang ditugaskan ke proyek baru.</span>
+				</span>
+			</div>
+		{/if}
 		<!-- Main collapsed row -->
 		<button
 			class="w-full flex items-center gap-3 p-3 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
@@ -835,6 +860,10 @@
 					<p class="text-[13px] font-bold truncate" style="color: var(--sys-label)">
 						{mp.nama || '-'}
 					</p>
+					<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold {cBadge.bg}">
+						<span>{cBadge.icon}</span>
+						<span>{cBadge.label}</span>
+					</span>
 				</div>
 				<div class="flex items-center gap-2 mt-0.5 flex-wrap">
 					{#if mp.posisi}
@@ -972,6 +1001,44 @@
 						</div>
 					{/if}
 
+				</div>
+
+				<!-- Kartu Kepatuhan & Reliabilitas Komitmen (Fase 1) -->
+				<div class="p-3 rounded-xl border space-y-2" style="background: var(--sys-bg2); border-color: var(--sys-sep)">
+					<div class="flex items-center justify-between">
+						<p class="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--sys-label3)">
+							<span>🛡️</span>
+							<span>Kepatuhan & Reliabilitas Komitmen</span>
+						</p>
+						<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold {cBadge.bg}">
+							{cBadge.label}
+						</span>
+					</div>
+					<div class="grid grid-cols-3 gap-2 pt-1 text-center">
+						<div class="p-2 rounded-lg" style="background: var(--sys-fill2)">
+							<p class="text-[9px] font-bold uppercase" style="color: var(--sys-label4)">Skor Kehadiran</p>
+							<p class="text-[13px] font-bold mt-0.5 {mp.reliability_score && mp.reliability_score < 80 ? 'text-amber-600' : 'text-emerald-600'}">
+								{mp.reliability_score ?? 100}%
+							</p>
+						</div>
+						<div class="p-2 rounded-lg" style="background: var(--sys-fill2)">
+							<p class="text-[9px] font-bold uppercase" style="color: var(--sys-label4)">Riwayat Mangkir</p>
+							<p class="text-[13px] font-bold mt-0.5 {mp.total_mangkir_count && mp.total_mangkir_count > 0 ? 'text-amber-600' : 'text-gray-600'}">
+								{mp.total_mangkir_count ?? 0} Hari
+							</p>
+						</div>
+						<div class="p-2 rounded-lg" style="background: var(--sys-fill2)">
+							<p class="text-[9px] font-bold uppercase" style="color: var(--sys-label4)">Riwayat Kabur</p>
+							<p class="text-[13px] font-bold mt-0.5 {mp.total_kabur_count && mp.total_kabur_count > 0 ? 'text-rose-600' : 'text-gray-600'}">
+								{mp.total_kabur_count ?? 0} Kali
+							</p>
+						</div>
+					</div>
+					{#if mp.blacklist_alasan}
+						<div class="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-600 dark:text-rose-400">
+							<strong>Catatan Pelanggaran:</strong> {mp.blacklist_alasan}
+						</div>
+					{/if}
 				</div>
 
 				<!-- Skill Matrix Section -->

@@ -45,7 +45,7 @@ export async function POST(event: RequestEvent) {
 		if (budgetItemIds.length) {
 			const res: any = await directusServerJson(
 				`/items/project_budgets?filter[id][_in]=${budgetItemIds.join(',')}` +
-					`&fields=id,project_id,qty,unit,identitas_barang_id,material_name,material_color,budget_category,no_item_needed,is_manpower&limit=-1`
+					`&fields=id,project_id,qty,unit,identitas_barang_id,material_name,material_color,budget_category,no_item_needed,is_manpower,unit_price,planned_amount&limit=-1`
 			);
 			for (const r of res?.data || []) {
 				const pid = r.project_id ? (typeof r.project_id === 'object' ? r.project_id.id : r.project_id) : null;
@@ -64,7 +64,10 @@ export async function POST(event: RequestEvent) {
 					budget_category: r.budget_category || null,
 					unit: r.unit || null,
 					no_item_needed: isTruth(r.no_item_needed),
-					is_manpower: isTruth(r.is_manpower)
+					is_manpower: isTruth(r.is_manpower),
+					// Harga RAB dibaca server (G_PKL_MASTER_PRICE), bukan dari klien.
+					unit_price: num(r.unit_price),
+					planned_amount: num(r.planned_amount)
 				});
 			}
 		}

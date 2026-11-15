@@ -27,6 +27,20 @@ export interface AnggotaPaket {
 	proyek_id: number | null;
 }
 
+export interface SubGrandPoLapangan {
+	id: number;
+	grand_po_id: number;
+	kode_sub: string;
+	judul: string;
+	ruang_lingkup: string | null;
+	status: string;
+	current_phase_key: string;
+	project_id: number | null;
+	urutan: number;
+	proyek_ini: boolean;
+	jumlah_anggota: number;
+}
+
 /** Progres proyek → 0..100 (dibulatkan 1 desimal); tak valid → null (bukan 0 palsu). */
 export function normalizeProgress(v: unknown): number | null {
 	if (v === null || v === undefined || v === '') return null;
@@ -182,10 +196,27 @@ export function buildPilihanProduk(items: BarisMaterial[]): PilihanProduk[] {
 
 export type LevelRekon = 'ok' | 'perhatian' | 'melebihi_po';
 
+/** Asal PO sebuah produk (kuota fisik per PO, TANPA Rupiah). */
+export interface SumberPo {
+	so_id: number;
+	nomor_po: string;
+	qty_pesan: number;
+	qty_kirim: number;
+	/** Pemakaian coating log yang ditandai ke PO ini (log lama tanpa tag tidak ikut). */
+	qty_dipakai?: number;
+	/** Sisa kuota PO ini = dikirim − dipakai (bertag). */
+	qty_sisa?: number;
+	level?: LevelRekon;
+}
+
 export interface BarisRekon {
 	product_id: number;
 	nama_barang: string;
 	unit: string;
+	/** Tag PO: PO material mana saja yang memasok produk ini (diisi oleh tambahSumberPo). */
+	sumber_po?: SumberPo[];
+	/** Pemakaian produk ini yang BELUM ditandai ke PO mana pun (log lama / "tidak tahu"). */
+	qty_dipakai_tanpa_po?: number;
 	qty_pesan: number;
 	qty_kirim: number;
 	qty_dipakai: number;
@@ -255,6 +286,54 @@ export function buildRekonsiliasi(args: {
 	});
 	const rank: Record<LevelRekon, number> = { melebihi_po: 0, perhatian: 1, ok: 2 };
 	return { baris: baris.sort((a, b) => rank[a.level] - rank[b.level] || a.nama_barang.localeCompare(b.nama_barang)), tanpaProduk, satuanBeda };
+}
+
+/**
+ * Beri tag PO pada baris rekonsiliasi: produk yang sama bisa dipasok beberapa PO material.
+ * Kuota pesan/kirim selalu dipecah per PO. Pemakaian dipecah per PO HANYA dari coating log yang bertag
+ * (so_customer_id); log tanpa tag tidak dibagi-bagi (tidak mengarang) — dilaporkan di qty_dipakai_tanpa_po.
+ */
+export function tambahSumberPo(
+	baris: BarisRekon[],
+	material: Array<{ so_id: number; nomor_po: string; items: BarisMaterial[] }>,
+	opts: { logs?: Array<{ product_id?: any; so_customer_id?: any; qty_used?: unknown; satuan?: string | null }>; toleransiPct?: number } = {}
+): BarisRekon[] {
+	const tol = 1 + Math.max(num(opts.toleransiPct ?? 5), 0) / 100;
+	return (baris || []).map((b) => {
+		const sumber: SumberPo[] = [];
+		for (const m of material || []) {
+			const mine = (m.items || []).filter((it) => it.product_id === b.product_id);
+			if (!mine.length) continue;
+			const pesan = round2(mine.reduce((t, it) => t + it.qty_pesan, 0));
+			const kirim = round2(mine.reduce((t, it) => t + it.qty_kirim, 0));
+			const sp: SumberPo = { so_id: m.so_id, nomor_po: m.nomor_po, qty_pesan: pesan, qty_kirim: kirim };
+			if (opts.logs) {
+				const used = round2(
+					opts.logs
+						.filter((lg) => idOf(lg.product_id) === b.product_id && idOf(lg.so_customer_id) === m.so_id && (!lg.satuan || normUnit(lg.satuan) === normUnit(b.unit)))
+						.reduce((t, lg) => t + num(lg.qty_used), 0)
+				);
+				sp.qty_dipakai = used;
+				sp.qty_sisa = round2(kirim - used);
+				sp.level = used > pesan * tol && pesan > 0 ? 'melebihi_po' : used > kirim * tol ? 'perhatian' : 'ok';
+			}
+			sumber.push(sp);
+		}
+		const out: BarisRekon = { ...b, sumber_po: sumber };
+		if (opts.logs) out.qty_dipakai_tanpa_po = round2(Math.max(b.qty_dipakai - sumber.reduce((t, s) => t + (s.qty_dipakai || 0), 0), 0));
+		return out;
+	});
+}
+
+/** Pilihan PO sumber untuk satu produk (dropdown form coating log). Hanya PO material yang memuat produk tsb. */
+export function poOptionsForProduct(
+	material: Array<{ so_id: number; nomor_po: string; items: BarisMaterial[] }>,
+	productId: number | null | undefined
+): Array<{ so_id: number; nomor_po: string }> {
+	if (productId == null) return [];
+	return (material || [])
+		.filter((m) => (m.items || []).some((it) => it.product_id === productId))
+		.map((m) => ({ so_id: m.so_id, nomor_po: m.nomor_po }));
 }
 
 /** Pemetaan kunci JSON yang boleh keluar ke lapangan — dipakai tes untuk menjamin tanpa Rupiah. */

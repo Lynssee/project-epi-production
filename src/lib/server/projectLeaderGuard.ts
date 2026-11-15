@@ -41,7 +41,12 @@ export async function resolveLedProjectIds(karyawan: ServerKaryawan): Promise<nu
 		fields: 'id',
 		limit: '-1'
 	});
-	const res = await directusServerJson<{ data: Array<{ id: number }> }>(`/items/projects?${qs.toString()}`).catch(() => null);
+	// Aturan #1: kegagalan baca TIDAK boleh diam-diam menjadi "tidak memimpin proyek apa pun" -- itu persis gejala
+	// "Co-Leader tidak bisa mengakses/mengisi laporan" (PDP-37). Tetap fail-closed ([]), tetapi dilog agar bisa ditelusuri.
+	const res = await directusServerJson<{ data: Array<{ id: number }> }>(`/items/projects?${qs.toString()}`).catch((e) => {
+		console.error(`[projectLeaderGuard] gagal membaca proyek yang dipimpin karyawan #${karyawan.id}:`, e?.message || e);
+		return null;
+	});
 	return (res?.data || []).map((p) => p.id);
 }
 

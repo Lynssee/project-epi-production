@@ -16,6 +16,32 @@ interface ManpowerKasbonKonfig {
 	jedaHari: number;
 }
 
+
+interface ManpowerAntiKaburConfig {
+	maxEarnedPct: number;
+	blokirAlpha: boolean;
+	minHariKerja: number;
+}
+
+async function getAntiKaburKasbonConfig(): Promise<ManpowerAntiKaburConfig> {
+	try {
+		const res = await directusServerJson<{ data: any[] }>(
+			'/items/app_settings?filter[module][_eq]=manpower&fields=setting_key,setting_value&limit=20'
+		);
+		const rows = res?.data || [];
+		const map: Record<string, string> = {};
+		for (const r of rows) map[r.setting_key] = r.setting_value;
+
+		return {
+			maxEarnedPct: Number(map['kasbon_max_earned_pct']) || 50,
+			blokirAlpha: map['kasbon_blokir_alpha'] !== 'false',
+			minHariKerja: Number(map['kasbon_min_hari_kerja']) || 3
+		};
+	} catch {
+		return { maxEarnedPct: 50, blokirAlpha: true, minHariKerja: 3 };
+	}
+}
+
 async function getKonfigurasiKasbonManpower(): Promise<ManpowerKasbonKonfig> {
 	try {
 		const result = await directusServerJson<{ data: any[] }>(
@@ -73,11 +99,74 @@ export async function assertKasbonManpowerEligible(
 	nominal: number,
 	tenor: number
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-	const [manpowerRes, konfig, existing] = await Promise.all([
-		directusServerJson<{ data: { plafon_kasbon: number | null } }>(`/items/manpower/${manpowerId}?fields=plafon_kasbon`),
+	const [manpowerRes, konfig, existing, antiKaburCfg] = await Promise.all([
+		directusServerJson<{ data: { plafon_kasbon: number | null; status_komitmen?: string; blacklist_alasan?: string } }>(
+			`/items/manpower/${manpowerId}?fields=plafon_kasbon,status_komitmen,blacklist_alasan`
+		),
 		getKonfigurasiKasbonManpower(),
-		listKasbonManpowerByPekerja(manpowerId)
+		listKasbonManpowerByPekerja(manpowerId),
+		getAntiKaburKasbonConfig()
 	]);
+
+	// 1. Guard Blacklist (Fase 4 Anti-Kabur)
+	const mpData = manpowerRes?.data;
+	if (mpData && (mpData.status_komitmen === 'blacklisted_kabur' || mpData.status_komitmen === 'blacklisted_indisipliner')) {
+		return {
+			ok: false,
+			message: `Pekerja ini berstatus BLACKLIST (${mpData.status_komitmen.replace('_', ' ')}). Alasan: ${mpData.blacklist_alasan || 'Pelanggaran komitmen'}. Pengajuan kasbon ditolak.`
+		};
+	}
+
+	// 2. Guard Alpha 7 Hari Terakhir
+	if (antiKaburCfg.blokirAlpha) {
+		const tujuhHariLalu = new Date();
+		tujuhHariLalu.setDate(tujuhHariLalu.getDate() - 7);
+		const tglFilter = tujuhHariLalu.toISOString().split('T')[0];
+
+		const alphaRes = await directusServerJson<{ data: any[] }>(
+			`/items/manpower_absensi?filter[manpower_id][_eq]=${manpowerId}&filter[status][_eq]=alpha&filter[tanggal][_gte]=${tglFilter}&limit=1&fields=id,tanggal`
+		).catch(() => null);
+
+		if (alphaRes?.data && alphaRes.data.length > 0) {
+			return {
+				ok: false,
+				message: `Pekerja memiliki riwayat Alpha (mangkir) pada tanggal ${alphaRes.data[0].tanggal}. Kasbon ditahan untuk mitigasi risiko kabur.`
+			};
+		}
+	}
+
+	// 3. Guard Earned Value Kasbon & Minimal Hari Hadir
+	try {
+		const assignRes = await directusServerJson<{ data: any[] }>(
+			`/items/manpower_assignment?filter[manpower_id][_eq]=${manpowerId}&filter[status][_eq]=aktif&limit=1&fields=id,rate_harian,rate_tipe`
+		).catch(() => null);
+		const assign = assignRes?.data?.[0];
+
+		if (assign?.id && assign.rate_tipe !== 'borongan') {
+			const absRes = await directusServerJson<{ data: any[] }>(
+				`/items/manpower_absensi?filter[assignment_id][_eq]=${assign.id}&filter[status][_in]=hadir,setengah_hari&limit=-1&fields=id`
+			).catch(() => null);
+			const daysPresent = absRes?.data?.length || 0;
+
+			if (daysPresent < antiKaburCfg.minHariKerja) {
+				return {
+					ok: false,
+					message: `Pekerja baru memiliki ${daysPresent} hari hadir di proyek ini (minimal ${antiKaburCfg.minHariKerja} hari kerja untuk memenuhi syarat kasbon).`
+				};
+			}
+
+			const rateHarian = Number(assign.rate_harian) || 150000;
+			const maxEarnedValue = Math.floor(daysPresent * rateHarian * (antiKaburCfg.maxEarnedPct / 100));
+			if (maxEarnedValue > 0 && nominal > maxEarnedValue) {
+				return {
+					ok: false,
+					message: `Nominal kasbon (Rp${nominal.toLocaleString('id-ID')}) melebihi batas ${antiKaburCfg.maxEarnedPct}% hak upah berjalan (Maksimal Rp${maxEarnedValue.toLocaleString('id-ID')} dari ${daysPresent} hari hadir).`
+				};
+			}
+		}
+	} catch (evErr) {
+		console.warn('[assertKasbonManpowerEligible] Error cek earned value:', evErr);
+	}
 
 	const plafon = Number(manpowerRes?.data?.plafon_kasbon) > 0 ? Number(manpowerRes.data.plafon_kasbon) : konfig.plafonDefault;
 	if (plafon > 0 && nominal > plafon) {

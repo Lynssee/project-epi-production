@@ -40,6 +40,8 @@
 	import { getActiveCheckin, triggerAutoCheckout, getSiteCheckinSettings } from '$lib/services/siteCheckin';
 	import GateCompletionWizard from '$lib/components/shared/GateCompletionWizard.svelte';
 	import { evaluateLaporanHarianGates } from '$lib/utils/laporanHarianGates';
+	import { fetchProjectFulfillment, type FulfillmentSj } from '$lib/services/projectFulfillment';
+	import { listProjectSj } from '$lib/utils/mobSyncLapangan';
 	import { fetchGateHints, applyGateHints } from '$lib/services/gateHintClient';
 	import { checkTolerance, findMeasurableSpecFields } from '$lib/utils/qcToleranceChecker';
 	import { computeDailyProductivity } from '$lib/utils/manpowerProductivity';
@@ -174,7 +176,9 @@
 	import { getAssignments } from '$lib/services/manpowerAssignment';
 	import { idNum } from '$lib/shared/manpowerGroups';
 	import { hariMundur, DEFAULT_DISIPLIN } from '$lib/shared/laporanKualitasRules';
+	import { tanggalFotoAsli, fotoCocokTanggal } from '$lib/shared/fotoTanggal';
 	import { upsertTimesheetAbsensi, findAbsensiTodayOtherProject } from '$lib/services/manpowerAbsensi';
+	import { getManpowerSetting, loadManpowerSettings } from '$lib/services/manpowerSettings';
 	import { reportUsageDeltas, checkKomplainLock } from '$lib/services/projectUsageLedger';
 	import { findMatchingMaterial, realUsageSkips, manualUsageItems } from '$lib/utils/materialManualMatch';
 	import FilterSort from '$lib/components/FilterSort.svelte';
@@ -184,8 +188,13 @@
 	import SubtaskPicker from '$lib/components/project/SubtaskPicker.svelte';
 	import QuickSubtaskScheduleModal from '$lib/components/project/QuickSubtaskScheduleModal.svelte';
 	import { hasValidSchedule } from '$lib/utils/timelineDisiplin.js';
-	import { calculateProjectProgressPercentage, calculateCumulativeProjectProgress } from '$lib/utils/projectProgress';
-	import { computeDailyTarget } from '$lib/utils/dailyTarget';
+	import {
+		calculateProjectProgressPercentage,
+		calculateCumulativeProjectProgress,
+		calculateProjectPlannedPercentage,
+		calculateProjectDeviation
+	} from '$lib/utils/projectProgress.ts';
+	import { computeDailyTarget } from '$lib/utils/dailyTarget.ts';
 	import { FIELD_SERVICE_TYPES, fieldServiceTypeLabel } from '$lib/utils/fieldServiceTypes';
 	import { vibrateTap } from '$lib/utils/haptic';
 	import { getProjectEquipmentP2hStatus, type ProjectEquipmentP2hStatus } from '$lib/services/preventive';
@@ -204,6 +213,7 @@
 	import { tandaiMasukanKruDipakai } from '$lib/services/laporanMasukanKru';
 	import { gabungFoto, tambahBaris, type HasilImpor } from '$lib/utils/kioskCatatan';
 	import { drafMasihAda, gabungMaterialUsed, type DrafPemakaian } from '$lib/utils/kioskPemakaian';
+	import { fetchLiveSiteWeather, type WeatherAssistResult } from '$lib/utils/weatherAssist';
 
 	// Peta lokasi (Fase 6 open-source plan, MapLibre) — reportPosition sudah ditangkap
 	// diam-diam untuk watermark foto, sebelumnya tidak pernah ditampilkan ke user.
@@ -392,6 +402,45 @@
 		} finally {
 			loadingBriefing = false;
 		}
+	}
+
+	// Smart Weather Assist (Fase 4, Open-Meteo & GPS / Lokasi Proyek)
+	let weatherAssistLoading = $state(false);
+	let weatherSuggestion = $state<WeatherAssistResult | null>(null);
+	let weatherAppliedMsg = $state('');
+
+	async function checkLiveWeatherAssist() {
+		weatherAssistLoading = true;
+		weatherAppliedMsg = '';
+		try {
+			const lat = reportPosition?.lat ?? null;
+			const lng = reportPosition?.lng ?? null;
+			const cityName = (project as any)?.lokasi || (project as any)?.lokasi_kota || '';
+			const res = await fetchLiveSiteWeather({ lat, lng, cityName });
+			if (res) {
+				weatherSuggestion = res;
+			}
+		} catch {
+			// fail-open: jangan putus UI jika jaringan lemah di site
+		} finally {
+			weatherAssistLoading = false;
+		}
+	}
+
+	function applySuggestedWeather() {
+		if (!weatherSuggestion) return;
+		reportData.weather = weatherSuggestion.weather;
+		if (reportData.qc_ambient) {
+			if (reportData.qc_ambient.air_temp === null || reportData.qc_ambient.air_temp === '' || reportData.qc_ambient.air_temp === undefined) {
+				reportData.qc_ambient.air_temp = weatherSuggestion.temp;
+			}
+			if (reportData.qc_ambient.relative_humidity === null || reportData.qc_ambient.relative_humidity === '' || reportData.qc_ambient.relative_humidity === undefined) {
+				reportData.qc_ambient.relative_humidity = weatherSuggestion.humidity;
+				hitungDewPointOtomatis();
+			}
+		}
+		weatherAppliedMsg = `Diterapkan: ${weatherSuggestion.icon} ${weatherSuggestion.weather} (${weatherSuggestion.temp}°C)`;
+		setTimeout(() => { weatherAppliedMsg = ''; }, 4000);
 	}
 
 	// Modal preview untuk nota/bukti pengeluaran
@@ -676,7 +725,7 @@
 			toolbox_jam: '',
 			toolbox_topik: ''
 		} as { apd_compliance: string; catatan_k3: string; [key: string]: any },
-		downtime_log: [] as { durasi_jam: number; penyebab: string; jumlah_pekerja_terdampak: number; catatan: string }[],
+		downtime_log: [] as { durasi_jam: number; penyebab: string; jumlah_pekerja_terdampak: number; catatan: string; sj_ditunggu?: string; sj_ditunggu_nomor?: string }[],
 		qc_ambient: {
 			applicable: false,
 			filled_today: false,
@@ -1845,6 +1894,7 @@
 						flagged: materialVarianceCheck.flagged,
 						note: reportData.material_variance_note
 					},
+					assignedWorkersCount: availableManpower.length,
 					unconfirmedSopCount,
 					sopGateMode
 				});
@@ -2354,6 +2404,7 @@
 				weekend_location_recap: isFriday ? reportData.weekend_location_recap : '',
 				weekend_photos: isFriday ? weekend_photos : [],
 				...(alasanTerlambat.trim() ? { alasan_input_admin: alasanTerlambat.trim() } : {}),
+				...fieldBuktiSusulan(),
 				budget_receipt,
 				budget_items: finalBudgetItems,
 				// Fase 2 Paritas Field Lengkap (reports.* JSON fields)
@@ -2586,7 +2637,7 @@
 
 			if (created && created.id) {
 				savedReportId = created.id;
-				await syncManpowerAbsensi(created.id, cleanManpower, reportData.date);
+				await syncManpowerAbsensi(created.id, cleanManpower, reportData.date, attendance_photos, reportData.schedule);
 			}
 			await applyAutoProjectStatusTransition(overallProgressForSubmit);
 			await updateProject(projectId, { total_progress: String(overallProgressForSubmit) }).catch(e => console.warn('Gagal sync total_progress:', e));
@@ -2618,7 +2669,7 @@
 	// Menyatukan pekerja yang diisi di tab Tenaga langsung ke manpower_absensi (Modul Gajian),
 	// supaya tidak perlu input manual ulang. Hanya pekerja dengan SPK/assignment aktif di proyek
 	// ini yang bisa disinkron (assignment menyimpan rate untuk akrual biaya harian).
-	async function syncManpowerAbsensi(reportId: number, manpowerGroups: any[], tanggal: string) {
+	async function syncManpowerAbsensi(reportId: number, manpowerGroups: any[], tanggal: string, attendancePhotos: string[] = [], schedule: any[] = []) {
 		try {
 			const res = await getAssignments({ project_id: Number(projectId), status: 'aktif' });
 			const assignments = res.success ? res.data : [];
@@ -2632,6 +2683,7 @@
 			);
 
 			const skipped: string[] = [];
+			const kunciPaPesan = new Set<string>();
 			for (const group of manpowerGroups) {
 				// Grup STANDBY (Hold) selalu standby; grup lain pakai jam/OT/standby per
 				// pekerja yang diisi saat ditambahkan (fallback 8 jam untuk data lama sebelum
@@ -2651,7 +2703,20 @@
 					const isStandby = groupIsStandby || !!w.is_standby;
 					const jamKerja = isStandby ? 0 : (w.jam != null ? Number(w.jam) : 8);
 					const status = w.status || (isStandby ? 'standby' : (jamKerja === 4 ? 'setengah_hari' : 'hadir'));
-					await upsertTimesheetAbsensi({
+					// Hitung jam_masuk & jam_pulang dari schedule kerja laporan
+					let startH = '08:00';
+					let endH = '17:00';
+					if (schedule && schedule.length > 0) {
+						const firstS = schedule.find((s: any) => s.start_time);
+						if (firstS?.start_time) startH = firstS.start_time;
+						const lastS = [...schedule].reverse().find((s: any) => s.end_time);
+						if (lastS?.end_time) endH = lastS.end_time;
+					}
+					const jamMasuk = `${tanggal}T${startH.length === 5 ? startH + ':00' : startH}.000Z`;
+					const jamPulang = `${tanggal}T${endH.length === 5 ? endH + ':00' : endH}.000Z`;
+					const fotoMasuk = (attendancePhotos && attendancePhotos.length > 0) ? attendancePhotos[0] : null;
+
+					const upsertRes: any = await upsertTimesheetAbsensi({
 						assignmentId: assignment.id,
 						manpowerId: w.id,
 						projectId: Number(projectId),
@@ -2667,8 +2732,19 @@
 						kasbonAmount: Number(w.kasbon_amount || w.kasbon_val || w.kasbon || 0),
 						dobelProyekFlag: !!w.dobel_proyek_flag,
 						dobelProyekProyekLainId: w.dobel_proyek_proyek_lain_id,
-						status
+						status,
+						foto_masuk: fotoMasuk,
+						jam_masuk: jamMasuk,
+						jam_pulang: jamPulang,
+						metode_catat: 'leader',
+						verifikasi_leader_status: 'disetujui',
+						verifikasi_oleh_user: userName,
+						masuk_valid: true,
+						jarak_masuk_m: 0
 					});
+					// Kunci lunak PA berjalan: hari yang sudah ditagih PA — laporan tetap tersimpan, absensinya yang diperingatkan/ditolak.
+					if (upsertRes?.lockedPA) kunciPaPesan.add(`${w.nama || 'Pekerja'} (${tanggal}): ${upsertRes.error}`);
+					else if (upsertRes?.peringatanPA) kunciPaPesan.add(`${w.nama || 'Pekerja'} (${tanggal}): ${upsertRes.peringatanPA}`);
 				}
 			}
 
@@ -2684,7 +2760,8 @@
 					}
 				}
 				const deficitPct = Math.round(((plan - actual) / plan) * 100);
-				if (deficitPct > 20) {
+				const thresholdPct = Number(getManpowerSetting('manpower.deficit_alert_pct')) || 20;
+				if (deficitPct >= thresholdPct) {
 					auth.currentUser?.getIdToken().then((idToken) => {
 						fetch('/api/laporan/notify-submitted', {
 							method: 'POST',
@@ -2694,11 +2771,18 @@
 								projectId,
 								projectName: project?.name,
 								headcountActual: actual,
-								headcountPlan: plan
+								headcountPlan: plan,
+								thresholdPct
 							})
 						}).catch(() => {});
 					});
 				}
+			}
+
+			if (kunciPaPesan.size > 0) {
+				const daftar = [...kunciPaPesan].slice(0, 4).join('\n');
+				const sisa = kunciPaPesan.size > 4 ? `\n(+${kunciPaPesan.size - 4} lainnya)` : '';
+				alert(`Laporan tersimpan, TAPI ${kunciPaPesan.size} absensi menyangkut hari yang sudah ditagih di PA yang berjalan:\n${daftar}${sisa}`);
 			}
 
 			if (skipped.length > 0) {
@@ -3358,6 +3442,9 @@
 		const prevPct = calculateCumulativeProjectProgress(project, allReportsForProgress, [], savedReportId);
 		const overallPct = calculateCumulativeProjectProgress(project, allReportsForProgress, reportData.progress, savedReportId);
 		const todayDeltaPct = Math.max(0, overallPct - prevPct);
+		const targetDateObj = reportData.date ? new Date(`${reportData.date}T00:00:00`) : new Date();
+		const plannedPct = calculateProjectPlannedPercentage(project, targetDateObj);
+		const deviation = plannedPct != null ? parseFloat((overallPct - plannedPct).toFixed(1)) : null;
 
 		return {
 			targetProgress,
@@ -3367,6 +3454,8 @@
 			overallPct,
 			prevPct,
 			todayDeltaPct,
+			plannedPct,
+			deviation,
 			activeTasksCount
 		};
 	});
@@ -3946,6 +4035,13 @@
 	// Kalau tidak (izin ditolak/tak ada sinyal), foto tetap dikompres otomatis (max 1280px, jpeg 0.80)
 	// agar ringan dikirim di area blank spot / sinyal lemah.
 	async function stampIfPositionAvailable(file: File): Promise<File> {
+		// PDP-26: tanggal ambil foto dibaca dari berkas ASLI (watermark/kompres membuang EXIF & lastModified).
+		const tanggalAsli = await tanggalFotoAsli(file).catch(() => null);
+		const hasil = await stampOnly(file);
+		tanggalAsliFoto.set(hasil, tanggalAsli);
+		return hasil;
+	}
+	async function stampOnly(file: File): Promise<File> {
 		if (!reportPosition) {
 			return await compressImageFile(file);
 		}
@@ -3954,6 +4050,41 @@
 		} catch {
 			return await compressImageFile(file);
 		}
+	}
+
+	// PDP-26 — bukti laporan SUSULAN: foto progres harus diambil pada tanggal laporan. Tanggal asli per berkas
+	// disimpan di WeakMap (tidak ikut state/serialisasi); dihitung saat kirim. Server menandai is_susulan &
+	// foto_cocok_tanggal_count; G10_HARIAN tidak menganggap susulan tanpa foto cocok menutup bolong.
+	const tanggalAsliFoto = new WeakMap<File, string | null>();
+	const FOTO_TOLERANSI_HARI = 0; // 0 = harus persis tanggal laporan (belum disetel dari server; lihat dokumen PDP-26)
+	function kumpulFotoProgres(): File[] {
+		const out: File[] = [];
+		for (const p of (reportData.progress_photos || []) as any[]) if (p?.file instanceof File) out.push(p.file);
+		for (const row of (reportData.progress || []) as any[]) {
+			for (const f of row?.foto_bukti || []) if (f?.file instanceof File) out.push(f.file);
+			for (const k of ['foto_before', 'foto_during', 'foto_after']) if (row?.[k]?.file instanceof File) out.push(row[k].file);
+		}
+		return out;
+	}
+	function adaFotoProgresTersimpan(): boolean {
+		if (((reportData.progress_photos || []) as any[]).some((p) => p?.uploadedId && !p?.file)) return true;
+		return ((reportData.progress || []) as any[]).some(
+			(r) => (r?.existing_foto_bukti || []).length > 0 || r?.existing_foto_before || r?.existing_foto_during || r?.existing_foto_after
+		);
+	}
+	/** Ringkasan bukti foto untuk laporan susulan (hari > batas bebas). null bila bukan susulan berat. */
+	function ringkasBuktiSusulan(): { total: number; cocok: number; adaTersimpan: boolean } | null {
+		if (!(hariTerlambat > DEFAULT_DISIPLIN.bebas_hari)) return null;
+		const files = kumpulFotoProgres();
+		const cocok = files.filter((f) => fotoCocokTanggal(tanggalAsliFoto.get(f) ?? null, reportData.date, FOTO_TOLERANSI_HARI)).length;
+		return { total: files.length, cocok, adaTersimpan: adaFotoProgresTersimpan() };
+	}
+	/** Field tambahan payload laporan. Tidak menimpa hitungan lama bila tidak ada foto baru dan sudah ada foto tersimpan. */
+	function fieldBuktiSusulan(): Record<string, any> {
+		const r = ringkasBuktiSusulan();
+		if (!r) return { is_susulan: false };
+		if (r.total === 0 && r.adaTersimpan) return { is_susulan: true };
+		return { is_susulan: true, foto_cocok_tanggal_count: r.cocok };
 	}
 
 	async function handleAttendancePhoto(event: Event) {
@@ -4088,6 +4219,29 @@
 	};
 	function downtimeCauseLabel(value: string | undefined): string {
 		return value ? (DOWNTIME_CAUSE_LABEL[value] || value) : '-';
+	}
+
+	// B4 (G_MOB_SYNC, 6 Nov 2026) — downtime "Tunggu Material" ditautkan ke SJ yang ditunggu (atau "Belum ada SJ"/"Tidak tahu"),
+	// supaya keterlambatan logistik terlacak di analitik. Data SJ dimuat HANYA saat ada baris penyebab itu (hemat API).
+	// Bukan gate: tidak memblokir kirim laporan (Aturan #6) — kolom tersimpan di JSON downtime_log tanpa perubahan skema.
+	let sjMenunggu = $state<FulfillmentSj[]>([]);
+	let sjMenungguLoaded = false;
+	let needsSjList = $derived((reportData.downtime_log || []).some((d: any) => d.penyebab === 'tunggu_material'));
+	$effect(() => {
+		if (!needsSjList || sjMenungguLoaded || !projectId) return;
+		sjMenungguLoaded = true;
+		fetchProjectFulfillment(projectId)
+			.then((fu) => {
+				sjMenunggu = listProjectSj(fu).filter((x) => !x.received_at);
+			})
+			.catch((e) => console.warn('[laporan] daftar SJ untuk downtime tidak termuat (pilihan "Belum ada SJ" tetap tersedia):', e));
+	});
+	function setSjDitunggu(item: { sj_ditunggu?: string; sj_ditunggu_nomor?: string }, value: string) {
+		item.sj_ditunggu = value;
+		item.sj_ditunggu_nomor = value === 'belum_ada_sj' ? 'Belum ada SJ' : value === 'tidak_tahu' ? 'Tidak tahu' : (sjMenunggu.find((x) => String(x.id) === value)?.nomor_sj || '');
+	}
+	function sjDitungguLabel(item: { sj_ditunggu?: string; sj_ditunggu_nomor?: string }): string {
+		return item.sj_ditunggu_nomor || (item.sj_ditunggu === 'belum_ada_sj' ? 'Belum ada SJ' : item.sj_ditunggu === 'tidak_tahu' ? 'Tidak tahu' : '-');
 	}
 
 	function addDowntimeRow() {
@@ -4839,6 +4993,20 @@
 											{#if hariTerlambat > DEFAULT_DISIPLIN.bebas_hari}
 												<label class="f-label mt-2" for="alasan-terlambat">Alasan terlambat ({hariTerlambat} hari) <span style="color: var(--re)">*</span></label>
 												<textarea id="alasan-terlambat" class="f-input" rows="2" bind:value={alasanTerlambat} placeholder="Mis. sinyal hilang di site, laporan baru bisa dikirim hari ini"></textarea>
+												{@const bukti = ringkasBuktiSusulan()}
+												{#if bukti}
+													<p class="text-[11px] mt-1.5 p-2 rounded-lg" style="background: var(--sys-fill); color: var(--sys-label2)">
+														📷 Laporan susulan dihitung bila <b>fotonya diambil pada tanggal laporan ({reportData.date})</b>.
+														{#if bukti.total > 0}
+															<b>{bukti.cocok} dari {bukti.total}</b> foto progres bertanggal {reportData.date}.
+														{:else if !bukti.adaTersimpan}
+															Belum ada foto progres.
+														{/if}
+														{#if bukti.total > 0 && bukti.cocok === 0}
+															<span style="color: var(--re)">Tanpa foto bertanggal itu, laporan tetap tersimpan sebagai catatan tetapi belum menutup bolong — ajukan <b>pernyataan tertulis</b> di form pengajuan (PA).</span>
+														{/if}
+													</p>
+												{/if}
 											{/if}
 										{/if}
 									</div>
@@ -4895,7 +5063,19 @@
 											{/if}
 										</div>
 										<div>
-											<label class="f-label">Cuaca <span style="color: var(--re)">*</span></label>
+											<div class="flex items-center justify-between mb-1">
+												<label class="f-label mb-0">Cuaca <span style="color: var(--re)">*</span></label>
+												{#if !isLocked}
+													<button
+														type="button"
+														class="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer bg-transparent border-0 p-0"
+														onclick={checkLiveWeatherAssist}
+														disabled={weatherAssistLoading}
+													>
+														<span>{weatherAssistLoading ? '⏳ Cek...' : '🌦️ Cek Cuaca GPS'}</span>
+													</button>
+												{/if}
+											</div>
 											{#if isLocked}
 												<input type="text" bind:value={reportData.weather} class="f-input cursor-not-allowed" style="background: var(--sys-fill); color: var(--sys-label3)" readonly />
 											{:else}
@@ -4906,6 +5086,25 @@
 													<option value="Hujan">Hujan</option>
 													<option value="Hujan Deras">Hujan Deras</option>
 												</select>
+												{#if weatherSuggestion}
+													<div class="mt-1.5 p-1.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-[11px] flex items-center justify-between gap-1.5">
+														<span class="truncate text-indigo-900 dark:text-indigo-200">
+															Saran: <b>{weatherSuggestion.icon} {weatherSuggestion.weather}</b> ({weatherSuggestion.temp}°C, 💧{weatherSuggestion.rainProb}%)
+														</span>
+														<button
+															type="button"
+															class="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-[10px] shrink-0 cursor-pointer shadow-2xs border-0"
+															onclick={applySuggestedWeather}
+														>
+															Gunakan
+														</button>
+													</div>
+												{/if}
+												{#if weatherAppliedMsg}
+													<div class="text-[10.5px] font-semibold text-emerald-600 dark:text-emerald-400 mt-1">
+														✓ {weatherAppliedMsg}
+													</div>
+												{/if}
 												<FieldHint text={h('laporan.form.cuaca').fieldHint} />
 											{/if}
 										</div>
@@ -6199,21 +6398,32 @@
 					<!-- Metrik Ringkas Proyek -->
 					<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3.5 pt-3 border-t border-gray-200/50 dark:border-slate-800 text-[11px]">
 						<div class="p-2 rounded-lg bg-gray-50/80 dark:bg-slate-800/40 border border-gray-100 dark:border-slate-800">
-							<span class="text-gray-400 dark:text-slate-500 block mb-0.5">Target Perencanaan</span>
+							<span class="text-gray-400 dark:text-slate-500 block mb-0.5">Target Rencana</span>
 							<strong class="text-[13px] text-gray-800 dark:text-slate-200">
-								{projectProgressOverview.targetProgress ? `${projectProgressOverview.targetProgress} vol` : '-'}
+								{#if projectProgressOverview.plannedPct != null}
+									{projectProgressOverview.plannedPct}%
+								{:else if projectProgressOverview.targetProgress}
+									{projectProgressOverview.targetProgress} vol
+								{:else}
+									-
+								{/if}
 							</strong>
+							{#if projectProgressOverview.deviation != null}
+								<span class="block text-[10px] font-semibold {projectProgressOverview.deviation < -5 ? 'text-rose-500' : projectProgressOverview.deviation < 0 ? 'text-amber-500' : 'text-emerald-500'}">
+									Dev: {projectProgressOverview.deviation >= 0 ? '+' : ''}{projectProgressOverview.deviation}%
+								</span>
+							{/if}
 						</div>
 						<div class="p-2 rounded-lg bg-gray-50/80 dark:bg-slate-800/40 border border-gray-100 dark:border-slate-800">
 							<span class="text-gray-400 dark:text-slate-500 block mb-0.5">Total Realisasi Lalu</span>
 							<strong class="text-[13px] text-sky-600 dark:text-sky-400">
-								{projectProgressOverview.prevTotalVolume} vol
+								{projectProgressOverview.prevTotalVolume} vol ({projectProgressOverview.prevPct}%)
 							</strong>
 						</div>
 						<div class="p-2 rounded-lg bg-gray-50/80 dark:bg-slate-800/40 border border-gray-100 dark:border-slate-800">
-							<span class="text-gray-400 dark:text-slate-500 block mb-0.5">Laporan Hari Ini</span>
+							<span class="text-gray-400 dark:text-slate-500 block mb-0.5">Input Hari Ini</span>
 							<strong class="text-[13px] text-emerald-600 dark:text-emerald-400">
-								+{projectProgressOverview.todayTotalVolume} vol
+								+{projectProgressOverview.todayTotalVolume} vol (+{projectProgressOverview.todayDeltaPct}%)
 							</strong>
 						</div>
 						<div class="p-2 rounded-lg bg-gray-50/80 dark:bg-slate-800/40 border border-gray-100 dark:border-slate-800">
@@ -6228,15 +6438,27 @@
 				<!-- Target Harian (dari Kurva S) -->
 				{#if dailyTargetRows.length > 0}
 					<div class="card-section mb-4 border border-sky-500/20" style="background: var(--sys-fill)">
-						<h4 class="m-0 text-[13px] font-bold flex items-center gap-1.5" style="color: var(--sys-label)">
-							Target Hari Ini
-							<span class="text-[11px] font-normal" style="color: var(--sys-label3)" title="Target diambil dari rencana harian (Kurva S) di Timeline untuk tanggal laporan ini. Realisasi = volume yang Anda isi di form di bawah.">ⓘ</span>
+						<h4 class="m-0 text-[13px] font-bold flex items-center justify-between" style="color: var(--sys-label)">
+							<span class="flex items-center gap-1.5">
+								Target Hari Ini
+								<span class="text-[11px] font-normal" style="color: var(--sys-label3)" title="Target diambil dari rencana harian (Kurva S) di Timeline untuk tanggal laporan ini. Realisasi = volume yang Anda isi di form di bawah.">ⓘ</span>
+							</span>
+							{#if dailyTargetRows.some(r => r.isEstimated)}
+								<span class="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+									Estimasi Rata-rata Harian
+								</span>
+							{/if}
 						</h4>
 						<div class="mt-2 space-y-2">
 							{#each dailyTargetRows as row (row.unit)}
 								<div>
 									<div class="flex justify-between text-[12px] font-semibold text-gray-700 dark:text-slate-200">
-										<span>Target: {row.target} {row.unit} | Realisasi: {row.realisasi} {row.unit}</span>
+										<span>
+											Target: {row.target} {row.unit} | Realisasi: {row.realisasi} {row.unit}
+											{#if row.isEstimated}
+												<span class="text-[10px] text-amber-500 font-normal"> (rata-rata)</span>
+											{/if}
+										</span>
 										<span class={row.pct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : ''}>{row.pct}%</span>
 									</div>
 									<div class="w-full h-2 bg-gray-200 dark:bg-slate-800 rounded-full overflow-hidden mt-1">
@@ -6245,7 +6467,13 @@
 								</div>
 							{/each}
 						</div>
-						<p class="text-[10px] mt-2 mb-0" style="color: var(--sys-label3)">Isi volume per subtask di bagian "Progress Pekerjaan Hari Ini" untuk menaikkan realisasi.</p>
+						<p class="text-[10px] mt-2 mb-0" style="color: var(--sys-label3)">
+							{#if dailyTargetRows.some(r => r.isEstimated)}
+								*Target dihitung dari estimasi pembagian volume ke durasi kerja karena Kurva S belum memiliki tanggal spesifik.
+							{:else}
+								Isi volume per subtask di bagian "Progress Pekerjaan Hari Ini" untuk menaikkan realisasi.
+							{/if}
+						</p>
 					</div>
 				{/if}
 
@@ -7241,6 +7469,27 @@
 						<p class="text-[11px] mb-3 px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-900/40">
 							💡 Pilih nama setiap pekerja dari daftar. Baris pekerja tanpa nama tidak akan masuk absensi dan tidak bisa dibayar.
 						</p>
+					{/if}
+
+					{#if !isLocked && !isHold && availableManpower.length > 0 && totalWorkersHadir === 0 && totalWorkersStandby === 0}
+						<div class="mb-3.5 p-3.5 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+							<div class="flex items-start gap-2.5">
+								<IconAlertCircle size={22} class="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+								<div>
+									<h5 class="text-xs font-bold text-amber-900 dark:text-amber-200 m-0">Presensi Belum Dikonfirmasi ({availableManpower.length} Pekerja Aktif di SPK)</h5>
+									<p class="text-[11px] text-amber-800/90 dark:text-amber-300/80 mt-0.5 m-0 leading-tight">
+										Pekerja tidak akan menerima catatan kehadiran & uang makan jika belum diabsenkan. Jika semua masuk normal hari ini, klik tombol di sebelah kanan:
+									</p>
+								</div>
+							</div>
+							<button 
+								type="button" 
+								class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 shadow-sm cursor-pointer"
+								onclick={() => markAllWorkersPresent(8)}
+							>
+								<IconCheck size={15} /> Hadirkan Semua (8 Jam)
+							</button>
+						</div>
 					{/if}
 
 					{#if !isHold}
@@ -8966,6 +9215,24 @@
 											{/if}
 										</div>
 									</div>
+									{#if item.penyebab === 'tunggu_material'}
+										<div class="mb-2">
+											<label class="f-label">SJ yang Ditunggu</label>
+											{#if isLocked}
+												<p class="text-[13px] font-bold text-gray-800 dark:text-gray-200">{sjDitungguLabel(item)}</p>
+											{:else}
+												<select class="f-select" value={item.sj_ditunggu || ''} onchange={(e) => setSjDitunggu(item, (e.currentTarget as HTMLSelectElement).value)}>
+													<option value="">-- Pilih SJ yang ditunggu --</option>
+													{#each sjMenunggu as sjOpt (sjOpt.id)}
+														<option value={String(sjOpt.id)}>{sjOpt.nomor_sj || `SJ #${sjOpt.id}`}{sjOpt.eta_tiba ? ` · ETA ${sjOpt.eta_tiba}` : ''}{sjOpt.ekspedisi ? ` · ${sjOpt.ekspedisi}` : ''}</option>
+													{/each}
+													<option value="belum_ada_sj">Belum ada SJ (barang belum dikirim)</option>
+													<option value="tidak_tahu">Tidak tahu / lainnya</option>
+												</select>
+												<p class="text-[10.5px] text-gray-400 mt-1">💡 Pilih nomor Surat Jalan material yang sedang ditunggu agar keterlambatan pengiriman tercatat dan bisa ditagih ke Logistik. Bila SJ belum terbit, pilih "Belum ada SJ".</p>
+											{/if}
+										</div>
+									{/if}
 									<div>
 										<label class="f-label">Catatan / Detail Jam Henti</label>
 										{#if isLocked}

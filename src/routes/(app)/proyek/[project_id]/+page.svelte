@@ -58,6 +58,8 @@
 	import PenagihanStatusCard from '$lib/components/project/PenagihanStatusCard.svelte';
 	import LegalDisputeBadge from '$lib/components/project/LegalDisputeBadge.svelte';
 	import ProjectFinancialHealthBadge from '$lib/components/project/ProjectFinancialHealthBadge.svelte';
+	import ProjectFieldRiskCard from '$lib/components/project/ProjectFieldRiskCard.svelte';
+	import { evaluateProjectComprehensiveRisk } from '$lib/utils/projectRiskEngine.js';
 	import ProjectCompressorClaimCard from '$lib/components/project/ProjectCompressorClaimCard.svelte';
 	import ProjectManpowerAssign from '$lib/components/project/ProjectManpowerAssign.svelte';
 	import ProjectCharterTab from '$lib/components/ProjectCharterTab.svelte';
@@ -84,8 +86,13 @@
 	import ProjectPhaseWizardCompact from '$lib/components/ProjectPhaseWizardCompact.svelte';
 	import SiteDemobSignalCard from '$lib/components/project/SiteDemobSignalCard.svelte';
 	import PaStatusCard from '$lib/components/project/PaStatusCard.svelte';
+	import DossierReadinessCard from '$lib/components/project/DossierReadinessCard.svelte';
+	import FieldSafeSpend from '$lib/components/project/FieldSafeSpend.svelte';
+	import { describeTransit } from '$lib/utils/grTransit';
 	import ProjectHandoverBriefingCard from '$lib/components/leader/ProjectHandoverBriefingCard.svelte';
 	import FieldActionBanner from '$lib/components/project/FieldActionBanner.svelte';
+	import LeaderDailyDisciplineCard from '$lib/components/leader/LeaderDailyDisciplineCard.svelte';
+	import AiBriefingLapanganCard from '$lib/components/project/AiBriefingLapanganCard.svelte';
 	import { printSuratTugas } from '$lib/utils/printSuratTugas';
 	import {
 		IconArrowLeft, IconBuilding, IconMapPin, IconUser,
@@ -153,6 +160,8 @@
 	let showManualAbsensi = $state(false);
 	let showExportSheet = $state(false);
 	let pendingGrShipments = $state<GRShipment[]>([]);
+	// Gagal memuat daftar GR TIDAK boleh terbaca "0 menunggu = lengkap" di kartu Kesiapan Dokumentasi.
+	let pendingGrLoaded = $state(false);
 
 	let SUB_TABS = $derived({
 		informasi: [
@@ -187,6 +196,7 @@
 			{ id: 'packing-list', label: 'Packing List', emoji: '📦' },
 			{ id: 'site-plan', label: 'Site Plan', emoji: '📐' },
 			{ id: 'site-survey', label: 'Site Survey', emoji: '📍' },
+			{ id: 'spesifikasi-teknis', label: 'Spesifikasi Teknis', emoji: '🧾' },
 			{ id: 'quality', label: 'Quality Cockpit', emoji: '✅' },
 			{ id: 'punch-list', label: 'Punch List', emoji: '📌' },
 			{ id: 'rfi', label: 'RFI', emoji: '📨' },
@@ -656,6 +666,11 @@
 	}
 
 	function switchMainTab(tab: MainTab) {
+		if (isPersiapanMode && !PERSIAPAN_OPEN_TABS.includes(tab)) {
+			lockedHintTab = tab;
+			return;
+		}
+		lockedHintTab = null;
 		activeTab = tab;
 		activeSubTab = DEFAULT_SUB[tab];
 		if (tab === 'dokumen') loadDokumen();
@@ -832,6 +847,10 @@
 			goto(`/proyek/${projectId}/material-inspection`);
 			return;
 		}
+		if (id === 'spesifikasi-teknis') {
+			goto(`/proyek/${projectId}/spesifikasi-teknis`);
+			return;
+		}
 		if (id === 'coating-log') {
 			goto(`/proyek/${projectId}/coating-log`);
 			return;
@@ -923,32 +942,67 @@
 
 	let project = $state<any>(null);
 
+	let projectRiskProfile = $derived.by(() => {
+		if (!project) return null;
+		const soList = (soCustomers && soCustomers.length > 0) ? soCustomers : (soCustomer ? [soCustomer] : []);
+		return evaluateProjectComprehensiveRisk({
+			project,
+			grandPo: null,
+			soList
+		});
+	});
+
 	// Rekomendasi #5 (Pertajam Perencanaan & Persiapan Proyek v2): Mode "Persiapan" — leader
 	// hanya lihat Informasi/Persiapan/Dokumen selama proyek belum "on progress", UI bersih
 	// dari tab eksekusi (Manpower/Barang/HSE/Kirim) yang belum relevan sebelum mobilisasi.
+	// Visibilitas Leader Fase 1: tab eksekusi TIDAK lagi disembunyikan — tetap tampil dengan kunci 🔒
+	// agar PL tahu apa yang akan terbuka setelah mobilisasi (klik = penjelasan + langkah, bukan tombol mati).
 	let isPersiapanMode = $derived(project?.status === 'waiting' || project?.status === 'draft');
-	let visibleMainTabs = $derived(
-		isPersiapanMode
-			? [
-					{ id: 'informasi', label: 'Informasi' },
-					{ id: 'progress', label: 'Persiapan' },
-					{ id: 'dokumen', label: 'Dokumen' }
-				]
-			: [
-					{ id: 'informasi', label: 'Informasi' },
-					{ id: 'keuangan', label: 'Keuangan' },
-					{ id: 'laporan', label: 'Laporan' },
-					{ id: 'progress', label: 'Progress' },
-					{ id: 'manpower', label: 'Manpower & Leader' },
-					{ id: 'barang', label: 'Barang' },
-					{ id: 'hse', label: 'HSE' },
-					{ id: 'dokumen', label: 'Dokumen' },
-					{ id: 'kirim', label: 'Kirim ke Pelanggan' }
-				]
-	);
+	const PERSIAPAN_OPEN_TABS: MainTab[] = ['informasi', 'progress', 'dokumen'];
+	let lockedHintTab = $state<MainTab | null>(null);
+	let visibleMainTabs = $derived([
+		{ id: 'informasi', label: 'Informasi' },
+		{ id: 'keuangan', label: 'Keuangan' },
+		{ id: 'laporan', label: 'Laporan' },
+		{ id: 'progress', label: isPersiapanMode ? 'Persiapan' : 'Progress' },
+		{ id: 'manpower', label: 'Manpower & Leader' },
+		{ id: 'barang', label: 'Barang' },
+		{ id: 'hse', label: 'HSE' },
+		{ id: 'dokumen', label: 'Dokumen' },
+		{ id: 'kirim', label: 'Kirim ke Pelanggan' }
+	].map((t) => ({ ...t, locked: isPersiapanMode && !PERSIAPAN_OPEN_TABS.includes(t.id as MainTab) })));
+	// Bila status berubah ke on progress, hint kunci otomatis hilang.
+	$effect(() => {
+		if (!isPersiapanMode) lockedHintTab = null;
+	});
 
 	let awarenessContract = $state<ProjectContractSummary | null>(null);
 	let awarenessTermins = $state<ProjectContractTermin[]>([]);
+
+	// Fase 3: Progress-to-Invoice Countdown (Ambang Fisik BAST & Termin Lapangan)
+	let currentPhysicalProgress = $derived(parseFloat(project?.total_progress || '0') || 0);
+
+	let nextTerminMilestone = $derived.by(() => {
+		if (!awarenessTermins || awarenessTermins.length === 0) return null;
+		const upcoming = awarenessTermins
+			.filter((t) => t.status !== 'paid' && t.status !== 'invoiced')
+			.sort((a, b) => (a.urutan || 0) - (b.urutan || 0))[0] || null;
+
+		if (!upcoming) return null;
+		const triggerPct = Number(upcoming.progress_trigger_pct || 0);
+		const gap = Math.max(0, triggerPct - currentPhysicalProgress);
+		const reached = currentPhysicalProgress >= triggerPct;
+		const readyForBast = reached && upcoming.status !== 'bast_signed';
+
+		return {
+			termin: upcoming,
+			triggerPct,
+			gap,
+			reached,
+			readyForBast,
+			isSigned: upcoming.status === 'bast_signed'
+		};
+	});
 	let soCustomer = $state<any>(null);
 	// Grand PO: proyek gabungan memuat >1 PO jasa. soCustomer tetap PO utama (header); daftar ini = SEMUA PO proyek.
 	let soCustomers = $state<any[]>([]);
@@ -1038,6 +1092,7 @@
 			loadDelegationInfo().catch(() => {});
 			fetchInTransitShipments().then((list) => {
 				pendingGrShipments = (list || []).filter((s) => Number(s.projectId) === Number(project.id));
+				pendingGrLoaded = true;
 			}).catch(() => {});
 
 			// Fetch independent data in parallel (kontrak, SO customer, reports count)
@@ -1198,6 +1253,13 @@
 			<!-- Foto awal proyek (kamera-first) — syarat gate Pengajuan Anggaran & Packing List; hilang sendiri setelah foto ada. -->
 			<FotoAwalProyekCard bind:project />
 
+			<!-- Fase 3: Identitas, Skala, Guardrails K3/Mutu Lapangan & Kalkulator Dew Point -->
+			{#if projectRiskProfile}
+				<div class="px-4 py-2.5">
+					<ProjectFieldRiskCard profile={projectRiskProfile} projectId={project?.id} />
+				</div>
+			{/if}
+
 			<!-- ── Banner Fast-Track WS Ciketing (Fase 4, 25 Sep 2026) ──
 			     Project dibuat otomatis dari PO sebelum Charter/RAP lengkap — beri tahu leader
 			     supaya tidak bingung kenapa RAP masih kosong, tanpa memblokir apa pun. -->
@@ -1272,6 +1334,9 @@
 				actor={currentFieldActor}
 			/>
 
+			<!-- ── Briefing Lapangan AI (pasif, hanya horizon 1–7 hari; dimuat sekali per kunjungan) ── -->
+			<AiBriefingLapanganCard {projectId} />
+
 			<ProjectPhaseWizardCompact {project} />
 
 			<SiteDemobSignalCard
@@ -1285,6 +1350,35 @@
 
 			<!-- Fase 5 (audit hidden cost #1051): PA menunggu persetujuan + alat menganggur, tanpa nominal rupiah -->
 			<PaStatusCard {projectId} />
+
+			<!-- Visibilitas Leader Fase 4: Safe-Spend (persen saja, tanpa rupiah) langsung di cockpit. Sub-tab "Aktualisasi" yang
+			     sebelumnya satu-satunya tempat indikator ini TIDAK ada di tampilan Leader, jadi Leader tidak pernah melihatnya.
+			     Data memakai cache 60 dtk yang sama dengan halaman lain (tanpa panggilan tambahan); admin sudah melihatnya di Aktualisasi. -->
+			{#if isLeaderView && !isPersiapanMode && project?.id}
+				<div class="px-4 pt-3">
+					<FieldSafeSpend projectId={project.id} />
+				</div>
+			{/if}
+
+			<!-- Visibilitas Leader Fase 3: kesiapan dokumentasi (data nyata, tanpa nominal) — hanya saat proyek berjalan -->
+			{#if !isPersiapanMode}
+				<DossierReadinessCard
+					{projectId}
+					pendingGr={pendingGrLoaded ? pendingGrShipments.length : null}
+					docsRequired={requiredChecklistItems.length}
+					docsMissing={missingRequiredCount}
+					onAction={(key, ctx) => {
+						if (key === 'presensi') switchMainTab('manpower');
+						else if (key === 'dokumen') switchMainTab('dokumen');
+						else if (key === 'log_harian' || key === 'qc') goto(`/laporan/${projectId}`);
+						else if (key === 'lpj') goto(ctx?.lpjFirstId ? `/anggaran/${ctx.lpjFirstId}` : '/anggaran');
+						else if (key === 'surat_jalan') {
+							const sj = pendingGrShipments[0]?.suratJalanId;
+							goto(sj ? `/stock-lapangan/masuk?mode=gr&sj=${sj}` : '/stock-lapangan/masuk?mode=gr');
+						}
+					}}
+				/>
+			{/if}
 
 			{#if pendingGrShipments.length > 0}
 				<div class="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 border border-amber-500/30 text-amber-950 dark:text-amber-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1304,6 +1398,15 @@
 							<p class="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 mt-1">
 								Barang telah dikirim dari gudang ({pendingGrShipments.map(s => s.nomorSJ || s.nomor_sj).join(', ')}). Mohon konfirmasi penerimaan fisik di site agar stok terdata resmi.
 							</p>
+							<!-- Fase 6: info truk/sopir/ETA per Surat Jalan (tanpa GPS real-time — hanya data SJ & armada) -->
+							<ul class="mt-1.5 flex flex-col gap-0.5" data-testid="gr-transit-list">
+								{#each pendingGrShipments as s (s.suratJalanId)}
+									{@const t = describeTransit(s, new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10))}
+									{#if t.text}
+										<li class="text-[11px] {t.etaOverdue ? 'text-rose-700 dark:text-rose-300 font-semibold' : 'text-slate-600 dark:text-slate-300'}">🚚 {s.nomorSJ}: {t.text}</li>
+									{/if}
+								{/each}
+							</ul>
 						</div>
 					</div>
 					<div class="flex items-center gap-2 shrink-0">
@@ -1313,6 +1416,39 @@
 						>
 							<IconCheck size={16} />
 							Konfirmasi GR Sekarang
+						</a>
+					</div>
+				</div>
+			{/if}
+
+			{#if nextTerminMilestone?.readyForBast}
+				<!-- BANNER NOTIFIKASI AMBANG TERMIN TERCAPAI (SIAP BAST) -->
+				<div class="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-emerald-500/5 border border-emerald-500/30 text-emerald-950 dark:text-emerald-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+					<div class="flex items-start gap-3">
+						<div class="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+							<IconFileText size={22} />
+						</div>
+						<div>
+							<div class="flex items-center gap-2">
+								<span class="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-300">
+									Ambang Fisik Tercapai
+								</span>
+								<span class="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+									Progres Fisik {currentPhysicalProgress.toFixed(1)}% &ge; {nextTerminMilestone.triggerPct}%
+								</span>
+							</div>
+							<p class="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 mt-1">
+								Target fisik untuk <strong>{nextTerminMilestone.termin.label || `Termin ${nextTerminMilestone.termin.urutan}`}</strong> telah terpenuhi. Segera siapkan Berita Acara Serah Terima (BAST) untuk memicu penagihan invoice oleh kantor.
+							</p>
+						</div>
+					</div>
+					<div class="flex items-center gap-2 shrink-0">
+						<a
+							href="/proyek/{projectId}/dokumentasi-ba"
+							class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition-colors shadow-sm active:scale-95"
+						>
+							<IconFileInvoice size={16} />
+							Siapkan BAST Sekarang
 						</a>
 					</div>
 				</div>
@@ -1331,13 +1467,16 @@
 				{#each visibleMainTabs as tab}
 					{@const IconComp = MAIN_TAB_ICONS[tab.id as MainTab]}
 					<button
-						class="main-tab-item {activeTab === tab.id ? 'active' : ''}"
+						class="main-tab-item {activeTab === tab.id ? 'active' : ''} {tab.locked ? 'locked' : ''}"
+						aria-disabled={tab.locked}
+						title={tab.locked ? 'Belum aktif — klik untuk melihat syaratnya' : undefined}
 						onclick={() => switchMainTab(tab.id as MainTab)}
 					>
 						{#if IconComp}
 							<IconComp size={16} class="tab-icon shrink-0" />
 						{/if}
 						<span>{tab.label}</span>
+						{#if tab.locked}<span aria-hidden="true">🔒</span>{/if}
 						{#if tab.id === 'dokumen' && missingRequiredCount > 0}
 							<span
 								class="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold text-white"
@@ -1350,6 +1489,15 @@
 					</button>
 				{/each}
 			</div>
+
+			{#if isPersiapanMode && lockedHintTab}
+				<div class="persiapan-banner" role="status" data-testid="persiapan-locked-hint">
+					🔒 <b>Tab ini aktif setelah proyek berstatus On Progress.</b>
+					Selesaikan checklist mobilisasi di tab <button class="persiapan-banner-link" onclick={() => switchMainTab('progress')}>Persiapan</button>
+					dan <button class="persiapan-banner-link" onclick={() => goto(`/proyek/${projectId}/site-survey`)}>Site Survey</button>;
+					status berubah menjadi On Progress saat proyek resmi dimulai (kickoff/mobilisasi).
+				</div>
+			{/if}
 
 			<!-- ── LEVEL 2 SUB-TAB BAR ── -->
 			{#if SUB_TABS[activeTab].length > 0}
@@ -1404,8 +1552,8 @@
 						{@const deadlineDays = project.end_date ? Math.round((new Date(project.end_date).getTime() - Date.now()) / 86400000) : null}
 						{@const readyToBillTermin = awarenessTermins.find((t) => t.status === 'bast_signed')}
 						{@const sisaRetensi = awarenessContract.bast_final_date ? retentionDaysRemaining(awarenessContract) : null}
-						{#if deadlineDays !== null || readyToBillTermin || sisaRetensi !== null}
-							<div class="flex flex-col gap-2 mt-3 px-4 py-3 rounded-xl bg-gray-50 dark:bg-white/5">
+						{#if deadlineDays !== null || readyToBillTermin || sisaRetensi !== null || nextTerminMilestone}
+							<div class="flex flex-col gap-2.5 mt-3 px-4 py-3 rounded-xl bg-gray-50 dark:bg-white/5">
 								{#if deadlineDays !== null}
 									<div class="flex items-center justify-between text-[12px]">
 										<span style="color: var(--sys-label3)">📄 Kontrak</span>
@@ -1428,6 +1576,31 @@
 										<span class="font-medium {sisaRetensi < 14 ? 'text-red-600' : ''}" style={sisaRetensi < 14 ? '' : 'color: var(--sys-label)'}>
 											Jatuh tempo {sisaRetensi} hari lagi
 										</span>
+									</div>
+								{/if}
+								{#if nextTerminMilestone}
+									<div class="pt-2 mt-0.5 border-t border-slate-200/60 dark:border-white/10 flex flex-col gap-1 text-[12px]">
+										<div class="flex items-center justify-between">
+											<span style="color: var(--sys-label3)">🎯 Target Termin</span>
+											<span class="font-semibold {nextTerminMilestone.reached ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'}">
+												{nextTerminMilestone.termin.label || `Termin ${nextTerminMilestone.termin.urutan}`} (Ambang {nextTerminMilestone.triggerPct}%)
+											</span>
+										</div>
+										<div class="flex items-center justify-between text-[11px]">
+											<span class="text-slate-500 dark:text-slate-400">Progres Fisik: {currentPhysicalProgress.toFixed(1)}%</span>
+											{#if nextTerminMilestone.reached}
+												<span class="font-bold text-emerald-600 dark:text-emerald-400">✅ Ambang Tercapai (Siap BAST)</span>
+											{:else}
+												<span class="font-bold text-amber-600 dark:text-amber-400">Kurang {nextTerminMilestone.gap.toFixed(1)}% lagi</span>
+											{/if}
+										</div>
+										<!-- Mini Progress Meter Bar -->
+										<div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden mt-0.5">
+											<div
+												class="h-full rounded-full transition-all duration-500 {nextTerminMilestone.reached ? 'bg-emerald-500' : 'bg-indigo-500'}"
+												style="width: {Math.min(100, Math.round((currentPhysicalProgress / (nextTerminMilestone.triggerPct || 100)) * 100))}%"
+											></div>
+										</div>
 									</div>
 								{/if}
 							</div>
@@ -1844,6 +2017,7 @@
 				<!-- Sub: Report -->
 				{:else if activeSubTab === 'report'}
 					<div class="px-4 py-4 flex flex-col gap-3">
+						<LeaderDailyDisciplineCard projectIds={[Number(projectId)]} />
 						<div class="card-section">
 							<h4 class="flex items-center gap-2 text-[13px] font-semibold mb-3" style="color: var(--sys-label)">
 								<IconClipboardList size={16} style="color: var(--g)" /> Laporan Harian
@@ -3057,6 +3231,10 @@
 		font-family: inherit;
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 		border-radius: 6px 6px 0 0;
+	}
+	.main-tab-item.locked {
+		opacity: 0.55;
+		cursor: help;
 	}
 	.main-tab-item:hover {
 		color: var(--sys-label);

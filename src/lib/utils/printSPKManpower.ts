@@ -1,5 +1,7 @@
 // Print SPK Manpower (Surat Perintah Kerja) — A4 format
 import { secureDirectusFetch } from '$lib/services/secureDirectus';
+import { buildSpkDocument, mergeSpkSettings } from '$lib/utils/spkDocument.js';
+import { loadManpowerSettings } from '$lib/services/manpowerSettings';
 
 /** Ambil asset Directus lewat proxy terautentikasi lalu ubah jadi data URL (aman untuk <img src>). */
 async function fetchAssetAsDataUrl(fileId: string): Promise<string | null> {
@@ -77,6 +79,36 @@ const STYLES = `
   .sig-line { border-top:1px solid #000; padding-top:4px; font-size:10.5pt; font-weight:bold; }
   .sig-role { font-size:9.5pt; color:#444; }
   .stamp-note { text-align:center; font-size:8pt; color:#666; margin-top:30px; border-top:1px dashed #ccc; padding-top:8px; }
+  .pricing-table { width:100%; border-collapse:collapse; font-size:10pt; }
+  .pricing-table th { background:#e8e8e8; border:1px solid #000; padding:4px 6px; text-align:center; font-weight:bold; }
+  .pricing-table td { border:1px solid #000; padding:4px 6px; vertical-align:middle; }
+  .pricing-table td.num { text-align:center; }
+  .pricing-table td.right { text-align:right; }
+  .pricing-table tr.summary td { background:#fffde7; font-weight:bold; }
+  .pricing-table tr.total-final td { background:#fff9c4; font-weight:bold; }
+  /* Mesin dokumen baru (spkDocument.js) */
+  .muted { font-size:9.5pt; color:#555; }
+  .sec-head { font-weight:bold; margin-top:10px; }
+  .pasal { margin:12px 0; }
+  .pasal-title { text-align:center; font-weight:bold; margin-bottom:6px; letter-spacing:0.5px; break-after:avoid; }
+  .pasal p { text-align:justify; }
+  .pasal ol, .note-section ol { margin:6px 0 6px 22px; line-height:1.55; text-align:justify; }
+  .pasal ol li, .note-section ol li { margin-bottom:3px; }
+  ol.sub { margin-left:20px; }
+  .pasal table.pricing-table { margin:8px 0; }
+  .pricing-table tr { break-inside:avoid; }
+  .page-break { break-after:page; page-break-after:always; height:0; }
+  .sig-city-line { text-align:right; margin-top:18px; font-size:10.5pt; break-after:avoid; }
+  .sig-grid { display:flex; justify-content:space-between; gap:10px; margin-top:10px; break-inside:avoid; }
+  .sig-grid .sig-cell { flex:1; text-align:center; }
+  .sig-grid.sig-2 .sig-cell { max-width:46%; }
+  .sig-cell .sig-label { font-size:10.5pt; min-height:1.6em; }
+  .sig-cell .sig-space { height:62px; display:flex; align-items:flex-end; justify-content:center; }
+  .sig-cell .sig-line { border-top:1px solid #000; margin:0 8px; padding-top:4px; font-size:10.5pt; font-weight:bold; min-height:1.4em; }
+  .sig-cell .sig-role { font-size:9.5pt; color:#444; }
+  .wm-tanpa-harga { position:fixed; top:40%; left:10%; right:10%; text-align:center; transform:rotate(-28deg); font-size:24pt; line-height:1.2; font-weight:bold; color:rgba(0,0,0,0.07); white-space:normal; pointer-events:none; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .ref-versi { text-align:right; font-size:7.5pt; color:#888; margin-top:6px; }
+  .banner-tanpa-harga { border:1.5px dashed #b45309; background:#fffbeb; color:#92400e; padding:6px 10px; margin-bottom:12px; font-size:9.5pt; text-align:center; line-height:1.4; }
 `;
 
 function companyHeader() {
@@ -214,107 +246,50 @@ export function printSPKManpower(spk, project) {
 
 /**
  * Cetak SPK dari record `manpower_assignment` (sistem manpower terpadu).
- * Menampilkan gambar tanda tangan manpower bila sudah ditandatangani.
+ * Varian otomatis dari `rate_tipe`: harian → Surat Perintah Kerja; borongan → Surat Tugas
+ * 6 Pasal + Tata Tertib Subcont (isi: utils/spkDocument.js — SATU sumber dengan dashboard admin;
+ * setelan: manpower.spk_doc.* lewat manpowerSettings).
+ * ⚠️ window.open WAJIB sebelum await apa pun (anti pop-up blocker).
  * @param {object} a  assignment (boleh dengan manpower_id/project_id ter-expand)
  * @param {object} project objek project (opsional, untuk nama/PO)
  * @param {object} manpower objek manpower (opsional, untuk identitas)
+ * @param {{ tanpaHarga?: boolean }} opts tanpaHarga=true → versi Syarat Manpower tanpa nominal (watermark)
  */
-export async function printSpkAssignment(a, project = null, manpower = null) {
+export async function printSpkAssignment(a, project = null, manpower = null, opts = {}) {
   const win = window.open('', '_blank');
   if (!win) { alert('Popup diblokir browser. Izinkan popup untuk halaman ini.'); return; }
 
-  const mp = manpower || (typeof a.manpower_id === 'object' ? a.manpower_id : {});
-  const pr = project || (typeof a.project_id === 'object' ? a.project_id : {});
+  try {
+    const mp = manpower || (typeof a.manpower_id === 'object' ? a.manpower_id : {});
+    const pr = project || (typeof a.project_id === 'object' ? a.project_id : {});
 
-  const namaManpower   = mp.nama || a.ttd_nama || '-';
-  const posisi         = a.jabatan || mp.posisi || 'Tenaga Kerja';
-  const nik            = mp.NIK || '-';
-  const noTelpon       = mp.no_telpon || '-';
-  const namaProject    = pr.name || '-';
-  const nomorPO        = pr.nomor_po || '-';
-  const lokasiProject  = a.lokasi || pr.lokasi || '-';
-  const jenisPekerjaan = a.jenis_pekerjaan || pr.jenis_project || '-';
-  const periodeFrom    = a.tanggal_mulai   ? formatDatePrint(a.tanggal_mulai)   : '-';
-  const periodeTo      = a.tanggal_selesai ? formatDatePrint(a.tanggal_selesai) : '-';
-  const tanggalSurat   = a.tanggal_spk ? terbilang(a.tanggal_spk) : terbilang(new Date());
-  const nomorSPK       = a.nomor_spk || '-';
-  const keterangan     = a.catatan || '';
-  const isBorongan     = a.rate_tipe === 'borongan';
-  const upahLabel      = isBorongan ? 'Nilai Borongan' : 'Upah Harian';
-  const upahNilai      = isBorongan ? a.nilai_borongan : a.rate_harian;
-  const upahStr        = upahNilai ? formatRupiah(upahNilai) : null;
+    const [settingsMap, ttdDataUrl] = await Promise.all([
+      loadManpowerSettings(), // cache 5 menit, gagal-lunak ke default
+      a.ttd_manpower ? fetchAssetAsDataUrl(a.ttd_manpower) : Promise.resolve(null),
+    ]);
+    const ttdImg = ttdDataUrl
+      ? `<img src="${ttdDataUrl}" alt="ttd" style="max-height:60px;max-width:90%;object-fit:contain;margin:0 auto;display:block;" onerror="this.style.display='none'" />`
+      : '';
 
-  const ttdDataUrl = a.ttd_manpower ? await fetchAssetAsDataUrl(a.ttd_manpower) : null;
-  const ttdImg = ttdDataUrl
-    ? `<img src="${ttdDataUrl}" alt="ttd" style="max-height:60px;max-width:90%;object-fit:contain;margin:0 auto 2px;display:block;" onerror="this.style.display='none'" />`
-    : '<div style="height:60px;"></div>';
+    const { settings, peringatan } = mergeSpkSettings(settingsMap);
+    if (peringatan.length) console.warn('[printSpkAssignment] setelan SPK diabaikan:', peringatan);
+    const tanpaHarga = opts?.tanpaHarga === true;
+    const doc = buildSpkDocument({ a, mp, pr, settings, ttdImg, tanpaHarga });
 
-  const body = `
-  <div class="doc-title"><h2>Surat Perintah Kerja</h2></div>
-  <div class="doc-number">No. ${nomorSPK}</div>
-
-  <div class="preamble">
-    <p>Yang bertanda tangan di bawah ini, Pimpinan PT. Eltama Prima Indo, dengan ini memberikan perintah kerja kepada:</p>
-  </div>
-
-  <div class="assigns-to">
-    <table>
-      <tr><td>Nama</td><td class="colon">:</td><td><strong>${namaManpower}</strong></td></tr>
-      <tr><td>Jabatan / Posisi</td><td class="colon">:</td><td>${posisi}</td></tr>
-      ${nik !== '-' ? `<tr><td>NIK</td><td class="colon">:</td><td>${nik}</td></tr>` : ''}
-      ${noTelpon !== '-' ? `<tr><td>No. Telepon</td><td class="colon">:</td><td>${noTelpon}</td></tr>` : ''}
-    </table>
-  </div>
-
-  <div class="preamble"><p>Untuk melaksanakan pekerjaan pada proyek dengan rincian sebagai berikut:</p></div>
-
-  <div class="task-box">
-    <table style="width:100%;border-collapse:collapse;">
-      <tr><td>Nama Project</td><td class="colon">:</td><td><strong>${namaProject}</strong></td></tr>
-      <tr><td>Nomor PO</td><td class="colon">:</td><td>${nomorPO}</td></tr>
-      <tr><td>Lokasi Pekerjaan</td><td class="colon">:</td><td>${lokasiProject}</td></tr>
-      <tr><td>Jenis Pekerjaan</td><td class="colon">:</td><td>${jenisPekerjaan}</td></tr>
-      <tr><td>Periode Kerja</td><td class="colon">:</td><td>${periodeFrom} &nbsp;s/d&nbsp; ${periodeTo}</td></tr>
-      ${upahStr ? `<tr><td>${upahLabel}</td><td class="colon">:</td><td><strong>${upahStr}</strong></td></tr>` : ''}
-    </table>
-  </div>
-
-  <div class="note-section">
-    <p>Yang bersangkutan wajib memenuhi ketentuan sebagai berikut:</p>
-    <ol>
-      <li>Melaksanakan pekerjaan sesuai instruksi Project Leader dan standar keselamatan kerja yang berlaku.</li>
-      <li>Hadir tepat waktu dan melakukan absensi (foto masuk &amp; pulang) di lokasi proyek sebagai dasar perhitungan upah.</li>
-      <li>Menjaga kebersihan dan keselamatan di area kerja selama pelaksanaan proyek.</li>
-      <li>Melaporkan setiap kendala atau permasalahan kepada Project Leader sesegera mungkin.</li>
-      ${keterangan ? `<li>${keterangan}</li>` : ''}
-    </ol>
-    <p style="margin-top:10px;">Demikian Surat Perintah Kerja ini dibuat untuk dapat dilaksanakan dengan penuh tanggung jawab.</p>
-  </div>
-
-  <div class="signatures">
-    <div class="sig-block">
-      <div class="sig-label">Mengetahui,</div>
-      <div class="sig-city">Bogor, ${tanggalSurat}</div>
-      <div class="sig-line">Direktur</div>
-      <div class="sig-role">PT. Eltama Prima Indo</div>
-    </div>
-    <div class="sig-block">
-      <div class="sig-label">Yang Menerima Perintah,</div>
-      ${ttdImg}
-      <div class="sig-line">${namaManpower}</div>
-      <div class="sig-role">${posisi}</div>
-    </div>
-  </div>`;
-
-  win.document.write(`<!DOCTYPE html>
+    win.document.write(`<!DOCTYPE html>
 <html lang="id">
-<head><meta charset="UTF-8"><title>SPK - ${nomorSPK}</title><style>${STYLES}</style></head>
+<head><meta charset="UTF-8"><title>${tanpaHarga ? 'Syarat Manpower (Tanpa Harga)' : doc.varian === 'borongan' ? 'Surat Tugas' : 'SPK'} - ${doc.nomorSPK}</title><style>${STYLES}</style></head>
 <body>
   ${companyHeader()}
-  ${body}
+  ${doc.html}
   <div class="stamp-note">Dokumen ini dicetak dari sistem ERP EPI &bull; ${new Date().toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' })}</div>
-  <script>window.onload = function() { window.print(); };<\/script>
+  <script>window.onload = function() { window.print(); };</script>
 </body>
 </html>`);
-  win.document.close();
+    win.document.close();
+  } catch (e) {
+    console.error('[printSpkAssignment] gagal membangun dokumen:', e);
+    try { win.close(); } catch { /* jendela sudah tertutup */ }
+    alert('Gagal menyiapkan dokumen SPK. Coba lagi atau hubungi admin.');
+  }
 }
