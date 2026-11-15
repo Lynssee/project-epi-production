@@ -18,7 +18,7 @@
 	import {
 		IconArrowLeft, IconLoader2, IconPhone, IconRefresh, IconArrowsExchange,
 		IconQrcode, IconX, IconCircleCheck, IconClock, IconAlertTriangle, IconSearch, IconExternalLink,
-		IconSettings, IconPlus, IconTrash, IconCheck, IconChevronRight
+		IconSettings, IconPlus, IconTrash, IconCheck, IconChevronRight, IconLock
 	} from '@tabler/icons-svelte';
 
 	type Kategori = 'fg' | 'rm' | 'lainnya';
@@ -38,6 +38,7 @@
 		blind_sesi?: boolean;
 		jumlah_lokasi: number | null;
 		terakhir_update: string | null;
+		perlu_verifikasi?: boolean;
 	}
 	interface Pic { id: number; nama_karyawan: string; no_hp: string | null; }
 	interface SubRak { id: number; kode_gudang: string | null; nama_gudang: string; jenis: string | null; jumlah_item: number | null; }
@@ -395,9 +396,45 @@
 	let tambahHits = $state<BarangHit[]>([]);
 	let tambahSearching = $state(false);
 	let tambahSearchError = $state('');
-	// Pilih banyak: centang dari beberapa pencarian, lalu tinjau (rencana qty per item) & simpan sekali.
-	let tambahSel = $state<{ hit: BarangHit; qty: number | null }[]>([]);
-	let tambahStep = $state<'cari' | 'tinjau'>('cari');
+	// Pilih banyak: centang dari beberapa pencarian, lalu tinjau & simpan sekali.
+	// Revisi Nov 2026: kolom kanan = HITUNG FISIK (bukan lagi Rencana qty). Diisi → setelah barang
+	// ditempatkan, server langsung mencatatnya ke stok lewat jalur yang sama dengan "Input Hitung
+	// Fisik". Dikunci bila operator bukan PIC rak / tanpa akses Hitung Stok (detail.boleh_adjust).
+	let tambahSel = $state<{ hit: BarangHit; fisik: number | null }[]>([]);
+	interface FisikHasilBaris {
+		item_id: number;
+		nama: string;
+		ok: boolean;
+		status?: string;
+		reference_no?: string | null;
+		di_rak_baru?: number;
+		error?: string;
+		_satuan?: string;
+	}
+	let tambahFisikHasil = $state<FisikHasilBaris[]>([]);
+	const MAX_FISIK = 20;
+	const bolehFisik = $derived(Boolean(detail?.boleh_adjust));
+	async function isiFisikTambah(s: { hit: BarangHit; fisik: number | null }) {
+		const satuan = s.hit.satuan || '';
+		const hasil = await openKioskNumpad({
+			judul: `Hitung Fisik — ${s.hit.nama_barang}`,
+			nilaiAwal: s.fisik != null ? String(s.fisik) : '',
+			desimal: !satuan || isSatuanDesimal(satuan),
+			satuan: satuan || 'Qty'
+		});
+		if (hasil === null) return;
+		const id = s.hit.identitas_barang_id;
+		tambahSel = tambahSel.map((x) => (x.hit.identitas_barang_id === id ? { ...x, fisik: hasil === '' ? null : Number(hasil) } : x));
+	}
+	function labelFisikHasil(h: FisikHasilBaris): string {
+		if (!h.ok) return `${h.error || 'Gagal mencatat hitung fisik'} — pakai "Input Hitung Fisik" di kartu barang.`;
+		const qty = `${h.di_rak_baru ?? ''} ${h._satuan || ''}`.trim();
+		if (h.status === 'masuk_sesi') return `Masuk sesi opname${h.reference_no ? ` ${h.reference_no}` : ''} — stok berubah setelah review admin.`;
+		if (h.status === 'menunggu_approval') return `Hitung fisik ${qty} menunggu persetujuan admin.`;
+		if (h.status === 'no_change') return `Cocok dengan stok tercatat (${qty}).`;
+		return `Masuk stok: ${qty} di rak ini.`;
+	}
+	let tambahStep = $state<'cari' | 'tinjau' | 'baru'>('cari');
 	let tambahSaving = $state(false);
 	let tambahError = $state('');
 	let tambahOk = $state('');
@@ -417,9 +454,10 @@
 		tambahError = '';
 		tambahOk = '';
 		tambahSkip = [];
+		tambahFisikHasil = [];
 	}
 	function closeTambah() {
-		if (tambahSaving) return;
+		if (tambahSaving || baruSaving) return;
 		showTambah = false;
 		clearTimeout(searchTimer);
 	}
@@ -457,13 +495,13 @@
 		} else if (tambahSel.length >= MAX_TAMBAH) {
 			tambahError = `Maksimal ${MAX_TAMBAH} barang sekali tambah. Simpan dulu, lalu lanjut.`;
 		} else {
-			tambahSel = [...tambahSel, { hit: h, qty: null }];
+			tambahSel = [...tambahSel, { hit: h, fisik: null }];
 		}
 	}
 	function pilihSemuaHasil() {
 		const bisa = tambahHits.filter((h) => !h.sudah_di_rak && !isSel(h.identitas_barang_id));
 		const ruang = MAX_TAMBAH - tambahSel.length;
-		tambahSel = [...tambahSel, ...bisa.slice(0, ruang).map((hit) => ({ hit, qty: null }))];
+		tambahSel = [...tambahSel, ...bisa.slice(0, ruang).map((hit) => ({ hit, fisik: null }))];
 		if (bisa.length > ruang) tambahError = `Maksimal ${MAX_TAMBAH} barang sekali tambah.`;
 	}
 	function hapusSel(id: number) {
@@ -472,10 +510,18 @@
 	}
 	async function submitTambah() {
 		if (!tambahSel.length) return;
-		if (tambahSel.some((s) => s.qty != null && (!Number.isFinite(s.qty) || s.qty < 0))) {
-			tambahError = 'Rencana qty tidak boleh negatif.';
+		// bind:value pada input number memberi null saat dikosongkan; buang sisa nilai bila tidak berhak.
+		const sel = tambahSel.map((s) => ({ ...s, fisik: bolehFisik && s.fisik != null && String(s.fisik) !== '' ? Number(s.fisik) : null }));
+		if (sel.some((s) => s.fisik != null && (!Number.isFinite(s.fisik) || s.fisik < 0))) {
+			tambahError = 'Hitung fisik wajib angka 0 atau lebih.';
 			return;
 		}
+		const jumlahFisik = sel.filter((s) => s.fisik != null).length;
+		if (jumlahFisik > MAX_FISIK) {
+			tambahError = `Maksimal ${MAX_FISIK} barang dengan hitung fisik sekali simpan. Simpan dulu, lalu lanjut.`;
+			return;
+		}
+		const satuanById = new Map(sel.map((s) => [s.hit.identitas_barang_id, s.hit.satuan || '']));
 		tambahSaving = true;
 		tambahError = '';
 		try {
@@ -483,7 +529,8 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					items: tambahSel.map((s) => ({ item_id: s.hit.identitas_barang_id, expected_qty: s.qty }))
+					client_batch_id: `${gudangId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+					items: sel.map((s) => ({ item_id: s.hit.identitas_barang_id, hitung_fisik: s.fisik }))
 				})
 			});
 			const data = await res.json().catch(() => null);
@@ -492,6 +539,10 @@
 			tambahHits = tambahHits.map((h) => (masuk.has(h.identitas_barang_id) ? { ...h, sudah_di_rak: true } : h));
 			tambahOk = masuk.size ? `${masuk.size} barang ditambahkan ke rak ini.` : '';
 			tambahSkip = (data.dilewati || []).map((d: any) => ({ nama: d.nama, alasan: d.alasan }));
+			tambahFisikHasil = (data.hitung_fisik || []).map((h: FisikHasilBaris) => ({
+				...h,
+				_satuan: satuanById.get(Number(h.item_id)) || ''
+			}));
 			tambahSel = [];
 			tambahStep = 'cari';
 			setelahUbah();
@@ -499,6 +550,138 @@
 			tambahError = e instanceof Error ? e.message : 'Gagal menambahkan.';
 		} finally {
 			tambahSaving = false;
+		}
+	}
+
+	// --- Daftarkan barang baru (belum ada di identitas_barang) ---
+	// Barang dibuat dengan tanda "perlu verifikasi" & kategori kosong; stok langsung tercatat lewat
+	// hitung fisik. Kategori dilengkapi admin di dashboard internal (Verifikasi Pendaftaran).
+	let baruProduk = $state('');
+	let baruWarna = $state('');
+	let baruSatuan = $state('');
+	let baruFisik = $state<number | null>(null);
+	let baruSatuanList = $state<string[]>([]);
+	let baruSaran = $state<{ produk: string[]; warna: string[] }>({ produk: [], warna: [] });
+	let baruSaving = $state(false);
+	let baruError = $state('');
+	let baruDup = $state<{ identitas_barang_id: number; nama_barang: string; satuan: string | null } | null>(null);
+	let saranTimer: ReturnType<typeof setTimeout> | undefined;
+	let saranSeq = 0;
+	const baruNama = $derived(`${baruProduk} ${baruWarna}`.replace(/\s+/g, ' ').trim().toUpperCase());
+
+	async function openBaru() {
+		baruProduk = tambahQ.trim().toUpperCase();
+		baruWarna = '';
+		baruFisik = null;
+		baruError = '';
+		baruDup = null;
+		baruSaran = { produk: [], warna: [] };
+		tambahStep = 'baru';
+		if (!baruSatuanList.length) {
+			try {
+				const res = await fetch(`/api/kiosk/stok/rak/${gudangId}/barang-baru`);
+				const data = await res.json().catch(() => null);
+				baruSatuanList = res.ok && Array.isArray(data?.satuan) ? data.satuan : ['KG', 'LITER', 'PCS', 'UNIT'];
+			} catch {
+				baruSatuanList = ['KG', 'LITER', 'PCS', 'UNIT'];
+			}
+		}
+		if (!baruSatuanList.includes(baruSatuan)) baruSatuan = baruSatuanList.includes('KG') ? 'KG' : baruSatuanList[0] || '';
+	}
+	function onBaruInput(jenis: 'produk' | 'warna') {
+		baruDup = null;
+		clearTimeout(saranTimer);
+		const q = (jenis === 'produk' ? baruProduk : baruWarna).trim();
+		if (q.length < 2) {
+			baruSaran = { ...baruSaran, [jenis]: [] };
+			return;
+		}
+		saranTimer = setTimeout(async () => {
+			const seq = ++saranSeq;
+			try {
+				const res = await fetch(`/api/kiosk/stok/master-barang?jenis=${jenis}&q=${encodeURIComponent(q)}`);
+				const data = await res.json().catch(() => null);
+				if (seq !== saranSeq || !res.ok) return;
+				const target = q.toUpperCase();
+				const list: string[] = (data?.hasil || []).map((h: { nama: string }) => h.nama).filter((n: string) => n.toUpperCase() !== target);
+				baruSaran = { ...baruSaran, [jenis]: list.slice(0, 6) };
+			} catch {
+				/* saran opsional — operator tetap bisa mengetik manual */
+			}
+		}, 300);
+	}
+	function pilihSaran(jenis: 'produk' | 'warna', nama: string) {
+		if (jenis === 'produk') baruProduk = nama;
+		else baruWarna = nama;
+		baruSaran = { ...baruSaran, [jenis]: [] };
+		baruDup = null;
+	}
+	async function isiFisikBaru() {
+		const hasil = await openKioskNumpad({
+			judul: `Hitung Fisik — ${baruNama || 'Barang baru'}`,
+			nilaiAwal: baruFisik != null ? String(baruFisik) : '',
+			desimal: !baruSatuan || isSatuanDesimal(baruSatuan),
+			satuan: baruSatuan || 'Qty'
+		});
+		if (hasil !== null) baruFisik = hasil === '' ? null : Number(hasil);
+	}
+	function pakaiBarangAda() {
+		if (!baruDup) return;
+		const d = baruDup;
+		if (!isSel(d.identitas_barang_id)) {
+			tambahSel = [
+				...tambahSel,
+				{
+					hit: { identitas_barang_id: d.identitas_barang_id, nama_barang: d.nama_barang, kode_item: null, satuan: d.satuan, kategori: 'lainnya', sudah_di_rak: false, rak_lain: [] },
+					fisik: bolehFisik && baruFisik != null && String(baruFisik) !== '' ? Number(baruFisik) : null
+				}
+			];
+		}
+		baruDup = null;
+		tambahStep = 'tinjau';
+	}
+	async function submitBaru() {
+		if (baruSaving) return;
+		baruError = '';
+		baruDup = null;
+		if (baruProduk.trim().length < 2) return void (baruError = 'Nama produk wajib diisi (minimal 2 huruf).');
+		if (!baruWarna.trim()) return void (baruError = 'Warna wajib diisi.');
+		if (!baruSatuan) return void (baruError = 'Pilih satuan.');
+		const fisik = bolehFisik && baruFisik != null && String(baruFisik) !== '' ? Number(baruFisik) : null;
+		if (bolehFisik && fisik == null) return void (baruError = 'Isi hitung fisik (jumlah barang di rak ini). Isi 0 bila memang kosong.');
+		if (fisik != null && (!Number.isFinite(fisik) || fisik < 0)) return void (baruError = 'Hitung fisik wajib angka 0 atau lebih.');
+		baruSaving = true;
+		try {
+			const res = await fetch(`/api/kiosk/stok/rak/${gudangId}/barang-baru`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					nama_produk: baruProduk,
+					warna: baruWarna,
+					satuan: baruSatuan,
+					hitung_fisik: fisik,
+					client_batch_id: `${gudangId}-baru-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+				})
+			});
+			const data = await res.json().catch(() => null);
+			if (res.status === 409 && data?.existing) {
+				baruDup = data.existing;
+				return;
+			}
+			if (!res.ok) throw new Error(data?.message || `Gagal mendaftarkan (${res.status}).`);
+			const satuan = data.barang?.satuan || baruSatuan;
+			tambahOk = `"${data.barang?.nama_barang || baruNama}" didaftarkan & ditambahkan ke rak ini. Kategori dilengkapi admin saat verifikasi.`;
+			tambahSkip = [];
+			tambahFisikHasil = (data.hitung_fisik || []).map((h: FisikHasilBaris) => ({ ...h, _satuan: satuan }));
+			tambahQ = '';
+			tambahHits = [];
+			// Kembali ke pencarian; barang lain yang sudah dicentang tetap tersimpan (tombol "Lanjut tinjau").
+			tambahStep = 'cari';
+			setelahUbah();
+		} catch (e) {
+			baruError = e instanceof Error ? e.message : 'Gagal mendaftarkan barang.';
+		} finally {
+			baruSaving = false;
 		}
 	}
 
@@ -555,7 +738,7 @@
 
 		{#if kelola}
 			<div class="kelola-bar">
-				<p>Mode Kelola Rak: tambah, lepas, atau pindahkan item supaya isi rak sesuai kondisi fisik. Stok tidak berubah.</p>
+				<p>Mode Kelola Rak: tambah, lepas, atau pindahkan item supaya isi rak sesuai kondisi fisik. Stok hanya berubah bila Hitung Fisik diisi saat menambah item.</p>
 				<button class="tambah-btn" onclick={openTambah}><IconPlus size={16} /> Tambah Item ke Rak</button>
 			</div>
 		{/if}
@@ -643,7 +826,7 @@
 						{@const t = tone(p)}
 						<div class="item" style="border-color:{TONE[t]}55">
 							<div class="item-top">
-								<span class="item-nama">{p.nama_barang}</span>
+								<span class="item-nama">{p.nama_barang}{#if p.perlu_verifikasi}<span class="badge-verif" title="Barang baru — kategori belum dilengkapi admin. Stok tetap tercatat.">Menunggu verifikasi</span>{/if}</span>
 								{#if p.kategori !== 'lainnya'}
 									<span class="tag">{KATEGORI_LABEL[p.kategori]}</span>
 								{/if}
@@ -997,7 +1180,18 @@
 			</div>
 
 			{#if tambahStep === 'tinjau'}
-				<p class="sheet-hint">Periksa barang yang akan ditambahkan. Rencana qty boleh dikosongkan.</p>
+				{#if bolehFisik}
+					<p class="sheet-hint">
+						Isi <strong>Hitung Fisik</strong> = jumlah barang yang benar-benar ada di rak ini. Angka ini langsung tercatat
+						sebagai stok. Kosongkan bila hanya ingin menempatkan barang tanpa menghitung.
+					</p>
+				{:else}
+					<p class="sheet-hint sheet-hint--lock">
+						<IconLock size={14} /> Hitung fisik hanya untuk PIC rak atau pemegang akses Hitung Stok. Barang tetap bisa
+						ditambahkan; minta PIC rak mengisi hitung fisiknya.
+					</p>
+				{/if}
+				<div class="sel-head" aria-hidden="true"><span>Barang</span><span>Hitung Fisik</span></div>
 				<div class="sel-list">
 					{#each tambahSel as s (s.hit.identitas_barang_id)}
 						<div class="sel-row">
@@ -1005,15 +1199,29 @@
 								<span class="hit-nama">{s.hit.nama_barang}</span>
 								<span class="hit-meta">{s.hit.kode_item || ''}{s.hit.satuan ? ` · ${s.hit.satuan}` : ''}</span>
 							</div>
-							<input
-								class="sel-qty"
-								type="number"
-								inputmode="decimal"
-								min="0"
-								placeholder="Rencana"
-								aria-label="Rencana qty {s.hit.nama_barang}"
-								bind:value={s.qty}
-							/>
+							{#if bolehFisik}
+								<input
+									class="sel-qty"
+									type="number"
+									inputmode="decimal"
+									min="0"
+									step="any"
+									placeholder={s.hit.satuan || 'Qty'}
+									aria-label="Hitung fisik {s.hit.nama_barang}"
+									bind:value={s.fisik}
+									disabled={tambahSaving}
+								/>
+								<button
+									class="sel-pad"
+									type="button"
+									onclick={() => isiFisikTambah(s)}
+									disabled={tambahSaving}
+									title="Buka tombol angka di layar"
+									aria-label="Tombol angka untuk {s.hit.nama_barang}"
+								>🔢</button>
+							{:else}
+								<span class="sel-lock" title="Khusus PIC rak / akses Hitung Stok"><IconLock size={14} /> Terkunci</span>
+							{/if}
 							<button class="sel-x" onclick={() => hapusSel(s.hit.identitas_barang_id)} disabled={tambahSaving} aria-label="Batal pilih">
 								<IconX size={18} />
 							</button>
@@ -1024,11 +1232,82 @@
 				<div class="sheet-actions">
 					<button class="sheet-btn sheet-btn--secondary" onclick={() => (tambahStep = 'cari')} disabled={tambahSaving}>Kembali pilih</button>
 					<button class="sheet-btn sheet-btn--primary" onclick={submitTambah} disabled={tambahSaving}>
-						<IconPlus size={16} /> {tambahSaving ? 'Menyimpan…' : `Tambahkan ${tambahSel.length} barang`}
+						<IconPlus size={16} />
+						{#if tambahSaving}
+							{tambahSel.some((x) => x.fisik != null && String(x.fisik) !== '') && bolehFisik ? 'Menyimpan & mencatat stok…' : 'Menyimpan…'}
+						{:else}
+							Tambahkan {tambahSel.length} barang
+						{/if}
+					</button>
+				</div>
+			{:else if tambahStep === 'baru'}
+				<p class="sheet-hint">
+					Untuk barang yang ada di rak tetapi belum terdaftar. Barang langsung tercatat; <strong>kategori dilengkapi admin</strong>
+					saat verifikasi pendaftaran.
+				</p>
+				<div class="baru-form">
+					<label class="sheet-label" for="baru-produk">Nama produk</label>
+					<input id="baru-produk" type="text" placeholder="mis. FOXAFLOOR SL OX-955" bind:value={baruProduk} oninput={() => onBaruInput('produk')} disabled={baruSaving} autocomplete="off" />
+					{#if baruSaran.produk.length}
+						<div class="saran">
+							{#each baruSaran.produk as n (n)}<button type="button" class="saran-chip" onclick={() => pilihSaran('produk', n)}>{n}</button>{/each}
+						</div>
+					{/if}
+
+					<label class="sheet-label" for="baru-warna">Warna</label>
+					<input id="baru-warna" type="text" placeholder="mis. PINK / RAL 8019" bind:value={baruWarna} oninput={() => onBaruInput('warna')} disabled={baruSaving} autocomplete="off" />
+					{#if baruSaran.warna.length}
+						<div class="saran">
+							{#each baruSaran.warna as n (n)}<button type="button" class="saran-chip" onclick={() => pilihSaran('warna', n)}>{n}</button>{/each}
+						</div>
+					{/if}
+
+					<span class="sheet-label">Satuan</span>
+					<div class="satuan-pilih" role="radiogroup" aria-label="Satuan">
+						{#each baruSatuanList as st (st)}
+							<button type="button" role="radio" aria-checked={baruSatuan === st} class:on={baruSatuan === st} onclick={() => (baruSatuan = st)} disabled={baruSaving}>{st}</button>
+						{/each}
+					</div>
+
+					<label class="sheet-label" for="baru-fisik">Hitung fisik di rak ini</label>
+					{#if bolehFisik}
+						<div class="baru-fisik">
+							<input id="baru-fisik" class="sel-qty" type="number" inputmode="decimal" min="0" step="any" placeholder={baruSatuan || 'Qty'} bind:value={baruFisik} disabled={baruSaving} />
+							<button class="sel-pad" type="button" onclick={isiFisikBaru} disabled={baruSaving} title="Buka tombol angka di layar" aria-label="Tombol angka hitung fisik">🔢</button>
+							<span class="baru-satuan">{baruSatuan}</span>
+						</div>
+					{:else}
+						<p class="sheet-hint sheet-hint--lock"><IconLock size={14} /> Hitung fisik khusus PIC rak / akses Hitung Stok. Barang tetap bisa didaftarkan; minta PIC rak mengisi hitung fisiknya.</p>
+					{/if}
+
+					{#if baruNama}<p class="baru-preview">Nama barang: <strong>{baruNama}</strong></p>{/if}
+				</div>
+				{#if baruDup}
+					<div class="baru-dup">
+						<p><IconAlertTriangle size={14} /> <strong>{baruDup.nama_barang}</strong> sudah terdaftar. Pakai barang ini supaya tidak dobel.</p>
+						<button class="sheet-btn sheet-btn--primary" type="button" onclick={pakaiBarangAda}>Pakai barang ini</button>
+					</div>
+				{/if}
+				{#if baruError}<p class="sheet-err">{baruError}</p>{/if}
+				<div class="sheet-actions">
+					<button class="sheet-btn sheet-btn--secondary" onclick={() => (tambahStep = 'cari')} disabled={baruSaving}>Kembali cari</button>
+					<button class="sheet-btn sheet-btn--primary baru-submit" onclick={submitBaru} disabled={baruSaving}>
+						<IconPlus size={16} /> {baruSaving ? 'Menyimpan…' : 'Daftarkan & tambahkan'}
 					</button>
 				</div>
 			{:else}
 				{#if tambahOk}<p class="ok-line"><IconCircleCheck size={16} /> {tambahOk}</p>{/if}
+				{#if tambahFisikHasil.length}
+					<ul class="fisik-hasil" aria-label="Hasil hitung fisik">
+						{#each tambahFisikHasil as h (h.item_id)}
+							{@const tunggu = h.ok && (h.status === 'masuk_sesi' || h.status === 'menunggu_approval')}
+							<li class="fisik-hasil__row" class:fisik-hasil__row--err={!h.ok} class:fisik-hasil__row--wait={tunggu}>
+								{#if !h.ok}<IconAlertTriangle size={14} />{:else if tunggu}<IconClock size={14} />{:else}<IconCircleCheck size={14} />{/if}
+								<span><strong>{h.nama}</strong> — {labelFisikHasil(h)}</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 				{#if tambahSkip.length}
 					<p class="warn">
 						<IconAlertTriangle size={14} />
@@ -1053,6 +1332,12 @@
 					<p class="sheet-hint">Tidak ada barang yang cocok dengan "{tambahQ}".</p>
 				{:else if tambahQ.trim().length < 2}
 					<p class="sheet-hint">Ketik minimal 2 huruf. Ketuk barang untuk mencentang — bisa pilih banyak, juga dari pencarian berbeda.</p>
+				{/if}
+				{#if tambahQ.trim().length >= 2 && !tambahSearching && !tambahSearchError}
+					<button class="baru-btn" type="button" onclick={openBaru}>
+						<IconPlus size={16} />
+						{tambahHits.length ? 'Tidak ada yang pas? Daftarkan barang baru' : 'Daftarkan sebagai barang baru'}
+					</button>
 				{/if}
 				{#if tambahHits.some((h) => !h.sudah_di_rak && !isSel(h.identitas_barang_id))}
 					<button class="pilih-semua" onclick={pilihSemuaHasil}>Centang semua hasil</button>
@@ -1228,6 +1513,29 @@
 	.sel-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 	.sheet input.sel-qty { width: 96px; border: 1px solid #cbd5e1; border-radius: 0.5rem; padding: 0.55rem 0.6rem; font-size: 0.95rem; text-align: center; }
 	.sel-x { background: none; border: none; color: #94a3b8; cursor: pointer; padding: 0.25rem; display: flex; }
+	.sel-head { display: flex; justify-content: space-between; padding: 0 3.6rem 0 0.85rem; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: #94a3b8; margin-top: 0.25rem; }
+	.sel-pad { border: 1px solid #cbd5e1; background: white; border-radius: 0.5rem; padding: 0.45rem 0.55rem; cursor: pointer; font-size: 1rem; line-height: 1; }
+	.sel-pad:disabled { opacity: 0.5; }
+	.sel-lock { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8rem; font-weight: 700; color: #94a3b8; padding: 0 0.4rem; white-space: nowrap; }
+	.sheet-hint--lock { display: flex; gap: 0.4rem; align-items: flex-start; color: #92400e; background: #fffbeb; border-radius: 0.5rem; padding: 0.5rem 0.65rem; }
+	.baru-btn { display: inline-flex; align-items: center; gap: 0.35rem; align-self: flex-start; border: 1px dashed #0f766e; color: #0f766e; background: #f0fdfa; border-radius: 0.6rem; padding: 0.55rem 0.8rem; font-weight: 700; font-size: 0.9rem; cursor: pointer; margin: 0.25rem 0; }
+	.baru-form { display: flex; flex-direction: column; gap: 0.35rem; }
+	.baru-form .sheet-label { margin-top: 0.4rem; }
+	.saran { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+	.saran-chip { border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 999px; padding: 0.3rem 0.7rem; font-size: 0.8rem; cursor: pointer; }
+	.satuan-pilih { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+	.satuan-pilih button { border: 1px solid #cbd5e1; background: white; border-radius: 0.5rem; padding: 0.5rem 0.9rem; font-weight: 700; cursor: pointer; }
+	.satuan-pilih button.on { background: #0f766e; border-color: #0f766e; color: white; }
+	.baru-fisik { display: flex; align-items: center; gap: 0.5rem; }
+	.baru-satuan { font-weight: 700; color: #475569; }
+	.baru-preview { margin: 0.5rem 0 0; font-size: 0.85rem; color: #334155; background: #f1f5f9; border-radius: 0.45rem; padding: 0.45rem 0.6rem; }
+	.baru-dup { display: flex; flex-direction: column; gap: 0.5rem; background: #fffbeb; color: #92400e; border-radius: 0.5rem; padding: 0.6rem 0.75rem; margin-top: 0.5rem; }
+	.baru-dup p { margin: 0; display: flex; gap: 0.35rem; align-items: flex-start; font-size: 0.88rem; }
+	.badge-verif { display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.68rem; font-weight: 800; color: #92400e; background: #fef3c7; border-radius: 4px; padding: 0.1rem 0.4rem; margin-left: 0.35rem; vertical-align: middle; }
+	.fisik-hasil { list-style: none; margin: 0 0 0.5rem; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+	.fisik-hasil__row { display: flex; gap: 0.4rem; align-items: flex-start; font-size: 0.85rem; color: #166534; background: #f0fdf4; border-radius: 0.45rem; padding: 0.4rem 0.6rem; }
+	.fisik-hasil__row--wait { color: #92400e; background: #fffbeb; }
+	.fisik-hasil__row--err { color: #b91c1c; background: #fef2f2; }
 	.hit-nama { font-size: 0.9rem; font-weight: 700; color: #0f172a; }
 	.hit-meta { display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: #94a3b8; }
 	.hit-badge { font-size: 0.7rem; font-weight: 700; color: #475569; background: #f1f5f9; border-radius: 4px; padding: 0.1rem 0.4rem; }

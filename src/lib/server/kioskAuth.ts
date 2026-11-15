@@ -3,7 +3,8 @@
 // Produksi + Deposit HP + Kiosk Produksi v2, 24 Agu 2026). Format hash HARUS sama persis dengan
 // erp-epi-1 src/lib/server/kioskAuth.js (yang men-generate PIN) — JANGAN ubah salah satu sisi saja.
 
-import { scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
+import { scrypt, timingSafeEqual, createHmac } from 'node:crypto';
+import { promisify } from 'node:util';
 import { env } from '$env/dynamic/private';
 import { error, type RequestEvent } from '@sveltejs/kit';
 
@@ -11,7 +12,15 @@ const KEY_LEN = 64;
 export const KIOSK_COOKIE_NAME = 'epi_kiosk_session';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 jam — safety net; auto-logout idle ditangani client-side
 
-export function verifyPin(pin: string, storedHash: string | null | undefined): boolean {
+const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, keylen: number) => Promise<Buffer>;
+
+/**
+ * Async (revisi login cepat, Nov 2026): dulu scryptSync memblokir event loop Node ±50–100 ms
+ * per login — selama itu SEMUA request lain (kiosk lain, dashboard) ikut tertahan. Parameter
+ * scrypt tetap default (N=16384, r=8, p=1) = identik dengan scryptSync lama & erp-epi-1, jadi
+ * hash lama tetap cocok.
+ */
+export async function verifyPin(pin: string, storedHash: string | null | undefined): Promise<boolean> {
 	if (!storedHash) return false;
 	const parts = storedHash.split(':');
 	if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
@@ -19,7 +28,7 @@ export function verifyPin(pin: string, storedHash: string | null | undefined): b
 	try {
 		const salt = Buffer.from(saltHex, 'hex');
 		const expected = Buffer.from(hashHex, 'hex');
-		const actual = scryptSync(String(pin), salt, KEY_LEN);
+		const actual = await scryptAsync(String(pin), salt, KEY_LEN);
 		if (actual.length !== expected.length) return false;
 		return timingSafeEqual(actual, expected);
 	} catch {

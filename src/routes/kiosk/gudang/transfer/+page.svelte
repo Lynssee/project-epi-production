@@ -40,7 +40,7 @@
 		loading = true;
 		try {
 			const res = await fetch('/api/kiosk/gudang/transfer');
-			if (res.status === 401) return goto('/kiosk');
+			if (res.status === 401) return goto('/kiosk', { invalidateAll: true });
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Gagal memuat transfer');
 			rows = (await res.json()).rows || [];
 		} catch (e: any) {

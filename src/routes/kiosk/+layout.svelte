@@ -200,7 +200,9 @@
 		} catch {
 			/* non-fatal — tetap redirect ke login */
 		}
-		goto('/kiosk');
+		// invalidateAll WAJIB: load layout sengaja tidak bergantung pada URL (tidak dimuat ulang
+		// tiap pindah halaman), jadi data.kioskSession harus disegarkan eksplisit di sini.
+		goto('/kiosk', { invalidateAll: true });
 	}
 
 	// File 11 §1 item 5 — sesi habis di tengah aksi (401 dari endpoint kiosk lain) sebelumnya
@@ -224,7 +226,7 @@
 	}
 	function loginUlang() {
 		const next = encodeURIComponent(page.url.pathname + page.url.search);
-		goto(`/kiosk?next=${next}`);
+		goto(`/kiosk?next=${next}`, { invalidateAll: true });
 	}
 
 	function openSupervisorModal() {
@@ -345,7 +347,7 @@
 	$effect(() => {
 		const isLoginPage = page.url.pathname === '/kiosk';
 		if (!data.kioskSession && !isLoginPage) {
-			goto('/kiosk');
+			goto('/kiosk', { invalidateAll: true });
 		} else if (data.kioskSession && isLoginPage) {
 			goto('/kiosk/home');
 		}

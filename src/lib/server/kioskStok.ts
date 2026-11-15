@@ -40,6 +40,8 @@ export interface KioskPlacementRow {
 	/** Jumlah rak yang menempatkan barang ini; null kalau gagal dibaca. */
 	jumlah_lokasi: number | null;
 	terakhir_update: string | null;
+	/** Barang baru (mis. didaftarkan dari kiosk) yang kategorinya belum dilengkapi & diverifikasi admin. */
+	perlu_verifikasi?: boolean;
 }
 
 export interface KioskPicRow {
@@ -265,7 +267,7 @@ export async function fetchRakDetail(gudangId: number): Promise<KioskRakDetail |
 	const itemIds = [...new Set(rows.map((r) => r.identitas_barang_id).filter(Boolean))];
 	const items = itemIds.length
 		? await dget<any>(
-				`/items/identitas_barang?filter[id][_in]=${itemIds.join(',')}&fields=id,nama_barang_lengkap,kode_item,satuan,parent_category,stok_tersedia,last_stock_update&limit=-1`
+				`/items/identitas_barang?filter[id][_in]=${itemIds.join(',')}&fields=id,nama_barang_lengkap,kode_item,satuan,parent_category,stok_tersedia,last_stock_update,perlu_verifikasi_pendaftaran&limit=-1`
 			)
 		: [];
 	const itemMap = new Map(items.map((i: any) => [i.id, i]));
@@ -297,7 +299,8 @@ export async function fetchRakDetail(gudangId: number): Promise<KioskRakDetail |
 			stok_tersedia: !blind && it.stok_tersedia != null && it.stok_tersedia !== '' ? parseStok(it.stok_tersedia) : null,
 			blind_sesi: blind,
 			jumlah_lokasi: jumlahLokasi.get(Number(r.identitas_barang_id)) ?? null,
-			terakhir_update: it.last_stock_update || null
+			terakhir_update: it.last_stock_update || null,
+			perlu_verifikasi: Boolean(it.perlu_verifikasi_pendaftaran)
 		};
 	});
 

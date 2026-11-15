@@ -358,7 +358,8 @@
 	onMount(async () => {
 		window.addEventListener('kiosk-hardware-scan', handleHardwareScan);
 		try {
-			const res = await fetch('/api/kiosk/home');
+			// Hanya bagian yang dipakai halaman ini (shift, jadwal, mesin) — bukan data beranda.
+			const res = await fetch('/api/kiosk/home?bagian=produksi');
 			if (res.ok) {
 				const data = await res.json();
 				karyawanId = data.karyawan?.id ?? null;

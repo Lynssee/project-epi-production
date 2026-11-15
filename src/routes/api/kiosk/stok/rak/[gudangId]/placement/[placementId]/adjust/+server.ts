@@ -6,8 +6,8 @@
 import { json, error, type RequestHandler } from '@sveltejs/kit';
 import { directusServerJson } from '$lib/server/directus';
 import { requireKioskSession } from '$lib/server/kioskAuth';
-import { adjustOpnameRak, bolehAdjustRak } from '$lib/server/kioskGudang';
-import { masukkanKeSesiAktif } from '$lib/server/opnameSesi';
+import { bolehAdjustRak } from '$lib/server/kioskGudang';
+import { catatHitungFisikRak } from '$lib/server/kioskHitungFisik';
 
 export const POST: RequestHandler = async (event) => {
 	const session = requireKioskSession(event);
@@ -43,20 +43,10 @@ export const POST: RequestHandler = async (event) => {
 	const itemId = Number(placement?.data?.[0]?.identitas_barang_id);
 	if (!itemId) throw error(404, 'Barang tidak ditemukan di rak ini (mungkin sudah dipindah).');
 
-	const masukSesi = await masukkanKeSesiAktif({
-		itemId,
-		rakId: gudangId,
-		hitungFisik,
-		karyawanNama: session.nama
-	}).catch((e) => {
-		console.warn('[api/kiosk/stok/adjust] cek sesi opname gagal, pakai jalur langsung:', e);
-		return null;
-	});
-	if (masukSesi) return json({ ok: true, status: 'masuk_sesi', reference_no: masukSesi.kode });
-
-	const hasil = await adjustOpnameRak({
+	const hasil = await catatHitungFisikRak({
 		gudang_id: gudangId,
 		placement_id: placementId,
+		item_id: itemId,
 		hitung_fisik: hitungFisik,
 		catatan: body?.catatan ? String(body.catatan).trim().slice(0, 500) : '',
 		client_txn_id: clientTxnId,

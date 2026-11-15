@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { IconId, IconLoader2 } from '@tabler/icons-svelte';
 	import { parseEpiQr } from '$lib/utils/qrParse';
 	import { openKioskNumpad } from '$lib/components/kiosk/kioskNumpad';
@@ -14,6 +14,8 @@
 		if (hasil !== null) pin = hasil;
 	}
 	let loading = $state(false);
+	// Teks tombol bertahap supaya operator tahu kiosk sedang bekerja, bukan macet.
+	let tahap = $state<'periksa' | 'membuka'>('periksa');
 	let errorMsg = $state('');
 	let badgeRead = $state('');
 	let gagalBerturut = $state(0);
@@ -42,6 +44,7 @@
 			return;
 		}
 		loading = true;
+		tahap = 'periksa';
 		errorMsg = '';
 		try {
 			const res = await fetch('/api/kiosk/login', {
@@ -52,8 +55,10 @@
 			const data = await res.json().catch(() => null);
 			if (!res.ok) throw new Error(data?.message || 'Login gagal.');
 			gagalBerturut = 0;
-			await invalidateAll();
-			goto('/kiosk/home');
+			// Satu kali muat ulang data layout (dulu invalidateAll() + goto() = layout dimuat 2x
+			// berturut-turut dan tombol tetap berputar selama yang pertama).
+			tahap = 'membuka';
+			await goto('/kiosk/home', { invalidateAll: true, replaceState: true });
 		} catch (e) {
 			errorMsg = e instanceof Error ? e.message : 'Login gagal.';
 			gagalBerturut += 1;
@@ -114,7 +119,10 @@
 			</div>
 
 			<button type="submit" class="submit" disabled={loading}>
-				{#if loading}<IconLoader2 size={20} class="animate-spin" />{:else}Masuk{/if}
+				{#if loading}
+					<IconLoader2 size={20} class="animate-spin" />
+					<span class="submit-tahap">{tahap === 'membuka' ? 'Membuka beranda…' : 'Memeriksa PIN…'}</span>
+				{:else}Masuk{/if}
 			</button>
 		</form>
 	</div>
@@ -168,6 +176,7 @@
 		justify-content: center;
 	}
 	.submit:disabled { opacity: 0.6; }
+	.submit-tahap { margin-left: 0.5rem; font-size: 1.05rem; }
 	.badge-ok {
 		width: 100%;
 		margin: -0.25rem 0 0;

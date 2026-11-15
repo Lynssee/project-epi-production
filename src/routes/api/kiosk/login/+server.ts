@@ -31,6 +31,7 @@ function getClientIp(event: Parameters<RequestHandler>[0]): string {
 }
 
 export const POST: RequestHandler = async (event) => {
+	const t0 = performance.now();
 	try {
 		const key = `kiosk-login:${getClientIp(event)}`;
 		if (isRateLimited(key, { windowMs: 5 * 60 * 1000, max: 20 })) {
@@ -44,6 +45,7 @@ export const POST: RequestHandler = async (event) => {
 
 		const { noBadge, token: badgeToken } = resolveBadgeInput(badgeRaw);
 
+		const tDb = performance.now();
 		const res = await directusServerJson<{ data: any[] }>(
 			`/items/karyawan?filter[no_badge][_eq]=${encodeURIComponent(noBadge)}` +
 				`&filter[kiosk_enabled][_eq]=true` +
@@ -51,12 +53,16 @@ export const POST: RequestHandler = async (event) => {
 				`&fields=id,nama_karyawan,pin_hash,badge_qr_rev&limit=1`
 		);
 		const karyawan = res?.data?.[0];
+		const durDb = performance.now() - tDb;
 
 		// Kartu fisik membawa token: tolak kartu lama/hilang (badge_qr_rev sudah dinaikkan HRD).
 		if (karyawan && badgeToken && !verifyBadgeToken(noBadge, karyawan.badge_qr_rev, badgeToken)) {
 			throw error(401, 'Kartu badge ini sudah tidak berlaku (diganti/hilang). Minta kartu baru ke HRD.');
 		}
-		if (!karyawan || !verifyPin(pin, karyawan.pin_hash)) {
+		const tPin = performance.now();
+		const pinOk = karyawan ? await verifyPin(pin, karyawan.pin_hash) : false;
+		const durPin = performance.now() - tPin;
+		if (!karyawan || !pinOk) {
 			throw error(401, 'Badge atau PIN salah, atau akun ini belum diaktifkan untuk kiosk. Hubungi admin.');
 		}
 
@@ -69,7 +75,17 @@ export const POST: RequestHandler = async (event) => {
 			maxAge: 8 * 60 * 60
 		});
 
-		return json({ success: true, karyawan: { id: karyawan.id, nama: karyawan.nama_karyawan } });
+		// Server-Timing: lihat di DevTools → Network → login → Timing, untuk mengukur di produksi
+		// apakah lambatnya di Directus (db), verifikasi PIN (pin), atau jaringan.
+		const serverTiming = [
+			`db;dur=${durDb.toFixed(1)}`,
+			`pin;dur=${durPin.toFixed(1)}`,
+			`total;dur=${(performance.now() - t0).toFixed(1)}`
+		].join(', ');
+		return json(
+			{ success: true, karyawan: { id: karyawan.id, nama: karyawan.nama_karyawan } },
+			{ headers: { 'Server-Timing': serverTiming } }
+		);
 	} catch (err: any) {
 		if (err?.status && err?.body) throw err;
 		console.error('[kiosk/login] Error during login:', err);
