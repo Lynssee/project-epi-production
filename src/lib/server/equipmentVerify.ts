@@ -157,15 +157,28 @@ export interface VehicleLite {
 	pemilik: string | null;
 }
 
-/** equipment.id == fleet_kendaraan.legacy_equipment_id (terverifikasi di data live); kode_aset hanya terisi sebagian. */
-export async function findVehicleByEquipment(equipmentId: string, dx: Dx = directusServerJson as Dx): Promise<VehicleLite | null> {
-	const q = new URLSearchParams({
-		'filter[legacy_equipment_id][_eq]': equipmentId,
-		fields: 'id,nomor_polisi,merk,model,jenis,status,pemilik',
-		limit: '1'
-	});
-	const res = await dx<{ data: VehicleLite[] }>(`/items/fleet_kendaraan?${q.toString()}`);
-	return res?.data?.[0] ?? null;
+/**
+ * equipment.id == fleet_kendaraan.legacy_equipment_id (terverifikasi di data live); kode_aset hanya terisi sebagian.
+ * Bila `equipmentCode` diberikan dan tautan legacy tidak ada, coba (a) fleet_kendaraan.kode_aset = equipment.code, lalu
+ * (b) nomor_polisi dari master barang (identitas_barang.id_equipment = equipment.code) — unit seperti "MOBIL - L300"
+ * yang belum punya baris tertaut tetap dikenali sebagai kendaraan. Hanya BACA (tidak menulis fleet_kendaraan).
+ */
+export async function findVehicleByEquipment(equipmentId: string, dx: Dx = directusServerJson as Dx, equipmentCode?: string | null): Promise<VehicleLite | null> {
+	const fields = 'id,nomor_polisi,merk,model,jenis,status,pemilik';
+	const one = async (filter: Record<string, string>) => {
+		const q = new URLSearchParams({ ...filter, fields, limit: '1' });
+		const res = await dx<{ data: VehicleLite[] }>(`/items/fleet_kendaraan?${q.toString()}`);
+		return res?.data?.[0] ?? null;
+	};
+	const byLegacy = await one({ 'filter[legacy_equipment_id][_eq]': equipmentId });
+	if (byLegacy || !equipmentCode) return byLegacy;
+
+	const byKode = await one({ 'filter[kode_aset][_eq]': equipmentCode });
+	if (byKode) return byKode;
+
+	const q = new URLSearchParams({ 'filter[id_equipment][_eq]': equipmentCode, fields: 'nomor_polisi', limit: '1' });
+	const nopol = (await dx<{ data: { nomor_polisi: string | null }[] }>(`/items/identitas_barang?${q.toString()}`))?.data?.[0]?.nomor_polisi?.trim();
+	return nopol ? one({ 'filter[nomor_polisi][_eq]': nopol }) : null;
 }
 
 async function findCandidateBookings(vehicleId: number, dx: Dx): Promise<BookingLite[]> {

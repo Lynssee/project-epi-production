@@ -129,7 +129,7 @@
 				<button class="btn ghost" onclick={() => (detail = null)}>Tutup</button>
 			{:else}
 				<div class="meta">Menunggu formula {detail.days ?? '—'} hari</div>
-				<button class="btn go" disabled={busy || !enabled} onclick={() => mark(detail.id, 'scan')}><IconCheck size={22} /> {busy ? 'Menyimpan…' : 'Formula Sudah Kembali'}</button>
+				<button class="btn go" disabled={busy || !enabled} onclick={() => mark(detail!.id, 'scan')}><IconCheck size={22} /> {busy ? 'Menyimpan…' : 'Formula Sudah Kembali'}</button>
 				<button class="btn ghost" onclick={() => (detail = null)}>Batal</button>
 			{/if}
 		</div>

@@ -5,6 +5,7 @@
 	import { onMount, tick } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { authStore } from '$lib/stores/auth';
+	import { auth } from '$lib/firebase';
 	import { rolesStore } from '$lib/stores/roles';
 	import { hasPermission } from '$lib/constants/permissions';
 	import {
@@ -88,7 +89,42 @@
 	let todaySession = $state<any>(null);
 	let todayLogs = $state<Awaited<ReturnType<typeof getP2hLogsBySession>>>([]);
 	let showExportSheet = $state(false);
+	let exportingPhotoPdf = $state(false);
+	let exportPhotoPdfError = $state('');
 	let showCloseForm = $state(false);
+
+	async function downloadUnitP2hPdf() {
+		if (exportingPhotoPdf) return;
+		exportingPhotoPdf = true;
+		exportPhotoPdfError = '';
+		try {
+			const token = await auth.currentUser?.getIdToken();
+			if (!token) throw new Error('Sesi login tidak ditemukan.');
+			const qs = todaySession?.id
+				? new URLSearchParams({ session_id: String(todaySession.id) })
+				: new URLSearchParams({ equipment_id: equipmentId, date: today });
+			const res = await fetch(`/api/preventive/p2h/export-pdf?${qs.toString()}`, {
+				headers: { Authorization: `Bearer ${token}` }
+			});
+			if (!res.ok) {
+				const errBody = await res.json().catch(() => ({}));
+				throw new Error(errBody?.message || `Gagal membuat PDF (HTTP ${res.status})`);
+			}
+			const blob = await res.blob();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `P2H-${(equipment?.code || equipmentId).replace(/[^A-Za-z0-9_-]+/g, '-')}-${today}.pdf`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 10000);
+		} catch (err: any) {
+			exportPhotoPdfError = err?.message || 'Gagal mengunduh PDF P2H berfoto.';
+		} finally {
+			exportingPhotoPdf = false;
+		}
+	}
 	let closeSuccess = $state(false);
 	// PMT-49 §4.3: sesi lama (tanggal < hari ini) unit ini yang belum ditutup — peringatan SHADOW:
 	// tidak menahan P2H baru. Penutupan dilakukan inline lewat form yang sama.
@@ -776,6 +812,20 @@
 							🔧 Ajukan Sparepart untuk Unit Ini
 						</button>
 					{/if}
+					{#if !successInfo.queued}
+						<button
+							type="button"
+							disabled={exportingPhotoPdf}
+							class="mt-3 mx-auto flex items-center gap-1.5 text-[12px] font-bold px-4 py-2 rounded-lg border text-white disabled:opacity-60"
+							style="background: #047857; border-color: #047857"
+							onclick={downloadUnitP2hPdf}
+						>
+							<IconPrinter size={15} /> {exportingPhotoPdf ? 'Menyiapkan PDF...' : 'Unduh PDF P2H (+ Foto)'}
+						</button>
+						{#if exportPhotoPdfError}
+							<p class="text-[11px] mt-1.5" style="color: #DC2626">{exportPhotoPdfError}</p>
+						{/if}
+					{/if}
 					<button
 						class="mt-2 px-4 py-2 rounded-lg text-[12px] font-semibold text-white"
 						style="background: var(--g)"
@@ -790,13 +840,27 @@
 					<p class="text-[13px] font-semibold mt-3" style="color: var(--sys-label)">P2H hari ini sudah diisi</p>
 
 					{#if todayLogs.length > 0}
-						<button
-							class="mt-3 mx-auto flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border"
-							style="border-color: var(--sys-sep); color: var(--sys-label3)"
-							onclick={() => (showExportSheet = true)}
-						>
-							<IconPrinter size={13} /> Bagikan Hasil P2H (PDF)
-						</button>
+						<div class="mt-3 flex flex-wrap items-center justify-center gap-2">
+							<button
+								type="button"
+								disabled={exportingPhotoPdf}
+								class="flex items-center gap-1.5 text-[11px] font-bold px-3.5 py-1.5 rounded-lg text-white disabled:opacity-60"
+								style="background: #047857"
+								onclick={downloadUnitP2hPdf}
+							>
+								<IconPrinter size={13} /> {exportingPhotoPdf ? 'Menyiapkan PDF...' : 'Unduh PDF P2H (+ Foto)'}
+							</button>
+							<button
+								class="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border"
+								style="border-color: var(--sys-sep); color: var(--sys-label3)"
+								onclick={() => (showExportSheet = true)}
+							>
+								<IconPrinter size={13} /> Tabel Ringkas (PDF)
+							</button>
+						</div>
+						{#if exportPhotoPdfError}
+							<p class="text-[11px] mt-1.5" style="color: #DC2626">{exportPhotoPdfError}</p>
+						{/if}
 					{/if}
 
 					{#if todaySession?.jam_selesai_pakai}
@@ -1185,7 +1249,7 @@
 						
 						<div id="p2h-foto-unit">
 							<label class="block text-[11px] font-semibold mb-1.5" style="color: var(--sys-label2)">
-								Foto Unit / Bukti Inspeksi (Opsional)
+								Foto Tampak Unit / Nopol (Disarankan — ikut tampil di PDF laporan grup)
 							</label>
 							<div class="flex items-center gap-2 flex-wrap">
 								<label class="cursor-pointer inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-semibold border text-white" style="background: var(--g)">

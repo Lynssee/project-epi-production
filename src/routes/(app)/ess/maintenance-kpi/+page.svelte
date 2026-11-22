@@ -9,6 +9,9 @@
 	let errorMsg = $state('');
 	let summary = $state<MaintenanceKpiSummary | null>(null);
 	let previewOpen = $state(false);
+	// Filter ringkas daftar WO: Semua · Terlambat (lewat target) · Menunggu QC (Inspection/Approval).
+	type WoFilter = 'semua' | 'terlambat' | 'qc';
+	let woFilter = $state<WoFilter>('semua');
 
 	async function load() {
 		loading = true;
@@ -23,6 +26,16 @@
 	}
 
 	onMount(load);
+
+	const openAll = $derived(summary?.openList ?? []);
+	const openTerlambat = $derived(openAll.filter((w) => w.terlambat));
+	const openQc = $derived(openAll.filter((w) => w.menungguQc));
+	const openShown = $derived(woFilter === 'terlambat' ? openTerlambat : woFilter === 'qc' ? openQc : openAll);
+	const woChips = $derived([
+		{ id: 'semua' as WoFilter, label: 'Semua', n: openAll.length, hint: 'Semua WO Anda yang belum selesai.' },
+		{ id: 'terlambat' as WoFilter, label: 'Terlambat', n: openTerlambat.length, hint: 'WO yang sudah melewati target selesai — dahulukan.' },
+		{ id: 'qc' as WoFilter, label: 'Menunggu QC', n: openQc.length, hint: 'WO yang sedang diperiksa/menunggu persetujuan admin; tidak perlu tindakan Anda.' }
+	]);
 
 	const statusInfo = $derived((() => {
 		if (!summary || summary.pct === null || summary.pct === undefined) {
@@ -126,26 +139,72 @@
 			</p>
 		</div>
 
-		<h2 class="text-lg font-bold mb-4" style="color: var(--sys-label)">WO Belum Selesai ({summary.openList.length})</h2>
-		{#if summary.openList.length === 0}
+		{#if summary.pmP2h}
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6" data-testid="kartu-kepatuhan-saya">
+				<div class="glass-panel rounded-2xl p-4">
+					<p class="text-xs font-bold" style="color: var(--sys-label3)">PM yang Saya Selesaikan</p>
+					<p class="text-2xl font-black gradient-text tracking-tight mt-1">{summary.pmP2h.pmSelesai}</p>
+					<p class="text-[11px] mt-1" style="color: var(--sys-label4)">
+						{#if summary.pmP2h.pmTepatPct !== null}
+							{summary.pmP2h.pmTepat} dari {summary.pmP2h.pmSelesai} tepat waktu ({summary.pmP2h.pmTepatPct}%) pada periode ini.
+						{:else}
+							Belum ada PM yang Anda tutup pada periode ini. Buka Preventive → PM untuk melihat jadwal.
+						{/if}
+					</p>
+				</div>
+				<div class="glass-panel rounded-2xl p-4">
+					<p class="text-xs font-bold" style="color: var(--sys-label3)">P2H yang Saya Isi</p>
+					<p class="text-2xl font-black gradient-text tracking-tight mt-1">{summary.pmP2h.p2hSesi}</p>
+					<p class="text-[11px] mt-1" style="color: var(--sys-label4)">
+						{#if summary.pmP2h.p2hSesi > 0}
+							{summary.pmP2h.p2hSesi} sesi dalam {summary.pmP2h.p2hHari} hari; {summary.pmP2h.p2hNoGo} berisi temuan No-Go (temuan yang dilaporkan itu baik).
+						{:else}
+							Belum ada P2H yang Anda isi pada periode ini. Isi lewat Preventive → P2H dengan scan QR unit.
+						{/if}
+					</p>
+				</div>
+			</div>
+		{/if}
+
+		<h2 class="text-lg font-bold mb-3" style="color: var(--sys-label)">WO Belum Selesai ({openShown.length}{woFilter !== 'semua' ? ` dari ${openAll.length}` : ''})</h2>
+		{#if openAll.length > 0}
+			<div class="flex flex-wrap items-center gap-2 mb-4" data-testid="filter-wo" role="group" aria-label="Filter WO belum selesai">
+				{#each woChips as c (c.id)}
+					<button
+						type="button"
+						title={c.hint}
+						aria-pressed={woFilter === c.id}
+						class="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors {woFilter === c.id ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-slate-700 border-slate-300'}"
+						onclick={() => (woFilter = c.id)}
+						data-testid={`chip-${c.id}`}
+					>
+						{c.label} ({c.n})
+					</button>
+				{/each}
+			</div>
+		{/if}
+		{#if openShown.length === 0}
 			<div class="glass-panel rounded-2xl p-10 text-center">
-				<p class="text-sm font-medium" style="color: var(--sys-label3)">Tidak ada WO menggantung. Semua selesai dengan baik.</p>
+				<p class="text-sm font-medium" style="color: var(--sys-label3)">{openAll.length === 0 ? 'Tidak ada WO menggantung. Semua selesai dengan baik.' : 'Tidak ada WO pada filter ini.'}</p>
 			</div>
 		{:else}
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-				{#each summary.openList as wo (wo.id)}
+				{#each openShown as wo (wo.id)}
 					<div class="glass-panel rounded-2xl p-5">
 						<div class="flex items-center justify-between mb-2">
 							<p class="text-sm font-bold" style="color: var(--sys-label)">{wo.wo_number}</p>
-							<span class="text-[10px] font-bold px-2.5 py-1 rounded-full border bg-amber-50 text-amber-600 border-amber-200">{wo.statusName}</span>
+							<span class="flex items-center gap-1.5">
+									{#if wo.terlambat}<span class="text-[10px] font-bold px-2 py-1 rounded-full border bg-rose-50 text-rose-600 border-rose-200" data-testid="badge-terlambat">Terlambat</span>{/if}
+									<span class="text-[10px] font-bold px-2.5 py-1 rounded-full border bg-amber-50 text-amber-600 border-amber-200">{wo.statusName}</span>
+								</span>
 						</div>
 						{#if wo.keluhan}
 							<p class="text-xs" style="color: var(--sys-label3)">{wo.keluhan}</p>
 						{/if}
-						{#if wo.created_at}
+						{#if wo.created_at || wo.tanggal_rusak}
 							<div class="flex items-center gap-1.5 mt-3 text-[11px]" style="color: var(--sys-label4)">
 								<IconClock size={13} />
-								<span>Dibuat {new Date(wo.created_at).toLocaleDateString('id-ID')}</span>
+								<span>{wo.created_at ? 'Dibuat' : 'Rusak'} {new Date((wo.created_at || wo.tanggal_rusak) as string).toLocaleDateString('id-ID')}</span>
 							</div>
 						{/if}
 					</div>

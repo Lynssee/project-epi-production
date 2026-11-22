@@ -14,6 +14,7 @@ import type { RequestHandler } from './$types';
 import { requireUser } from '$lib/server/firebaseAuth';
 import { htmlToPdf } from '$lib/server/gotenbergClient';
 import { buildFieldTablePdfHtml } from '$lib/pdf-templates/fieldTablePdf';
+import { forwardReportEvent } from '$lib/server/reportEventForward';
 
 const MAX_ROWS = 5000; // pagar agar server tidak berat
 
@@ -56,6 +57,7 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		const buffer = await htmlToPdf(html, { landscape, filename: 'maintenance-export.pdf' });
 		const safe = judul.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80);
+		forwardReportEvent(event, { catalog_key: 'maintenance-export-pdf', format: 'pdf' }); // Report Center: catat unduhan
 		return new Response(Uint8Array.from(buffer), {
 			headers: {
 				'Content-Type': 'application/pdf',

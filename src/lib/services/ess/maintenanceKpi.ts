@@ -12,6 +12,18 @@ export interface MyWorkOrder {
 	tanggal_rusak: string | null;
 	tanggal_done: string | null;
 	created_at: string | null;
+	target_finish_date: string | null;
+	terlambat: boolean;
+	menungguQc: boolean;
+}
+
+export interface PmP2hSaya {
+	pmSelesai: number;
+	pmTepat: number;
+	pmTepatPct: number | null;
+	p2hSesi: number;
+	p2hHari: number;
+	p2hNoGo: number;
 }
 
 export interface MaintenanceKpiSummary {
@@ -30,6 +42,8 @@ export interface MaintenanceKpiSummary {
 	mttrMinSample: number;
 	mttrMinCoveragePct: number;
 	openList: MyWorkOrder[];
+	/** null = gagal dibaca (kartu disembunyikan, bukan 0). */
+	pmP2h?: PmP2hSaya | null;
 }
 
 async function getIdToken(): Promise<string> {

@@ -454,6 +454,8 @@ export async function uploadActivityPhoto(file: File): Promise<string | null> {
 export interface MaintTicketRow {
 	id: string;
 	nomor_tiket: string;
+	/** Timestamp ISO UTC saat tiket dilaporkan (diisi saat membuat tiket; tiket lama bisa kosong). */
+	waktu_lapor?: string | null;
 	equipment_id: string;
 	asset_type: string;
 	masalah: string;

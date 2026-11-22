@@ -445,3 +445,34 @@ export async function submitLoanChecklist(
 		throw err;
 	}
 }
+
+/**
+ * Butir checklist kelengkapan Set Equipment (Product Pairing Fase 3): alat yang punya set (mis. Vacuum Cleaner + Belalai) otomatis
+ * mendapat butir "Kelengkapan set: …" pada checklist serah-terima (komponen wajib ikut) dan pengembalian (komponen wajib kembali),
+ * supaya aksesoris tidak tertinggal di proyek. Best-effort: gagal/tak ada aturan ⇒ [] (checklist standar tetap berjalan, dilog).
+ * Aturan dari /api/packing-list/set-rules (cache server 5 menit); nama alat dicocokkan lewat kata kunci seperti gate ERP.
+ */
+export async function fetchEquipmentSetItems(equipmentName: string | null | undefined, jenis: 'serah_terima' | 'harian' | 'kembali'): Promise<LoanChecklistItem[]> {
+	if (!equipmentName || jenis === 'harian') return [];
+	try {
+		const [{ getIdToken }, { nameMatches }] = await Promise.all([import('$lib/services/secureDirectus'), import('$lib/shared/plSet')]);
+		const token = await getIdToken();
+		const res = await fetch('/api/packing-list/set-rules', { headers: { Authorization: `Bearer ${token}` } });
+		const j = res.ok ? await res.json() : null;
+		if (!j?.success) return [];
+		const out: LoanChecklistItem[] = [];
+		for (const r of j.equipment || []) {
+			if (!nameMatches(r.match?.keywords, equipmentName) || nameMatches(r.match?.exclude, equipmentName)) continue;
+			for (const c of r.components || []) {
+				if (c.consumable) continue;
+				if (jenis === 'serah_terima' ? c.mandatory_out : c.mandatory_return) {
+					out.push({ label: `Kelengkapan set: ${c.label}${c.qty_per_unit > 1 ? ` (${c.qty_per_unit} pcs)` : ''}`, is_critical: true, status: null });
+				}
+			}
+		}
+		return out;
+	} catch (e) {
+		console.warn('[loanChecklist] butir set equipment tidak dimuat (checklist standar tetap berjalan):', e);
+		return [];
+	}
+}

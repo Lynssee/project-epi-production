@@ -13,6 +13,7 @@ import { authenticatePreventiveOperator } from '$lib/server/preventive/preventiv
 import { directusServerJson } from '$lib/server/directus';
 import { getMleSettingServer } from '$lib/server/mleSettings';
 import { notifyProjectP2hSubmitted } from '$lib/server/projectNotify';
+import { autoWoIdentity } from '$lib/server/preventive/woNumber';
 
 const P2H_WO_IDS = {
 	DARURAT: 'c8006ed8-b434-402f-9fb0-97c2f5284a42',
@@ -151,6 +152,7 @@ export const POST: RequestHandler = async (event) => {
 				const woRes = await directusServerJson<{ data: any }>('/items/work_order', {
 					method: 'POST',
 					body: JSON.stringify({
+						...(await autoWoIdentity(date)), // wo_number + created_at wajib (KPI & Laporan Bulanan membaca keduanya)
 						equipment_id: equipmentId,
 						keluhan,
 						kategori_perbaikan_id: P2H_WO_IDS.DARURAT,
@@ -170,6 +172,7 @@ export const POST: RequestHandler = async (event) => {
 			const woRes = await directusServerJson<{ data: any }>('/items/work_order', {
 				method: 'POST',
 				body: JSON.stringify({
+					...(await autoWoIdentity(date)), // wo_number + created_at wajib (KPI & Laporan Bulanan membaca keduanya)
 					equipment_id: equipmentId,
 					keluhan,
 					kategori_perbaikan_id: P2H_WO_IDS.MINOR,

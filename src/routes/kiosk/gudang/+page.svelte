@@ -242,7 +242,7 @@
 		</div>
 	{:else}
 		<div class="tiles-grid">
-			{#each tiles.filter((t) => t.show && menus.includes(t.key) && (!TILE_MENU_KEY[t.key] || menuAccess.includes(TILE_MENU_KEY[t.key]))) as t (t.key)}
+			{#each tiles.filter((t) => t.show && menus.includes(t.key) && (!TILE_MENU_KEY[t.key] || menuAccess.includes(TILE_MENU_KEY[t.key]!))) as t (t.key)}
 				<button class="tile-card theme-{t.theme}" onclick={() => goto(t.href)}>
 					<div class="tile-icon-box">
 						<t.icon size={30} stroke-width={2.2} />

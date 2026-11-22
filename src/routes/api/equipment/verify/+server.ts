@@ -9,6 +9,7 @@ import { error, json, type RequestEvent } from '@sveltejs/kit';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { decideOverride, sanitizeGps } from '$lib/server/equipmentVerifyCore';
 import { hasOverridePermission } from '$lib/server/equipmentVerifyAuth';
+import { resolveHubGateMode } from '$lib/server/equipmentHub';
 import {
 	findEquipmentByCode,
 	findVehicleByEquipment,
@@ -34,12 +35,15 @@ export async function POST(event: RequestEvent) {
 	if (!equipment) throw error(404, `Equipment dengan kode "${code}" tidak ditemukan.`);
 
 	const karyawanId = String(karyawan.id);
-	const vehicle = await findVehicleByEquipment(equipment.id).catch((e) => {
+	const vehicle = await findVehicleByEquipment(equipment.id, undefined, equipment.code).catch((e) => {
 		console.error('[api/equipment/verify] gagal baca fleet_kendaraan (diperlakukan bukan kendaraan):', e instanceof Error ? e.message : e);
 		return null;
 	});
 
-	if (!vehicle) return json(await verifyTool(equipment, karyawanId));
+	// Hub Equipment 360° (G_EQ_SCAN_HUB_ACCESS): shadow = klien tetap memakai bottom-sheet lama; selain itu Hub dibuka otomatis.
+	const hub = { opensOnScan: (await resolveHubGateMode()) !== 'shadow' };
+
+	if (!vehicle) return json({ ...(await verifyTool(equipment, karyawanId)), hub });
 
 	const result = await verifyVehicle(equipment, vehicle, karyawanId);
 	const v = result.verification;
@@ -64,5 +68,5 @@ export async function POST(event: RequestEvent) {
 		});
 	}
 
-	return json({ ...result, override });
+	return json({ ...result, override, hub });
 }

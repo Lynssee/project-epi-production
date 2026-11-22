@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import SopSayaWidget from '$lib/components/ess/SopSayaWidget.svelte';
 	import { onMount } from 'svelte';
 	import { authStore, isLeaderRole } from '$lib/stores/auth';
 	import { rolesStore } from '$lib/stores/roles';
@@ -124,6 +125,8 @@
 			</div>
 		</div>
 	</div>
+
+	<SopSayaWidget />
 
 	<ModuleMenuGrid {categories} />
 </div>

@@ -9,6 +9,7 @@
 	import { hasPermission } from '$lib/constants/permissions';
 	import { resolveOperatorId, logActivity, getEquipmentById } from '$lib/services/preventive';
 	import { getWorkOrderById, submitDailyActivity, uploadActivityPhoto, type WorkOrderRow } from '$lib/services/maintenance';
+	import { nowHm, needsDurationConfirm, formatDurasi } from '$lib/utils/woLaporGuard';
 	import { searchSparepartStockOptions, type SparepartStockOption } from '$lib/services/assetOwnership';
 	import { compressPhoto } from '$lib/utils/photoCompress';
 	import { IconArrowLeft, IconLoader2, IconCircleCheck, IconCamera, IconX, IconPlus, IconEdit } from '@tabler/icons-svelte';
@@ -36,6 +37,9 @@
 	// sendiri TIDAK disimpan mentah (tidak ada kolomnya), cuma dipakai hitung durasi di sini.
 	let jamMulai = $state('');
 	let jamSelesai = $state('');
+	// Progres 100% tanpa jam kerja: tahan SEKALI untuk peringatan (bukan memblokir) — lihat woLaporGuard.ts.
+	let konfirmasiTanpaJam = $state(false);
+	let perluKonfirmasiJam = $state(false);
 	let durasiKerjaMenit = $derived.by(() => {
 		if (!jamMulai || !jamSelesai) return null;
 		const [h1, m1] = jamMulai.split(':').map(Number);
@@ -43,6 +47,21 @@
 		const menit = h2 * 60 + m2 - (h1 * 60 + m1);
 		return menit > 0 ? menit : null;
 	});
+	$effect(() => {
+		// Peringatan hilang sendiri begitu jam terisi atau progres turun dari 100%.
+		if (durasiKerjaMenit !== null || progress < 100) {
+			perluKonfirmasiJam = false;
+			konfirmasiTanpaJam = false;
+		}
+	});
+	function mulaiKerja() {
+		jamMulai = nowHm();
+		jamSelesai = '';
+	}
+	function selesaiKerja() {
+		if (!jamMulai) jamMulai = nowHm();
+		jamSelesai = nowHm();
+	}
 	// Fase 4 Pusat Maintenance v2 (14 Sep 2026): part dipilih dari STOK GUDANG (koleksi
 	// `sparepart`), bukan lagi Master Barang — supaya pemakaian tercatat resmi ke
 	// sparepart_usage_log (G_WO4). hargaSatuan tetap dihitung di background untuk
@@ -179,6 +198,11 @@
 
 	async function handleSubmit() {
 		if (!deskripsi.trim() || submitting || !workOrder) return;
+		if (needsDurationConfirm({ progress, durasiKerjaMenit, alreadyConfirmed: konfirmasiTanpaJam })) {
+			perluKonfirmasiJam = true;
+			konfirmasiTanpaJam = true; // tekan Kirim sekali lagi untuk tetap mengirim tanpa jam kerja
+			return;
+		}
 		const parsed = maintenanceActivitySchema.safeParse({
 			deskripsi,
 			progress,
@@ -253,6 +277,9 @@
 			<IconCircleCheck size={40} style="color: #16A34A; margin: 0 auto" />
 			<p class="text-[14px] font-semibold mt-3" style="color: var(--sys-label)">Laporan harian tersimpan</p>
 			<p class="text-[12px] mt-1" style="color: var(--sys-label3)">Progres WO diperbarui menjadi {progress}%.</p>
+				{#if progress >= 100}
+					<p class="text-[11px] mt-2 px-6" style="color: var(--sys-label4)" data-testid="info-penutupan">Pekerjaan selesai 100%. Penutupan resmi WO (QC &amp; verifikasi biaya) dilakukan admin Maintenance.</p>
+				{/if}
 			<button class="mt-5 px-4 py-2 rounded-lg text-[12px] font-semibold text-white" style="background: var(--g)" onclick={() => goto(`/maintenance/work-order/${workOrderId}`)}>
 				Kembali ke Detail WO
 			</button>
@@ -311,10 +338,18 @@
 						style="border-color: var(--sys-sep)"
 					/>
 				</div>
+				<div class="flex items-center gap-2 mt-2">
+					<button type="button" class="flex-1 rounded-lg border text-[12px] font-semibold py-2" style="border-color: var(--sys-sep); color: var(--g)" onclick={mulaiKerja} data-testid="btn-mulai-kerja">▶ Mulai kerja sekarang</button>
+					<button type="button" class="flex-1 rounded-lg border text-[12px] font-semibold py-2" style="border-color: var(--sys-sep); color: var(--g)" onclick={selesaiKerja} data-testid="btn-selesai-kerja">⏹ Selesai kerja sekarang</button>
+				</div>
+				<p class="text-[10px] mt-1" style="color: var(--sys-label4)">Tekan ▶ saat mulai dan ⏹ saat selesai — jam terisi otomatis. Jam kerja dipakai untuk menghitung lama perbaikan (MTTR) dan rapor Maintenance; tanpa jam, WO ini tidak ikut terhitung.</p>
 				{#if jamMulai && jamSelesai && durasiKerjaMenit === null}
 					<p class="text-[10px] mt-1" style="color: #D97706">Jam selesai harus setelah jam mulai.</p>
 				{:else if durasiKerjaMenit !== null}
-					<p class="text-[10px] mt-1" style="color: var(--sys-label4)">Durasi: {Math.floor(durasiKerjaMenit / 60)} jam {durasiKerjaMenit % 60} menit</p>
+					<p class="text-[10px] mt-1" style="color: var(--sys-label4)" data-testid="durasi-info">Durasi: {formatDurasi(durasiKerjaMenit)}</p>
+				{/if}
+				{#if perluKonfirmasiJam}
+					<p class="text-[11px] mt-2 rounded-lg p-2" style="background: #FEF3C7; color: #92400E" data-testid="peringatan-tanpa-jam" role="alert">Progres 100% tetapi jam kerja belum diisi — lama perbaikan WO ini tidak bisa dihitung. Isi jam mulai/selesai (atau tekan ▶ / ⏹), atau tekan Kirim sekali lagi untuk tetap mengirim tanpa jam.</p>
 				{/if}
 			</div>
 

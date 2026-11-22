@@ -23,6 +23,7 @@
 	import { getPreviousWorkday } from '$lib/utils/workingDays';
 	import { fetchH1Gate, postToolboxEskalasi, type H1Gate } from '$lib/services/h1ReportGate';
 	import SignaturePad from '$lib/components/shared/SignaturePad.svelte';
+	import MicroQuizCard from '$lib/components/ess/MicroQuizCard.svelte';
 	import { IconArrowLeft, IconLoader2, IconCheck, IconUsers, IconAlertTriangle, IconAlertOctagon } from '@tabler/icons-svelte';
 
 	let projectId = $derived($page.params.project_id as string);
@@ -289,6 +290,10 @@
 					</div>
 				</div>
 			</div>
+
+			{#if !alreadyDone}
+				<MicroQuizCard />
+			{/if}
 
 			{#if !alreadyDone && h1Blocked}
 				<div class="card-section" style="border: 1px solid var(--am)">

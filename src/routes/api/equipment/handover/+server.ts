@@ -24,7 +24,7 @@ export async function POST(event: RequestEvent) {
 		throw error(502, 'Gagal membaca data equipment. Coba lagi.');
 	});
 	if (!equipment) throw error(404, `Equipment dengan kode "${code}" tidak ditemukan.`);
-	const vehicle = await findVehicleByEquipment(equipment.id).catch(() => null);
+	const vehicle = await findVehicleByEquipment(equipment.id, undefined, equipment.code).catch(() => null);
 	if (!vehicle) throw error(400, 'Unit ini bukan kendaraan armada — alih pakai tidak berlaku.');
 
 	const karyawanId = String(karyawan.id);
