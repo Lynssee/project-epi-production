@@ -160,7 +160,7 @@ export function normalizeFieldIdentity(row: any): KnowledgeItem[] {
 			entity: 'Budaya & Identitas Perusahaan',
 			title: `Misi ${companyName} (${misiList.length} Butir)`,
 			subtitle: misiList[0],
-			answer_snippet: misiList.map((m, i) => `${i + 1}. ${m}`).join(' '),
+			answer_snippet: misiList.map((m: string, i: number) => `${i + 1}. ${m}`).join(' '),
 			url: '/ess/budaya',
 			blob: buildBlob(['misi perusahaan langkah tujuan', companyName, ...misiList])
 		});

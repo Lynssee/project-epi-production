@@ -22,7 +22,8 @@
 		loading = true;
 		try {
 			const r = await fetch(`/api/process-guidance/sop-knowledge?flow_key=${encodeURIComponent(flowKey)}`);
-			data = r.ok ? ((await r.json()) as Data) : null;
+			const parsed = r.ok ? ((await r.json()) as Data) : null;
+			data = parsed && Array.isArray(parsed.quizzes) ? parsed : null;
 		} catch {
 			data = null;
 		}
@@ -34,7 +35,7 @@
 		load();
 	});
 
-	const nextQuiz = $derived(data?.quizzes.find((q) => q.quiz_id != null && !q.lulus) ?? data?.quizzes.find((q) => q.quiz_id != null) ?? null);
+	const nextQuiz = $derived(data?.quizzes?.find((q) => q.quiz_id != null && !q.lulus) ?? data?.quizzes?.find((q) => q.quiz_id != null) ?? null);
 	const hint = $derived(
 		!data
 			? ''

@@ -60,6 +60,7 @@ export interface VehicleVerifyResult {
 	holder: PersonCard | null;
 	verification: VehicleVerdict;
 	override: { allowed: boolean; reasonMin: number } | null;
+	hub?: { opensOnScan?: boolean; [key: string]: unknown } | null;
 }
 
 export interface ToolVerifyResult {
@@ -76,6 +77,7 @@ export interface ToolVerifyResult {
 	} | null;
 	borrower: PersonCard | null;
 	verification: BorrowerVerdict;
+	hub?: { opensOnScan?: boolean; [key: string]: unknown } | null;
 }
 
 export type EquipmentVerifyResult = VehicleVerifyResult | ToolVerifyResult;

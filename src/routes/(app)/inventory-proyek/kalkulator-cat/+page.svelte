@@ -101,7 +101,7 @@
 			{#if produk}
 				<div class="rounded-xl bg-sky-50 border border-sky-200 p-3 text-[12px] text-sky-900 space-y-1 sm:col-span-2" data-testid="kalkulator-pasangan">
 					{#each pasangan as p (p.key)}
-						<p><b>{PAIR_ROLE_LABEL[p.role] || p.role}</b> ({p.requirement === 'wajib' ? 'wajib' : 'opsional'}{p.ratio_pct ? `, ${p.ratio_pct}%` : ''}): {p.options.map((o: any) => o.label).join(' atau ')}{p.note ? ` — ${p.note}` : ''}</p>
+						<p><b>{PAIR_ROLE_LABEL[p.role as keyof typeof PAIR_ROLE_LABEL] || p.role}</b> ({p.requirement === 'wajib' ? 'wajib' : 'opsional'}{p.ratio_pct ? `, ${p.ratio_pct}%` : ''}): {p.options.map((o: any) => o.label).join(' atau ')}{p.note ? ` — ${p.note}` : ''}</p>
 					{/each}
 				</div>
 			{/if}

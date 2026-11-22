@@ -4,6 +4,75 @@ Seluruh perubahan dan riwayat integrasi dari repository hulu (`project-epi`) ke 
 
 ---
 
+## [2026.11.23] — Sinkronisasi Modul Hulu (`8665e5d7..0eabfb7d`) & Stabilisasi Produksi
+
+Sinkronisasi **31 commit non-merge** dari hulu `project-epi` (`8665e5d7` s/d `0eabfb7d`, 586 file: 307 baru, 279 modifikasi) di atas `origin/main` produksi (`a9633029` / `f11cb24f` Kiosk hitung fisik & barang baru) pada branch `sync/upstream-2026-11-20`.
+
+### 🚀 Fitur Baru & Peningkatan Modul (Migrasi 7 Fase)
+
+#### 1. Core Config, Shared Engines & 3-Way Overlap (Fase 1)
+- **Konfigurasi & Iframe ERP**: Penambahan `--max-old-space-size=8192` pada script `check` (`package.json`), pembaruan `frame-ancestors` (`svelte.config.js`), dan pelonggaran `X-Frame-Options` khusus `/panduan` & `?preview=1` (`src/hooks.server.ts`).
+- **Shared & Utils**: Pembaruan utilitas inti (`paktaPolicy`, `paktaGateChanges`, `cultureModel`, `cultureMoment`, `culturePopupClient`, `kendaliHarian`, `tutupBulan`, `kebutuhanCat`, `dewPoint`, `rejectWasteBanner`, `rekapTim`, `learningPath`, `quizPeriodic`, `ojtAssessment`, `rndJalur`, `sertifikatKartu`, `offlineTrainingCache`, `bukuSakuOfflineCache`, `wipPolicy`, `plApd`/`plKit`/`plSet`/`plConfidence`/`plStaged`).
+- **Resolusi 3 File Overlap Produksi**: Penggabungan bersih `siteCheckin.ts`, `SpkTtdLinkModal.svelte` (Svelte 5 runes + JSDoc + `window.__showToast`), dan `ProjectManpowerAssign.svelte` (`onclose`/`onchanged` tanpa duplikasi event).
+
+#### 2. Panduan, SOP, Bantuan Kontekstual, Pencarian & QR Checkpoint (Fase 2)
+- **Hierarki & BPMN Alur**: `FieldHierarchyCard.svelte`, `fieldHierarchyConfig.ts`, bentuk BPMN 2.0 di `FlowMiniMap.svelte`, `ProcessInfographicFlow.svelte`, `ProcessVisualInstructionCards.svelte`, `NegativeScenariosPanel.svelte`, `SopKnowledgeCard.svelte`.
+- **SOP & Bantuan**: Filter tags/domain SOP (`/api/sop`), Quick Tag Pills (`/bantuan`), `SopSayaWidget.svelte`, `PanduanKerjaDropdown.svelte`, `ProjectSopNotesCard.svelte`, Contextual Help Floating Assist (`HelpMenuButton.svelte`), Universal Search 4-in-1 (`universalHelpSearch.ts`), upgrade `/api/search` (`fieldNavExtras.ts`, `knowledgeSearch.ts`).
+- **Scan QR Checkpoint**: Dukungan kode mentah, prefix label, dan URL (`checkpointScanRoute.ts` + `/api/ga-checklist/checkpoint/{resolve,verify}`).
+
+#### 3. Packing List (APD/Kit/Set), Stok Lapangan, Kalkulator Cat & Inventory 360 (Fase 3)
+- **Packing List**: `PlApdCard.svelte`, `PlKitCard.svelte`, `PlSetCard.svelte` + endpoint `/api/packing-list/{apd-basics,kit-basics,set-rules}`.
+- **Stok Lapangan & Kalkulator Cat**: Halaman baru `/inventory-proyek/kalkulator-cat`, integrasi sesi opname proyek & kalkulator kaleng cat limbah B3 (`SOP-PRJ-320` & `SOP-LOG-015` di `/stock-lapangan/opname-sesi`), dan `/api/inventory-proyek/idle-config`.
+- **Inventory 360**: Sinkronisasi `inventoryKnowledgeDefaults.js` dengan kontrak `erp-epi` (`0eabfb7d`).
+
+#### 4. Equipment Hub, Preventive (P2H PDF & PM Selesai), Maintenance & Kiosk Standby (Fase 4)
+- **Equipment Hub**: `EquipmentHub.svelte`, `equipmentHubCore.ts`, `/api/equipment/hub/[id]` & `/api/equipment/resolve-item`.
+- **Preventive & Maintenance**: Export PDF P2H (`/api/preventive/p2h/export-pdf`), peningkatan `/api/preventive/pm/selesai`, penomoran WO (`woNumber.ts`), dan guard lapor WO (`woLaporGuard.ts`).
+- **Kiosk Standby**: `KioskStandby.svelte`, `kioskStandby.ts`, `/api/kiosk/standby`, `/api/kiosk/culture-banner` (tetap melestarikan 100% fitur Kiosk produksi `f29064a5` & `f11cb24f`).
+
+#### 5. Leader, Proyek, Pelaporan, WIP/Jurnal & Manpower K3 (Fase 5)
+- **Halaman Baru**: `/leader/kpi-saya`, `/proyek/[project_id]/tutup-bulan`, `/laporan-saya`, `/manpower/rekap-tim`.
+- **Komponen & Engine**: `KendaliHarianCard.svelte`, `CustomerKpiBadge.svelte`, `KpiProyekHarianWidget.svelte`, `KelengkapanProyekSayaWidget.svelte`, `ProyeksiPenyelesaianCard.svelte`, `TargetProyeksiWidget.svelte`, `ManpowerK3Chip.svelte` (`/api/manpower-k3`), `journalWriter.ts` & `wipSettings.ts`.
+
+#### 6. R&D, Produksi, Driver, Sales & Strategy Radar (Fase 6)
+- **Strategy Radar**: `PosisiLiniCard.svelte`, `RadarChip.svelte`, `/api/strategy/posisi-lini`.
+- **R&D, Produksi, Driver & Sales**: Tab lapangan R&D + kalkulator Dew Point (`/rnd`), `SpkDataHealthBanner.svelte` (`/api/produksi/data-health`), ambang reject/waste (`/api/produksi/ambang-reject-waste`), skor performa driver (`/api/driver/score`), dan `SalesScoreCard.svelte`.
+
+#### 7. ESS Lengkap & Global Layout Guards (Fase 7)
+- **Halaman Baru ESS**: `/ess/budaya`, `/ess/jobdesc`, `/ess/referral`, `/ess/pelatihan/ojt`, `/ess/pelatihan/jalur-karier`, `/ess/pelatihan/sertifikat`.
+- **Pelatihan, Budaya, DISC, KPI & Pakta**: Micro-quiz harian & kontekstual, OJT, jalur karier R&D, sertifikat branding, offline training cache, kesehatan & pembinaan tim, profil gaya kerja DISC (`/ess/kinerja` & `/regu`), budaya/motivasi/belonging/golden rules, serta Pakta Integritas pra-kegiatan.
+- **Global Layout (`src/routes/(app)/+layout.svelte`)**: Pemasangan `PaktaGuard` (bawaan nonaktif & fail-open), `PaktaSayaMenu`, `CulturePopupHost` (fail-soft), `QuizGateHost` (fail-open), dan `HelpMenuButton` topbar.
+
+---
+
+### 🛠️ Stabilisasi & Perbaikan Bug Produksi (Fase 8)
+
+- **Fix Runtime Crash `SopKnowledgeCard.svelte`**: Menambahkan validasi `Array.isArray(parsed.quizzes)` dan optional chaining `data?.quizzes?.find(...)` untuk mencegah `TypeError: Cannot read properties of undefined (reading 'find')` saat payload tidak memuat `quizzes`.
+- **Fix Rune Shadowing `MicroQuizCard.svelte`**: Mengganti nama variabel `state` menjadi `quizState` agar tidak bertabrakan dengan rune `$state` pada compiler/checker Svelte 5.
+- **Null-Safety & Strict Typing**:
+  - `src/routes/scan/[code]/+page.svelte`: optional chaining `epiParsed?.type` pada handler tombol stok.
+  - `src/lib/services/equipmentVerify.ts`: menambahkan properti opsional `hub` pada `VehicleVerifyResult` & `ToolVerifyResult`.
+  - `src/routes/api/search/knowledgeSearch.ts`, `PlSetCard.svelte`, dan `kalkulator-cat/+page.svelte`: pelengkapan anotasi tipe ketat TypeScript.
+- **Pelestarian Produksi**: 0 regresi pada fitur Kiosk opname/hitung fisik/barang baru (`f29064a5`, `f11cb24f`), port produksi (`5174` / Directus `9390`), dan file sampah hulu `edit-tmp.mjs` dikecualikan.
+
+---
+
+### 📋 Catatan Kesiapan Backend & Lingkungan
+
+- **Directus**: 38/38 koleksi baru yang dibutuhkan modul hulu sudah terverifikasi tersedia di Directus.
+- **Relay `ERP_EPI1_BASE_URL` (8 endpoint)**: `/api/automation/customer-kpi-badge`, `/api/kpi/finance-impact/saya`, `/api/kpi/target-saya`, `/api/hrd/manpower-k3`, `/api/project/health-mine`, `/api/project/completeness`, `/api/reports/event`, dan `/api/reports/stats` belum tersedia di `erp-epi-production` saat ini; seluruh proxy di repo ini sudah diverifikasi fail-soft/terkendali dan akan otomatis terisi penuh setelah `erp-epi-production` disinkronkan.
+- **Env Var Opsional**: `DOKUMEN_VERIFIKASI_HMAC_SECRET`, `AUTOMATION_SERVER_SECRET`, `TRAINING_CERT_VERIFY_SECRET`, dan `MICROQUIZ_ATTEMPT_SECRET` dapat ditambahkan ke `.env` produksi untuk mengaktifkan verifikasi tanda tangan HMAC & jembatan otomasi penuh.
+
+---
+
+### 🧪 Hasil Verifikasi Kode & Build
+
+- **Suite Kiosk Produksi**: 6/6 file unit test (48/48 test) + `RakDetailPanel.dom.test.ts` (13/13 test) lulus 100%.
+- **DOM Tests (`vitest.dom.config.ts`)**: `field-hierarchy.dom.test.ts` lulus setelah fix `SopKnowledgeCard.svelte`; 48/50 file DOM test lulus (2 file DOM lama `/panduan/alur` hanya mengalami drift teks assertion dari hulu).
+- **Production Build (`npm run build`)**: Lolos 100% tanpa error (bundle SSR & Client, PWA service worker, dan output `@sveltejs/adapter-node`).
+
+---
+
 ## [2026.11.12] — Sinkronisasi Mayor Modul Hulu (Phases 1-9) & Stabilisasi Build Produksi
 
 ### 🚀 Fitur Baru & Peningkatan Modul (Migrasi 9 Fase)

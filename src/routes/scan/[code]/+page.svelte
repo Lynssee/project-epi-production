@@ -829,13 +829,13 @@
 						{/if}
 				</p>
 				<div class="flex flex-col gap-2">
-					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto(`/stock-lapangan/opname${epiParsed.type === 'ITEM' ? '?item_id=' + epiParsed.id : ''}`)}>
+					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto(`/stock-lapangan/opname${epiParsed?.type === 'ITEM' ? '?item_id=' + epiParsed.id : ''}`)}>
 						Stok Opname
 					</button>
-					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto(`/stock-lapangan/masuk${epiParsed.type === 'ITEM' ? '?item_id=' + epiParsed.id : ''}`)}>
+					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto(`/stock-lapangan/masuk${epiParsed?.type === 'ITEM' ? '?item_id=' + epiParsed.id : ''}`)}>
 						Barang Masuk
 					</button>
-					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto(`/stock-lapangan/output${epiParsed.type === 'ITEM' ? '?item_id=' + epiParsed.id : ''}`)}>
+					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto(`/stock-lapangan/output${epiParsed?.type === 'ITEM' ? '?item_id=' + epiParsed.id : ''}`)}>
 						Barang Keluar
 					</button>
 				</div>

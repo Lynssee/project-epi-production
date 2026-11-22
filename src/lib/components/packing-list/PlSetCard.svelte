@@ -122,7 +122,7 @@
 						<div class="space-y-1">
 							{#each r.pairs as p (p.key)}
 								<div class="flex flex-wrap items-center gap-1.5">
-									<span class="text-[11px] text-slate-600 w-44 shrink-0">{PAIR_ROLE_LABEL[p.role] || p.role} · <b class={p.requirement === 'wajib' ? 'text-red-700' : 'text-slate-500'}>{p.requirement === 'wajib' ? 'Wajib' : 'Opsional'}</b></span>
+									<span class="text-[11px] text-slate-600 w-44 shrink-0">{PAIR_ROLE_LABEL[p.role as keyof typeof PAIR_ROLE_LABEL] || p.role} · <b class={p.requirement === 'wajib' ? 'text-red-700' : 'text-slate-500'}>{p.requirement === 'wajib' ? 'Wajib' : 'Opsional'}</b></span>
 									{#each p.options as o (o.label)}
 										{#if o.found}
 											<span class="px-1.5 py-0.5 rounded text-[11px] bg-emerald-100 text-emerald-800">✓ {o.label} ({where[o.found]})</span>
