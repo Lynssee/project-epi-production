@@ -7,7 +7,7 @@ export const MANDATORY_SYSTEM_CATEGORY_ID = 'cat_sys_wajib';
 /**
  * Normalisasi struktur planning proyek dari berbagai format (string JSON, object wrap, array).
  * @param {any} input
- * @returns {Array} Array of categories
+ * @returns {any[]} Array of categories
  */
 export function normalizeCategories(input) {
   if (!input) return [];
@@ -26,7 +26,7 @@ export function normalizeCategories(input) {
 
 /**
  * Cek apakah sebuah subtask aktif (memiliki volume > 0, qty > 0, atau riwayat plan/actual).
- * @param {object} sub
+ * @param {any} sub
  * @returns {boolean}
  */
 export function isSubtaskActive(sub) {
@@ -53,7 +53,7 @@ export function isSubtaskActive(sub) {
 
 /**
  * Cek apakah subtask memiliki jadwal rencana yang valid (daily_plan terisi atau tanggal mulai & selesai valid).
- * @param {object} sub
+ * @param {any} sub
  * @returns {boolean}
  */
 export function hasValidSchedule(sub) {
@@ -79,7 +79,7 @@ export function hasValidSchedule(sub) {
 
 /**
  * Ekstrak rentang tanggal jadwal dari subtask (daily_plan atau start/end date).
- * @param {object} sub
+ * @param {any} sub
  * @returns {{ start_date: string|null, end_date: string|null, workDaysCount: number }}
  */
 export function deriveSubtaskScheduleWindow(sub) {
@@ -111,7 +111,7 @@ export function deriveSubtaskScheduleWindow(sub) {
 
 /**
  * Cek apakah subtask memiliki nama PIC/Mandor yang sah.
- * @param {object} sub
+ * @param {any} sub
  * @returns {boolean}
  */
 export function hasValidPic(sub) {
@@ -129,7 +129,7 @@ export function hasValidPic(sub) {
 
 /**
  * Evaluasi satu subtask untuk keperluan penginputan Laporan Harian (G_LAPOR_SUBTASK_SCHEDULE).
- * @param {object} subtask
+ * @param {any} subtask
  * @returns {{ allowed: boolean, isScheduled: boolean, message: string }}
  */
 export function evaluateSubtaskForReport(subtask) {
@@ -161,7 +161,7 @@ export function evaluateSubtaskForReport(subtask) {
  * @param {boolean} [options.excludeSystemCategory=true] Abaikan kategori sistem wajib (mobilisasi/demobilisasi)
  * @param {boolean} [options.requirePic=true] Evaluasi kelengkapan PIC
  * @param {number} [options.minScheduledPct=100] Minimal % subtask yang harus terjadwal agar lulus (default 100%)
- * @returns {object}
+ * @returns {any}
  */
 export function evaluateProjectScheduleDiscipline(planningOrCategories, options = {}) {
   const {
@@ -187,19 +187,21 @@ export function evaluateProjectScheduleDiscipline(planningOrCategories, options 
     };
   }
 
+  /** @type {any[]} */
   const unscheduledSubtasks = [];
+  /** @type {any[]} */
   const missingPics = [];
   let totalActiveSubtasks = 0;
   let scheduledCount = 0;
 
-  categories.forEach((cat, catIdx) => {
+  categories.forEach((/** @type {any} */ cat, /** @type {number} */ catIdx) => {
     const isSys = cat.id === MANDATORY_SYSTEM_CATEGORY_ID || cat.is_system;
     if (excludeSystemCategory && isSys) return;
 
     const catName = cat.name || `Kategori #${catIdx + 1}`;
     const subtasks = Array.isArray(cat.subtasks) ? cat.subtasks : [];
 
-    subtasks.forEach((sub, subIdx) => {
+    subtasks.forEach((/** @type {any} */ sub, /** @type {number} */ subIdx) => {
       if (!isSubtaskActive(sub)) return;
 
       totalActiveSubtasks++;
@@ -271,7 +273,7 @@ export function evaluateProjectScheduleDiscipline(planningOrCategories, options 
  * @returns {Record<string, number>}
  */
 export function autoDistributePlanVolume(totalVolume, startDate, endDate, options = {}) {
-  const vol = parseFloat(totalVolume || 0);
+  const vol = parseFloat(String(totalVolume || 0));
   if (vol <= 0 || !startDate || !endDate) return {};
 
   const holidays = options.holidays instanceof Set ? options.holidays : new Set(options.holidays || []);
@@ -309,6 +311,7 @@ export function autoDistributePlanVolume(totalVolume, startDate, endDate, option
   const perDay = Math.floor((vol / workDates.length) * 100) / 100;
   let remainder = Math.round((vol - (perDay * workDates.length)) * 100) / 100;
 
+  /** @type {Record<string, number>} */
   const result = {};
   workDates.forEach((dateKey, idx) => {
     let dayVol = perDay;

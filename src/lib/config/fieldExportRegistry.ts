@@ -18,7 +18,9 @@ import {
 	flattenAbsensiForField,
 	flattenPackingListForField,
 	flattenPunchListForField,
-	flattenLaporanHarianFotoForField
+	flattenLaporanHarianFotoForField,
+	flattenStatusProyekForField,
+	flattenLaporanMingguanForField
 } from '$lib/services/fieldExportApi';
 
 export interface FieldExportSection {
@@ -33,6 +35,36 @@ export interface FieldExportSection {
 }
 
 export const FIELD_EXPORT_SECTIONS: Record<string, FieldExportSection> = {
+	// Fase 6 (Export PDF + Laporan Keuangan): ringkasan siap kirim ke atasan/customer. TANPA angka uang.
+	'status-proyek': {
+		key: 'status-proyek',
+		label: 'Status Proyek (ringkas)',
+		icon: 'chart-bar',
+		formats: ['pdf', 'xlsx', 'csv'],
+		supportsDateRange: false,
+		fetch: flattenStatusProyekForField,
+		columns: [
+			{ header: 'Indikator', key: 'indikator' },
+			{ header: 'Nilai', key: 'nilai' },
+			{ header: 'Keterangan', key: 'keterangan' }
+		]
+	},
+	'laporan-mingguan': {
+		key: 'laporan-mingguan',
+		label: 'Laporan Mingguan (rekap)',
+		icon: 'calendar-week',
+		formats: ['pdf', 'xlsx', 'csv'],
+		supportsDateRange: true,
+		fetch: flattenLaporanMingguanForField,
+		columns: [
+			{ header: 'Minggu Mulai (Senin)', key: 'minggu_mulai', type: 'date' },
+			{ header: 'Jumlah Laporan', key: 'jumlah_laporan', type: 'number' },
+			{ header: 'Rata-rata Pekerja', key: 'rata_pekerja', type: 'number' },
+			{ header: 'Progress Akhir (%)', key: 'progress_akhir', type: 'number' },
+			{ header: 'Hari Ada Kendala', key: 'hari_ada_kendala', type: 'number' },
+			{ header: 'Kendala Utama', key: 'kendala_utama' }
+		]
+	},
 	inventory: {
 		key: 'inventory',
 		label: 'Inventaris Proyek',

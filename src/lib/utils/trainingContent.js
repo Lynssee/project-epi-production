@@ -10,7 +10,7 @@
 export const VERIFY_MARKER = '[VERIFIKASI TDS]';
 
 /** Pisahkan footer "---\nSumber materi: URL" yang ditambahkan Ingest AI. */
-export function splitSourceFooter(md) {
+export function splitSourceFooter(/** @type {any} */ md) {
 	const text = String(md ?? '');
 	const m = text.match(/\n-{3,}\s*\nSumber materi:\s*(\S+)\s*$/);
 	if (!m) return { body: text.trim(), sourceUrl: null };
@@ -21,9 +21,11 @@ export function splitSourceFooter(md) {
  * Markdown sederhana → blok: {type:'h',level,text} | {type:'p',text} | {type:'ul'|'ol', items:[{text, sub:string[]}]}
  * Mendukung heading #, bullet -/*, daftar bernomor, sub-daftar (indentasi), paragraf. Selain itu diperlakukan paragraf.
  */
-export function parseBlocks(md) {
+export function parseBlocks(/** @type {any} */ md) {
 	const blocks = [];
+	/** @type {any[]} */
 	let para = [];
+	/** @type {any} */
 	let list = null; // blok ul/ol yang sedang berjalan
 	const flushPara = () => {
 		if (para.length) blocks.push({ type: 'p', text: para.join(' ').trim() });
@@ -45,7 +47,7 @@ export function parseBlocks(md) {
 		const numbered = line.match(/^(\s*)\d+[.)]\s+(.*)$/);
 		if (bullet || numbered) {
 			flushPara();
-			const m = bullet || numbered;
+			const m = /** @type {RegExpMatchArray} */ (bullet || numbered); // dijamin ada oleh kondisi if di atas
 			const indent = m[1].length;
 			const text = m[2].trim();
 			const type = bullet ? 'ul' : 'ol';
@@ -67,7 +69,7 @@ export function parseBlocks(md) {
 }
 
 /** Teks inline → segmen: {t:'text'|'b'|'flag', v}. **tebal** dan penanda [VERIFIKASI TDS]. */
-export function inlineSegments(text) {
+export function inlineSegments(/** @type {any} */ text) {
 	const out = [];
 	const re = /\*\*([^*]+)\*\*|\[VERIFIKASI TDS\]/g;
 	let last = 0;
@@ -83,15 +85,16 @@ export function inlineSegments(text) {
 }
 
 /** Deck slide dari heading `##`. Teks sebelum `##` pertama (bila ada) menjadi slide "Pengantar". */
-export function buildSlides(md) {
+export function buildSlides(/** @type {any} */ md) {
 	const { body } = splitSourceFooter(md);
 	const slides = [];
+	/** @type {any} */
 	let cur = null;
-	const ensure = (title) => { if (!cur) { cur = { title, items: [] }; slides.push(cur); } return cur; };
+	const ensure = (/** @type {any} */ title) => { if (!cur) { cur = { title, items: [] }; slides.push(cur); } return cur; };
 
 	for (const b of parseBlocks(body)) {
 		if (b.type === 'h') {
-			if (b.level <= 2) {
+			if ((b.level ?? 99) <= 2) {
 				if (b.level === 1 && !cur && slides.length === 0) { cur = null; continue; } // judul dokumen, bukan slide
 				cur = { title: b.text, items: [] };
 				slides.push(cur);
@@ -102,23 +105,23 @@ export function buildSlides(md) {
 			ensure('Pengantar').items.push({ text: b.text, sub: [] });
 		} else {
 			const target = ensure('Pengantar');
-			for (const it of b.items) target.items.push({ text: it.text, sub: it.sub, ordered: b.type === 'ol' });
+			for (const it of b.items || []) target.items.push({ text: it.text, sub: it.sub, ordered: b.type === 'ol' });
 		}
 	}
 	return slides.filter((s) => s.items.length > 0);
 }
 
 /** Layak ditampilkan sebagai deck / mode Lihat & Tonton? (minimal 2 slide) */
-export const hasStructuredSlides = (md) => buildSlides(md).length >= 2;
+export const hasStructuredSlides = (/** @type {any} */ md) => buildSlides(md).length >= 2;
 
 /** Bobot teks sebuah slide (untuk membagi narasi). */
-export const slideWeight = (slide) =>
-	Math.max(20, slide.title.length + slide.items.reduce((n, it) => n + it.text.length + it.sub.reduce((k, s) => k + s.length, 0), 0));
+export const slideWeight = (/** @type {any} */ slide) =>
+	Math.max(20, slide.title.length + slide.items.reduce((/** @type {any} */ n, /** @type {any} */ it) => n + it.text.length + it.sub.reduce((/** @type {any} */ k, /** @type {any} */ s) => k + s.length, 0), 0));
 
 const MAX_SENTENCE = 220;
 
 /** Naskah narasi → daftar kalimat pendek (stabil untuk text-to-speech). */
-export function splitNarration(text) {
+export function splitNarration(/** @type {any} */ text) {
 	const out = [];
 	for (const para of String(text ?? '').replace(/\r\n?/g, '\n').split(/\n{1,}/)) {
 		const p = para.replace(/\s+/g, ' ').trim();
@@ -142,16 +145,17 @@ export function splitNarration(text) {
  * Tentukan slide mana yang tampil untuk tiap kalimat narasi: pembagian proporsional terhadap bobot teks slide.
  * Hasil monoton naik (slide tidak pernah mundur saat narasi berjalan). @returns {number[]} indeks slide per kalimat
  */
-export function assignNarrationToSlides(sentences, slides) {
+export function assignNarrationToSlides(/** @type {any} */ sentences, /** @type {any} */ slides) {
 	if (!sentences.length || !slides.length) return sentences.map(() => 0);
 	const weights = slides.map(slideWeight);
-	const totalW = weights.reduce((a, b) => a + b, 0);
-	const totalS = sentences.reduce((n, s) => n + s.length, 0) || 1;
+	const totalW = weights.reduce((/** @type {any} */ a, /** @type {any} */ b) => a + b, 0);
+	const totalS = sentences.reduce((/** @type {any} */ n, /** @type {any} */ s) => n + s.length, 0) || 1;
+	/** @type {any[]} */
 	const bounds = [];
 	let acc = 0;
 	for (const w of weights) { acc += w; bounds.push(acc / totalW); }
 	let before = 0;
-	return sentences.map((s) => {
+	return sentences.map((/** @type {any} */ s) => {
 		const mid = (before + s.length / 2) / totalS;
 		before += s.length;
 		const idx = bounds.findIndex((b) => mid <= b + 1e-9);
@@ -160,10 +164,10 @@ export function assignNarrationToSlides(sentences, slides) {
 }
 
 /** Perkiraan lama bicara (ms) sebuah kalimat — dipakai bila perangkat tak punya suara Indonesia (mode baca otomatis). */
-export const estimateSpeakMs = (sentence, rate = 1) => Math.max(1500, Math.round((String(sentence).length * 65) / (rate || 1)));
+export const estimateSpeakMs = (/** @type {any} */ sentence, rate = 1) => Math.max(1500, Math.round((String(sentence).length * 65) / (rate || 1)));
 
 /** URL sematan resmi Google untuk sumber materi, atau null bila bukan tautan Google yang dikenal. */
-export function googleEmbedUrl(url) {
+export function googleEmbedUrl(/** @type {any} */ url) {
 	const u = String(url ?? '');
 	let m = u.match(/^https:\/\/docs\.google\.com\/presentation\/d\/([A-Za-z0-9_-]{10,})/);
 	if (m) return `https://docs.google.com/presentation/d/${m[1]}/embed?start=false&loop=false`;

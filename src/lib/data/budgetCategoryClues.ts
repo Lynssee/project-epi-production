@@ -426,13 +426,13 @@ function scoreToken(cat: any, clue: any, tok: string): { s: number; hint: string
   if (nama.startsWith(tok)) return { s: 100, hint: null };
   if (nama.includes(tok) || kode.includes(tok)) return { s: 80, hint: null };
   const norm = (k: unknown) => String(k ?? '').toLowerCase().trim();
-  const strong = (Array.isArray(cat.strong_keywords) ? cat.strong_keywords : []).map(norm).find((k) => k === tok || k.includes(tok));
+  const strong = (Array.isArray(cat.strong_keywords) ? cat.strong_keywords : []).map(norm).find((k: any) => k === tok || k.includes(tok));
   if (strong) return { s: 90, hint: strong };
-  const live = (Array.isArray(cat.clue_keywords) ? cat.clue_keywords : []).map(norm).find((k) => k === tok || k.includes(tok));
+  const live = (Array.isArray(cat.clue_keywords) ? cat.clue_keywords : []).map(norm).find((k: any) => k === tok || k.includes(tok));
   if (live) return { s: 60, hint: live };
-  const stat = (clue?.keywords || []).map(norm).find((k) => k.includes(tok));
+  const stat = (clue?.keywords || []).map(norm).find((k: any) => k.includes(tok));
   if (stat) return { s: 50, hint: stat };
-  if ((clue?.examples || []).some((e) => norm(e).includes(tok))) return { s: 30, hint: null };
+  if ((clue?.examples || []).some((e: any) => norm(e).includes(tok))) return { s: 30, hint: null };
   if (norm(cat.description).includes(tok) || norm(clue?.description).includes(tok)) return { s: 20, hint: null };
   return { s: 0, hint: null };
 }

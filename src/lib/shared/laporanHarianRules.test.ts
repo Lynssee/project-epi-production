@@ -191,3 +191,18 @@ test('G_FLD_MANPOWER_ATTENDANCE_CONFIRMED not_applicable jika tidak ada penugasa
 	const g = gates.find((g) => g.gate_key === 'G_FLD_MANPOWER_ATTENDANCE_CONFIRMED');
 	assert.equal(g?.status, 'not_applicable');
 });
+
+test('status Standby (menunggu BAST / approval): progress/jadwal/material jadi not_applicable, tenaga & foto absensi tetap wajib', () => {
+	const { gates, score } = evaluateLaporanHarianRules(baseSnapshot({
+		activity_status: 'standby',
+		schedule: [],
+		progress: [],
+		material_used: []
+	}));
+	assert.equal(gates.find((g) => g.gate_key === 'G_LH_JADWAL')?.status, 'not_applicable');
+	assert.equal(gates.find((g) => g.gate_key === 'G_LH_PROGRESS')?.status, 'not_applicable');
+	assert.equal(gates.find((g) => g.gate_key === 'G_LH_MATERIAL_TERPAKAI')?.status, 'not_applicable');
+	assert.equal(gates.find((g) => g.gate_key === 'G_LH_TENAGA_KERJA')?.status, 'passed');
+	assert.equal(gates.find((g) => g.gate_key === 'G_LH_FOTO_ABSENSI')?.status, 'passed');
+	assert.equal(score, 100);
+});

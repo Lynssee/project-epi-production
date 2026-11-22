@@ -61,6 +61,7 @@ export type FeatureKey =
 	| 'verifikasi_absensi_tim'
 	| 'access_pl_dashboard'
 	| 'verify_area_inventory'
+	| 'production_label_print'
 	| 'kelola_aset_ruangan'
 	| 'kickoff_lengkapi'
 	| 'ajukan_atas_nama';

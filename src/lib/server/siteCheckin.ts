@@ -909,18 +909,18 @@ export async function createCheckin(
 				body: JSON.stringify(payload)
 			});
 		} catch (e) {
-		// SV-12: request kembar (race) lolos pre-check exact-match di atas lalu sama-sama mencoba
-		// INSERT — constraint unik client_txn_id menolak yang kedua. Alih-alih gagal, ambil baris
-		// yang berhasil dibuat request pertama (tetap idempoten dari sudut pandang klien).
-		if (input.clientTxnId) {
-			const raceQuery = new URLSearchParams({ 'filter[client_txn_id][_eq]': input.clientTxnId, fields: '*', limit: '1' });
-			const raceRes = await directusServerJson<{ data: SiteCheckinRecord[] }>(`/items/site_checkin?${raceQuery.toString()}`).catch(() => null);
-			const raceExisting = raceRes?.data?.[0];
-			if (raceExisting) return raceExisting;
+			// SV-12: request kembar (race) lolos pre-check exact-match di atas lalu sama-sama mencoba
+			// INSERT — constraint unik client_txn_id menolak yang kedua. Alih-alih gagal, ambil baris
+			// yang berhasil dibuat request pertama (tetap idempoten dari sudut pandang klien).
+			if (input.clientTxnId) {
+				const raceQuery = new URLSearchParams({ 'filter[client_txn_id][_eq]': input.clientTxnId, fields: '*', limit: '1' });
+				const raceRes = await directusServerJson<{ data: SiteCheckinRecord[] }>(`/items/site_checkin?${raceQuery.toString()}`).catch(() => null);
+				const raceExisting = raceRes?.data?.[0];
+				if (raceExisting) return raceExisting;
+			}
+			throw e;
 		}
-		throw e;
 	}
-}
 
 	// Paket 02 §3.10: baris ini LEBIH TUA dari check-in yang sedang aktif (replay offline
 	// terlambat) — tutup langsung tepat saat yang aktif mulai, supaya tidak ada 2 baris
@@ -1355,7 +1355,8 @@ export async function closeCheckin(input: CloseCheckinInput): Promise<SiteChecki
 			// Paket 05 §3.2 (SVR-21) — ambang SAMA dengan yang dipakai payroll (settings.min_durasi_menit),
 			// bukan 30 menit hardcode terpisah. Sebelumnya kunjungan 16-29 menit DIBAYAR (payroll pakai
 			// min_durasi_menit=15) tapi tetap dilaporkan "durasi rendah" ke HRD — membingungkan.
-			const durasiRendah = Number.isFinite(result.data.durasi_menit) && result.data.durasi_menit < (settings.min_durasi_menit || 15);
+			const durasiMenitHasil = result.data.durasi_menit;
+			const durasiRendah = durasiMenitHasil != null && Number.isFinite(durasiMenitHasil) && durasiMenitHasil < (settings.min_durasi_menit || 15);
 			// SV-05: in_geofence round-trip dari Directus/SQLite bisa balik sebagai 0 (bukan false)
 			// walau kita kirim boolean asli — `=== false` gagal menangkap 0, notifikasi anomali tidak pernah terkirim.
 			const luarGeofence = result.data.in_geofence === false || (result.data.in_geofence as unknown) === 0;

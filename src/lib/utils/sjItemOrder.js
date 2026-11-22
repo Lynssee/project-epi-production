@@ -9,8 +9,8 @@
 //
 // MIRROR (cermin): salinan identik dari erp-epi/src/lib/utils/sjItemOrder.js (repo terpisah). Ubah KEDUANYA sekaligus.
 
-const idOf = (v) => (v && typeof v === 'object' ? v.id : v);
-const num = (v) => {
+const idOf = (/** @type {any} */ v) => (v && typeof v === 'object' ? v.id : v);
+const num = (/** @type {any} */ v) => {
   const n = Number(idOf(v));
   return Number.isFinite(n) ? n : null;
 };
@@ -28,7 +28,7 @@ const num = (v) => {
  */
 export function sortSjItemsLikePl(sjItems, plOrder = null) {
   if (!Array.isArray(sjItems)) return [];
-  const orderOf = (plItemId) => {
+  const orderOf = (/** @type {any} */ plItemId) => {
     if (plOrder) {
       const v = plOrder instanceof Map ? plOrder.get(plItemId) : plOrder[plItemId];
       if (Number.isFinite(Number(v))) return Number(v);
@@ -44,7 +44,7 @@ export function sortSjItemsLikePl(sjItems, plOrder = null) {
     const aLinked = a.plPos != null;
     const bLinked = b.plPos != null;
     if (aLinked !== bLinked) return aLinked ? -1 : 1; // baris PL dulu, tambahan belakangan
-    if (aLinked && a.plPos !== b.plPos) return a.plPos - b.plPos;
+    if (aLinked && a.plPos !== b.plPos) return (a.plPos ?? 0) - (b.plPos ?? 0);
     if (a.own != null && b.own != null && a.own !== b.own) return a.own - b.own; // urutan input
     return a.index - b.index; // stabil
   });

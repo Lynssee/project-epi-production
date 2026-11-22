@@ -147,7 +147,7 @@ describe('keamanan & ketahanan', () => {
     expect(r.html).toContain('A &amp; B');
   });
   it('input kosong total tidak crash', () => {
-    expect(() => buildSpkDocument({})).not.toThrow();
+    expect(() => buildSpkDocument(/** @type {any} */ ({}))).not.toThrow();
     expect(() => buildSpkDocument({ a: { rate_tipe: 'borongan' } })).not.toThrow();
   });
   it('isi() membiarkan placeholder tak dikenal', () => {
@@ -159,7 +159,7 @@ describe('keamanan & ketahanan', () => {
   });
 });
 
-const K = (k) => 'manpower.spk_doc.' + k;
+const K = (/** @type {any} */ k) => 'manpower.spk_doc.' + k;
 
 describe('mergeSpkSettings (kunci manpower.spk_doc.*)', () => {
   it('tanpa setelan → default', () => {
@@ -211,6 +211,7 @@ describe('mergeSpkSettings (kunci manpower.spk_doc.*)', () => {
     expect(SPK_DEFAULTS.retensi_pct).toBe(5);
   });
   it('spkDocDefaultsFlat: semua kunci ber-namespace & nilai skalar = SPK_DEFAULTS', () => {
+    /** @type {Record<string, any>} */
     const flat = spkDocDefaultsFlat();
     expect(Object.keys(flat).every((k) => k.startsWith('manpower.spk_doc.'))).toBe(true);
     expect(flat[K('retensi_pct')]).toBe(5);
@@ -294,7 +295,7 @@ describe('Versi tanpa harga (Syarat Manpower)', () => {
     stripHargaAssignment(a);
     expect(a.rate_harian).toBe(5);
     expect(a.borongan_items[0].harga_satuan).toBe(2);
-    expect(stripHargaAssignment(null)).toEqual({});
+    expect(stripHargaAssignment(/** @type {any} */ (null))).toEqual({});
   });
 });
 

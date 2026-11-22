@@ -325,8 +325,10 @@ export function isi(template, vars = {}) {
  * Hitung tabel borongan. `items` = [{ deskripsi, qty, satuan, harga_satuan }].
  * Tanpa items → 1 baris paket dari `nilaiBorongan`.
  * PPh 21 dibulatkan ke rupiah terdekat. pph21Pct 0 → baris PPh disembunyikan.
+ * @param {{ items?: any[] | null, nilaiBorongan?: number | string | null, jenisPekerjaan?: string | null, pph21Pct?: number | string | null }} params
  */
 export function hitungBorongan({ items, nilaiBorongan, jenisPekerjaan, pph21Pct }) {
+  /** @type {any[]} */
   let rows = Array.isArray(items)
     ? items
         .map((i) => ({
@@ -422,7 +424,7 @@ const WATERMARK_TANPA_HARGA = 'SYARAT & KETENTUAN — TANPA RINCIAN NILAI';
  * @param {object} [ctx.pr]         proyek (name, nomor_po, lokasi, jenis_project, child_projects, tanggal_po)
  * @param {object} [ctx.settings]   hasil mergeSpkSettings().settings (default bila kosong)
  * @param {string} [ctx.ttdImg]     <img> TTD penerima (data URI) bila sudah ditandatangani
- * @returns {{ varian:'harian'|'borongan', html:string, hitung:object|null, namaManpower:string, namaProject:string, nomorSPK:string }}
+ * @returns {{ varian:'harian'|'borongan', tanpaHarga:boolean, html:string, hitung:any, namaManpower:string, namaProject:string, nomorSPK:string, kodeVersi:string }}
  */
 export function buildSpkDocument(ctx) {
   const tanpaHarga = ctx?.tanpaHarga === true;

@@ -1,5 +1,5 @@
 // @ts-nocheck
-// SALINAN KONTRAK dari erp-epi/src/lib/utils/materialCoverageEngine.js (Rencana Gate Rasionalitas Packing List, Fase 4, 4 Nov 2026).
+// SALINAN KONTRAK dari erp-epi/src/lib/utils/materialCoverageEngine.js (Rencana Keyakinan Permintaan PL, sinkron 12 Nov 2026).
 // JANGAN diedit di sini: ubah di erp-epi lalu salin ulang. Paritas isi dijaga tes kontrak lintas repo
 // erp-epi/src/lib/server/gates/plCoverage.crossRepoContract.test.js (gagal bila kedua salinan menyimpang).
 // '@ts-nocheck' disengaja: file ini JS murni yang identik dengan sisi admin; tipe tidak boleh membuatnya berbeda.
@@ -486,6 +486,10 @@ export function evaluateRunRate({ areaM2, dailyRate, items, rates, rateByItemId,
       r.overPct = round(overPct, 0);
       const cls = classifyUnit(r.unit);
       r.suggestedQty = cls.kind === 'pack' && g.packStd > 0 ? Math.max(0, Math.floor(cap / g.packStd + EPS)) : round(cap, 2);
+      // Kirim bertahap: jumlah per window PENUH (tanpa mengurangi stok site, karena stok hanya mengurangi window pertama) dalam satuan baris.
+      const fullWindowStd = burn * num(cfg.max_buffer_days);
+      const fullWindow = cfg.round_up_whole_pack && g.packStd > 0 ? Math.max(fullWindowStd, g.packStd) : fullWindowStd;
+      r.windowQty = cls.kind === 'pack' && g.packStd > 0 ? Math.max(1, Math.floor(fullWindow / g.packStd + EPS)) : round(fullWindow, 2);
       r.reason = over
         ? `Diminta ${round(g.requested, 2)} ${r.stdUnit}, melebihi kebutuhan ${num(cfg.max_buffer_days)} hari kerja (${round(burn, 2)} ${r.stdUnit}/hari × ${num(cfg.max_buffer_days)} − stok site ${round(onHand, 2)} = ${round(cap, 2)}). Laju ${round(dailyRate.rate, 1)} m²/hari (${dailyRate.source}).`
         : `Wajar untuk ${num(cfg.max_buffer_days)} hari kerja: ${round(g.requested, 2)} ≤ ${round(cap, 2)} ${r.stdUnit}.`;

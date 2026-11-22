@@ -33,7 +33,7 @@ export interface ModulPanduan {
   langkah: PanduanLangkah[];
   faq: PanduanFaq[];
   /** Fase 4 — Rencana v2 Panduan Auto-Sync (§2 Lapis 2): kontrak konten dibaca Mesin Sinkron. */
-  refs?: { rute?: string[]; koleksi?: string[]; nav_key?: string[] } | null;
+  refs?: { rute?: string[]; koleksi?: string[]; nav_key?: string[]; gate?: string[] } | null;
 }
 
 export const kategoriModul = [
@@ -246,9 +246,29 @@ Langkah verifikasi di lapangan:
 5. Tentukan kondisi fisik komponen: "Baik", "Perlu Perhatian", atau "Rusak".
 6. Jika kode tidak cocok dengan equipment ini, sistem mencatat status "Mismatch" sebagai audit investigasi (misal aki tertukar tanpa izin).`,
         tips: 'Mekanik di lapangan hanya memverifikasi identitas dan kondisi fisik. Nilai rupiah atau harga perolehan aki dikelola oleh tim admin kantor di erp-epi.'
+      },
+      {
+        judul: '4. Scan QR Unit → Hub Equipment 360°',
+        isi: `Scan stiker QR kendaraan/alat (format EPI:EQUIPMENT:<kode>) dengan kamera HP. Bila fitur Hub aktif, satu halaman langsung terbuka:
+
+1. Kartu identitas: nama unit, kode, Nopol, status, KM/HM, WO berjalan, dan P2H terakhir.
+2. Banner kuning/merah bila STNK, Pajak, atau KIR mendekati/melewati jatuh tempo.
+3. Tombol hijau = aktivitas yang paling sering untuk kategori unit itu (mis. Isi Checklist P2H). Aktivitas lain ada di tombol "⚡ Pilih Aktivitas Lainnya" (Inspeksi & Checklist, Perawatan & Lapor Rusak, Operasional & Peminjaman).
+4. Di bagian "Log Unit", ketuk tab untuk melihat riwayat: Perbaikan & PM, P2H & Checklist, Pembelian (termasuk sparepart yang pernah dipakai), Pemakaian, dan Spesifikasi. Data baru dimuat saat tab dibuka, jadi hemat kuota.
+
+Stiker lama berformat EPI:ITEM:<angka> pada kendaraan/alat tetap bisa dipakai — sistem otomatis mengenalinya sebagai unit tersebut, tidak perlu cetak ulang.`,
+        tips: 'Nominal harga di tab Pembelian hanya tampil untuk peran yang diizinkan administrator. Bila muncul peringatan "bukan pengemudi terdaftar", gunakan opsi alih pakai darurat dengan alasan tertulis.'
       }
     ],
     faq: [
+      {
+        tanya: 'Scan QR kendaraan masih membuka menu lama (Isi P2H / Lapor / Cek PM), bukan Hub?',
+        jawab: 'Hub dibuka otomatis hanya bila administrator mengaktifkan gate "Hub Equipment 360° saat Scan QR Unit". Selama belum aktif, pilih "Info Unit" pada menu tersebut untuk membuka Hub yang sama.'
+      },
+      {
+        tanya: 'Hub bilang unit belum tertaut ke Master Barang / tab Pembelian kosong?',
+        jawab: 'Riwayat pembelian membutuhkan unit tertaut ke Master Barang (kolom Kode/ID Equipment sama dengan kode unit). Minta admin Inventory/Maintenance melengkapi tautannya.'
+      },
       {
         tanya: 'Apa yang harus dilakukan jika scanner QR menampilkan status "Mismatch"?',
         jawab: 'Status mismatch berarti komponen fisik yang terpasang di unit tidak sama dengan data yang tercatat di sistem (misal aki tertukar saat servis darurat). Catat di keterangan dan laporkan ke supervisor/admin maintenance agar dilakukan pembaruan mutasi di sistem.'

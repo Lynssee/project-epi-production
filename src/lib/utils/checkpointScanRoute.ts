@@ -15,7 +15,7 @@ export interface CheckpointResolveLike {
 	template_id?: string | number;
 	/** Petugas terjadwal hari ini / staff tetap ruangan. Default false bila server lama. */
 	is_assigned?: boolean;
-	room?: { area_id: number; area_name?: string; item_count?: number } | null;
+	room?: { area_id: number; area_name?: string | null; item_count?: number } | null;
 }
 
 export interface RouteDecision {
@@ -37,6 +37,24 @@ function checklistUrl(r: CheckpointResolveLike): string {
 /** Halaman Ruangan (lihat barang di ruangan) — dibangun di Fase 2. */
 export function roomPageUrl(areaId: string | number): string {
 	return `/ruangan/${areaId}`;
+}
+
+/**
+ * Normalisasi kode checkpoint dari hasil scan atau URL:
+ * - Menangani kode mentah: "CP-KB-006" -> "CP-KB-006"
+ * - Menangani prefix label: "QR CP-KB-006" -> "CP-KB-006"
+ * - Menangani URL lengkap: "https://project.../scan/CP-KB-006" -> "CP-KB-006"
+ */
+export function cleanCheckpointCode(raw: string): string {
+	let s = String(raw || '').trim();
+	if (s.includes('/scan/')) {
+		const parts = s.split('/scan/');
+		s = decodeURIComponent(parts[parts.length - 1].split('?')[0].split('#')[0]);
+	}
+	if (/^QR\s+/i.test(s)) {
+		s = s.replace(/^QR\s+/i, '');
+	}
+	return s.trim();
 }
 
 /**

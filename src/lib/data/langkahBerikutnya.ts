@@ -10,6 +10,7 @@ export type AksiLangkah = 'detail' | 'mulai_pakai' | 'kembalikan' | 'checkin' | 
 export interface LangkahBooking {
 	id: number | string;
 	status: string;
+	kode_booking?: string | null;
 	tanggal_mulai?: string | null;
 	tanggal_selesai_rencana?: string | null;
 	date_created?: string | null;

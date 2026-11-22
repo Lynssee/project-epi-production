@@ -68,7 +68,13 @@ const config = {
 				],
 				'object-src': ["'self'", 'blob:'],
 				'base-uri': ["'self'"],
-				'frame-ancestors': ["'self'"]
+				'frame-ancestors': [
+					"'self'",
+					'https://erp.eltamaprimaindo.com',
+					'https://*.eltamaprimaindo.com',
+					'http://localhost:*',
+					'http://127.0.0.1:*'
+				]
 			}
 		},
 		version: {

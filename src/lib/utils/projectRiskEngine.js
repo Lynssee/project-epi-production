@@ -35,7 +35,7 @@ export const DEFAULT_RISK_THRESHOLDS = {
 /**
  * Normalisasi level risiko dari skor 0-100
  */
-export function getRiskLevelFromScore(score, thresholds = DEFAULT_RISK_THRESHOLDS) {
+export function getRiskLevelFromScore(/** @type {any} */ score, thresholds = DEFAULT_RISK_THRESHOLDS) {
   const s = Math.max(0, Math.min(100, Number(score) || 0));
   if (s <= thresholds.low_max) return 'rendah';
   if (s <= thresholds.medium_max) return 'sedang';
@@ -46,7 +46,7 @@ export function getRiskLevelFromScore(score, thresholds = DEFAULT_RISK_THRESHOLD
 /**
  * Format badge warna Tailwind untuk level risiko
  */
-export function getRiskLevelBadge(level) {
+export function getRiskLevelBadge(/** @type {any} */ level) {
   const norm = String(level || '').toLowerCase();
   switch (norm) {
     case 'kritis':
@@ -64,7 +64,7 @@ export function getRiskLevelBadge(level) {
 /**
  * Menghitung skala proyek dari nilai nominal & durasi
  */
-export function calculateProjectScale(nilaiKontrak, durasiHari = 0, scaleTiers = DEFAULT_SCALE_TIERS) {
+export function calculateProjectScale(/** @type {any} */ nilaiKontrak, durasiHari = 0, scaleTiers = DEFAULT_SCALE_TIERS) {
   const val = Math.max(0, Number(nilaiKontrak) || 0);
   const days = Math.max(0, Number(durasiHari) || 0);
 
@@ -86,6 +86,7 @@ export function calculateProjectScale(nilaiKontrak, durasiHari = 0, scaleTiers =
 
 /**
  * Hitung Financial Risk (0-100)
+ * @param {{ nilaiKontrak?: any, jumlahSo?: number, retensiPct?: number, hasOverspendHistory?: boolean }} params
  */
 export function calculateFinancialRisk({ nilaiKontrak, jumlahSo = 1, retensiPct = 0, hasOverspendHistory = false }) {
   let score = 15; // baseline
@@ -284,6 +285,7 @@ export function calculateOperationalRisk({
 
 /**
  * Mesin utama evaluasi risiko proyek komprehensif
+ * @param {{ project?: any, grandPo?: any, soList?: any[], weights?: any, scaleTiers?: any, thresholds?: any }} params
  */
 export function evaluateProjectComprehensiveRisk({
   project = {},
@@ -305,7 +307,7 @@ export function evaluateProjectComprehensiveRisk({
   const endDateStr = project.end_date || null;
   let durasiHari = 0;
   if (startDateStr && endDateStr) {
-    const diff = new Date(endDateStr) - new Date(startDateStr);
+    const diff = new Date(endDateStr).getTime() - new Date(startDateStr).getTime();
     durasiHari = Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)));
   } else if (durasiHari === 0 && grandPo?.id === 2) {
     durasiHari = 102; // fallback data live Fuchs

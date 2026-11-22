@@ -71,9 +71,14 @@ export interface FlowSummary {
 	approval_status?: string;
 	sosialisasi_end_date?: string;
 	procedure_type?: string;
+	/** Jumlah gate kontrol pada seluruh langkah alur (penanda 🛡️ di daftar SOP). */
+	gate_count?: number;
 	/** id baris Directus & id induknya (breadcrumb). */
 	row_id?: number;
 	parent_row_id?: number;
+}
+function gateCountOf(flow: ProcessFlow): number {
+	return (flow.nodes || []).reduce((n, node) => n + (Array.isArray(node.gates) ? node.gates.length : 0), 0);
 }
 export function summarizeFlow(flow: ProcessFlow & { version?: number }): FlowSummary {
 	return {
@@ -88,6 +93,7 @@ export function summarizeFlow(flow: ProcessFlow & { version?: number }): FlowSum
 		...(flow.approval_status ? { approval_status: flow.approval_status } : {}),
 		...(flow.sosialisasi_end_date ? { sosialisasi_end_date: flow.sosialisasi_end_date } : {}),
 		...(flow.procedure_type ? { procedure_type: flow.procedure_type } : {}),
+		...(gateCountOf(flow) > 0 ? { gate_count: gateCountOf(flow) } : {}),
 		...(flow.row_id ? { row_id: flow.row_id } : {}),
 		...(flow.parent_row_id ? { parent_row_id: flow.parent_row_id } : {})
 	};

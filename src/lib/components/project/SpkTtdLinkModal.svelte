@@ -7,12 +7,13 @@
 
   // Pola toast global repo ini: Toast.svelte lewat window.__showToast (bukan svelte-sonner)
   const toast = {
-    success: (m) => typeof window !== 'undefined' && window.__showToast?.(m, 'success'),
-    error: (m) => typeof window !== 'undefined' && window.__showToast?.(m, 'error'),
-    info: (m) => typeof window !== 'undefined' && window.__showToast?.(m, 'info'),
-    warning: (m) => typeof window !== 'undefined' && (window.__showToast?.(m, 'info') || window.__showToast?.(m, 'error'))
+    success: (/** @type {string} */ m) => typeof window !== 'undefined' && window.__showToast?.(m, 'success'),
+    error: (/** @type {string} */ m) => typeof window !== 'undefined' && window.__showToast?.(m, 'error'),
+    info: (/** @type {string} */ m) => typeof window !== 'undefined' && window.__showToast?.(m, 'info'),
+    warning: (/** @type {string} */ m) => typeof window !== 'undefined' && (window.__showToast?.(m, 'info') || window.__showToast?.(m, 'error'))
   };
 
+  /** @type {{ assignment: { id: number, nomor_spk?: string }, namaManpower?: string, kruKandidat?: { manpowerId: number | string, nama: string }[], onclose?: () => void, onchanged?: () => void }} */
   let {
     assignment,
     namaManpower = '',
@@ -35,6 +36,7 @@
 
   let loading = $state(true);
   let aktif = $state(true);
+  /** @type {any[]} */
   let links = $state([]);
   let busy = $state('');
   let urlBaru = $state('');
@@ -43,7 +45,7 @@
   let tampilDispensasi = $state(false);
   let kruId = $state('');
 
-  const fmt = (d) => (d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-');
+  const fmt = (/** @type {any} */ d) => (d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-');
 
   async function muat() {
     loading = true;
@@ -55,18 +57,18 @@
   }
   onMount(muat);
 
-  function statusLink(l) {
+  function statusLink(/** @type {any} */ l) {
     if (l.digunakan_at) return { t: 'Sudah dipakai TTD', c: 'text-emerald-700' };
     if (l.dicabut) return { t: 'Dicabut', c: 'text-gray-400' };
     if (new Date(l.kedaluwarsa) < new Date()) return { t: 'Kedaluwarsa', c: 'text-gray-400' };
     return { t: `Aktif · dibuka ${l.jumlah_dibuka || 0}×`, c: 'text-blue-700' };
   }
 
-  async function salin(url) {
+  async function salin(/** @type {string} */ url) {
     try { await navigator.clipboard.writeText(url); toast.success('Tautan disalin'); } catch { toast.info('Salin manual dari kotak di bawah'); }
   }
 
-  async function buat({ kirimWa }) {
+  async function buat(/** @type {{ kirimWa: boolean }} */ { kirimWa }) {
     busy = kirimWa ? 'wa' : 'salin';
     const r = await buatLinkSpk({ assignmentId: assignment.id, kirimWa });
     busy = '';
@@ -81,7 +83,7 @@
   }
 
   // Pakta tata tertib untuk ANGGOTA KRU: dokumen TANPA harga (nominal tak pernah dikirim), TTD dicatat pada tautan.
-  async function buatPakta({ kirimWa }) {
+  async function buatPakta(/** @type {{ kirimWa: boolean }} */ { kirimWa }) {
     if (!kruId) { toast.error('Pilih anggota kru dulu.'); return; }
     busy = kirimWa ? 'pakta-wa' : 'pakta';
     const r = await buatLinkSpk({ assignmentId: assignment.id, varian: 'tanpa_harga', manpowerId: Number(kruId), kirimWa });

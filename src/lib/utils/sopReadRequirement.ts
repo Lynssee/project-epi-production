@@ -41,7 +41,13 @@ export interface ConfirmRow {
 }
 
 export interface UnconfirmedItem {
-	type: 'flow' | 'sop';
+	/** 'gate' = perubahan aturan Gate (Pakta jenis gate); selalu null untuk sop_id/flow_key. */
+	type: 'flow' | 'sop' | 'gate';
+	/** Hanya untuk type 'gate' */
+	gate_key?: string | null;
+	gate_from?: string | null;
+	gate_to?: string | null;
+	ringkasan?: string | null;
 	id: number;
 	flow_key: string | null;
 	sop_id: number | null;
