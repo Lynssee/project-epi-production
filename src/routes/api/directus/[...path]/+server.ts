@@ -31,6 +31,7 @@ import { recordDirectusRequest, refererPath, type CacheStatus } from '../../heal
 import { coalesced, dropInflight } from './coalesce';
 import { canViewHseSensitiveFields, stripHseIncidentSensitiveFields } from '$lib/server/hse/hseGuard';
 import { isPettyCashWriteBlocked, isPettyCashReadBlocked, PETTY_CASH_PROXY_BLOCK_MESSAGE } from '$lib/shared/pettyCashRules';
+import { isCultureProxyBlocked, CULTURE_PROXY_BLOCK_MESSAGE, isProxyPathHardDenied, PROXY_HARD_DENY_MESSAGE } from '$lib/shared/cultureProxyRules';
 import { resolveFieldProjectScope, withScopeFilter, projectIdInCondition } from '$lib/server/fieldProjectScope';
 import {
 	resolvePengajuanAnggaranScope,
@@ -183,6 +184,24 @@ async function handle(event: RequestEvent): Promise<Response> {
 				JSON.stringify({ error: 'PETTY_CASH_SERVER_ONLY', message: PETTY_CASH_PROXY_BLOCK_MESSAGE }),
 				{ status: 403, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
 			);
+		}
+
+		// /graphql & /utils/export|import melewati semua guard koleksi (token admin ke koleksi mana pun) dan tak dipakai klien mana pun → tolak mutlak.
+		if (isProxyPathHardDenied(path)) {
+			console.warn(`[Proxy Directus] ${method} ${path} ditolak (jalur samping) oleh ${user?.email || '?'}`);
+			return new Response(JSON.stringify({ error: 'PROXY_PATH_DITOLAK', message: PROXY_HARD_DENY_MESSAGE }), {
+				status: 403,
+				headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+			});
+		}
+
+		// Budaya & Motivasi — employee_motivation_log (jawaban pribadi) tertutup total; ack/ikrar tak boleh ditulis dari browser (identitas dari login di server).
+		if (isCultureProxyBlocked(path, method)) {
+			console.warn(`[Proxy Directus] ${method} ${path} ditolak (guard budaya) oleh ${user?.email || '?'}`);
+			return new Response(JSON.stringify({ error: 'CULTURE_SERVER_ONLY', message: CULTURE_PROXY_BLOCK_MESSAGE }), {
+				status: 403,
+				headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+			});
 		}
 
 		if (path.startsWith('items/') && isBlockedAggregateQuery(path, event.url.searchParams)) {

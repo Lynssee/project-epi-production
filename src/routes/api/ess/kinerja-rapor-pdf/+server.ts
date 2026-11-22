@@ -7,6 +7,7 @@ import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { listKpiKaryawan } from '$lib/server/ess/kpi';
 import { htmlToPdf } from '$lib/server/gotenbergClient';
 import { buildRaporKinerjaHtml, pilihScorecard } from '$lib/pdf-templates/raporKinerjaPdf';
+import { forwardReportEvent } from '$lib/server/reportEventForward';
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -35,6 +36,7 @@ export const GET: RequestHandler = async (event) => {
 	try {
 		const buffer = await htmlToPdf(html, { filename: 'rapor-kinerja.html' });
 		const safe = `Rapor Kinerja ${rec.periode}${rec.tahun ? ` ${rec.tahun}` : ''}`.replace(/[\/:*?"<>|]+/g, '-');
+		forwardReportEvent(event, { catalog_key: 'ess-kinerja-rapor-pdf', format: 'pdf' }); // Report Center: catat unduhan
 		return new Response(Uint8Array.from(buffer), {
 			headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${safe}.pdf"`, 'Cache-Control': 'private, no-store' }
 		});

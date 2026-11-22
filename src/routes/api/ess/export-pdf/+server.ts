@@ -8,6 +8,7 @@ import type { RequestHandler } from './$types';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { htmlToPdf } from '$lib/server/gotenbergClient';
 import { buildEssTablePdfHtml } from '$lib/pdf-templates/essTablePdf';
+import { forwardReportEvent } from '$lib/server/reportEventForward';
 
 const MAX_ROWS = 5000; // pagar agar server tidak berat
 
@@ -50,6 +51,7 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		const buffer = await htmlToPdf(html, { landscape, filename: 'ess-export.pdf' });
 		const safe = judul.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80);
+		forwardReportEvent(event, { catalog_key: 'ess-export-pdf', format: 'pdf' }); // Report Center: catat unduhan
 		return new Response(Uint8Array.from(buffer), {
 			headers: {
 				'Content-Type': 'application/pdf',

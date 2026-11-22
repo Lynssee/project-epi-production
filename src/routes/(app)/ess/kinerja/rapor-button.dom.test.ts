@@ -14,6 +14,7 @@ vi.mock('$lib/components/ess/TugasSayaAlurCard.svelte', async () => ({ default: 
 vi.mock('$lib/components/ess/SopSayaCard.svelte', async () => ({ default: (await import('$lib/components/shared/__pdfViewerStub.svelte')).default }));
 vi.mock('$lib/components/ess/TimProyekSayaCard.svelte', async () => ({ default: (await import('$lib/components/shared/__pdfViewerStub.svelte')).default }));
 vi.mock('$lib/components/ess/KinerjaTrenCard.svelte', async () => ({ default: (await import('$lib/components/shared/__pdfViewerStub.svelte')).default }));
+vi.mock('$lib/components/ess/TimPembinaanAlertCard.svelte', async () => ({ default: (await import('$lib/components/shared/__pdfViewerStub.svelte')).default }));
 
 const { default: Page } = await import('./+page.svelte');
 

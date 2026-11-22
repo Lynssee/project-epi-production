@@ -7,6 +7,10 @@
 	import { hasPermission } from '$lib/constants/permissions';
 	import { getTodayStatus, type AbsensiHarianRecord, type TodayStatus } from '$lib/services/ess/attendance';
 	import { getPengumumanList } from '$lib/services/ess/pengumuman';
+	import BudayaBanner from '$lib/components/ess/BudayaBanner.svelte';
+	import TargetMerahBanner from '$lib/components/ess/TargetMerahBanner.svelte';
+	import MotivasiWidget from '$lib/components/ess/MotivasiWidget.svelte';
+	import BelongingWall from '$lib/components/ess/BelongingWall.svelte';
 	import { getMyHrDocuments } from '$lib/services/ess/hrDocuments';
 	import { getOnboardingStatus, type OnboardingStatus } from '$lib/services/ess/training';
 	import { getMentees } from '$lib/services/ess/mentor';
@@ -224,7 +228,7 @@
 		// Active Site Check-in
 		if (canSiteCheckin) {
 			getActiveCheckin()
-				.then((res) => (activeSiteCheckin = res))
+				.then((res) => (activeSiteCheckin = res.record))
 				.catch(() => {});
 		}
 	});
@@ -308,6 +312,7 @@
 				{ id: 'notes', icon: IconNotes, label: 'Catatan Saya', desc: 'Personal notes & scratchpad', route: '/ess/notes', show: true },
 				{ id: 'bookmarks', icon: IconBookmark, label: 'Pintasan Saya', desc: 'Atur menu favorit cepat', route: '/ess/bookmarks', show: true },
 				{ id: 'aset-saya', icon: IconBriefcase, label: 'Aset & Alat Saya', desc: 'Barang kantor & alat kerja atas nama Anda', route: '/ess/aset-saya', show: true },
+				{ id: 'jobdesc', icon: IconBriefcase, label: 'Tugas & Jobdesc Saya', desc: 'Uraian tugas pokok jabatan & kepatuhan syarat', route: '/ess/jobdesc', show: true },
 				{ id: 'profil', icon: IconUserCircle, label: 'Profil Saya', desc: 'Data personal & kredensial akun', route: '/ess/profil', show: true }
 			]
 		},
@@ -326,6 +331,7 @@
 				{ id: 'buku-saku-cat', icon: IconCalculator, label: 'Buku Saku Cat', desc: 'Kalkulator cat, dew point & kartu cepat', route: '/ess/pelatihan/buku-saku', show: true },
 				{ id: 'sertifikasi', icon: IconCertificate, label: 'Sertifikasi', desc: 'Sertifikat keahlian & masa berlaku', route: '/ess/sertifikasi', show: true },
 				{ id: 'pengumuman', icon: IconSpeakerphone, label: 'Pengumuman', desc: 'Warta resmi dari HRD & manajemen', route: '/ess/pengumuman', show: true, badge: () => unreadPengumuman > 0 ? unreadPengumuman : null, badgeType: 'alert' },
+				{ id: 'budaya', icon: IconSparkles, label: 'Budaya EPI', desc: 'Visi, misi, motto & nilai inti perusahaan', route: '/ess/budaya', show: true },
 				{ id: 'approval', icon: IconUserCheck, label: 'Approval Center', desc: 'Persetujuan cuti/lembur bawahan', route: '/ess/approval', show: () => canApproveCutiEss }
 			]
 		},
@@ -336,6 +342,7 @@
 			accentBg: 'rgba(225, 29, 72, 0.12)',
 			items: [
 				{ id: 'onboarding', icon: IconChecklist, label: 'Onboarding Saya', desc: 'Checklist masa orientasi karyawan', route: '/ess/onboarding', show: true },
+				{ id: 'referral', icon: IconUsersGroup, label: 'Rekomendasi Relasi', desc: 'Beri rekomendasi teman & dapatkan bonus', route: '/ess/referral', show: true },
 				{ id: 'mentor', icon: IconUsersGroup, label: 'Dashboard Mentor', desc: 'Bimbingan probation & mentee', route: '/ess/mentor', show: () => jumlahMentee > 0, badge: () => jumlahMentee > 0 ? jumlahMentee : null, badgeType: 'info' },
 				{ id: 'offboarding', icon: IconDoorExit, label: 'Offboarding Saya', desc: 'Clearance fasilitas & inventaris', route: '/ess/offboarding', show: true },
 				{ id: 'resign', icon: IconUserX, label: 'Ajukan Resign', desc: 'Form pengunduran diri formal', route: '/ess/resign', show: true }
@@ -383,6 +390,11 @@
 </svelte:head>
 
 <div class="w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6 pb-28">
+
+	<BudayaBanner />
+	<TargetMerahBanner />
+	<MotivasiWidget />
+	<BelongingWall />
 
 	<!-- ══════════════════════════════════════════════════════════════════════════
 	     1. HERO HEADER: Greeting, Live Clock & Profile Pill

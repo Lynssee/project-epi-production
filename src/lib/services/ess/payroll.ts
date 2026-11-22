@@ -14,6 +14,14 @@ export interface PayrollSlip {
 	tunjangan_makan: number;
 	tunjangan_transport: number;
 	tunjangan_lainnya: number;
+	// Komponen opsional (kolom payroll yang dibaca halaman slip; kosong/undefined pada slip lama).
+	tunjangan_bk?: number;
+	bk?: number;
+	tunjangan_jabodetabek?: number;
+	tunjangan_luar_jabodetabek?: number;
+	tunjangan_luar_pulau?: number;
+	insentif_bonus?: number;
+	income_lain_lain?: number;
 	uang_lembur: number;
 	reimbursement: number;
 	potongan: number;

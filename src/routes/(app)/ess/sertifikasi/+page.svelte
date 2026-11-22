@@ -3,11 +3,13 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { getMySertifikasi, saveSertifikasi, type SertifikasiItem } from '$lib/services/ess/sertifikasi';
+	import { getSopSertifikasi, type SopSertifikat } from '$lib/services/ess/sop';
 	import { IconArrowLeft, IconLoader2, IconAlertTriangle, IconPlus, IconCertificate } from '@tabler/icons-svelte';
 
 	let loading = $state(true);
 	let errorMsg = $state('');
 	let items = $state<SertifikasiItem[]>([]);
+	let sopSertifikat = $state<SopSertifikat[]>([]); // "Tersertifikasi SOP" — training SOP yang sudah lulus
 
 	let showForm = $state(false);
 	let editingId = $state<number | null>(null);
@@ -22,7 +24,7 @@
 		loading = true;
 		errorMsg = '';
 		try {
-			items = await getMySertifikasi();
+			[items, sopSertifikat] = await Promise.all([getMySertifikasi(), getSopSertifikasi()]);
 		} catch (err: any) {
 			errorMsg = err?.message || 'Gagal memuat sertifikasi.';
 		} finally {
@@ -123,6 +125,21 @@
 					{saving ? 'Menyimpan...' : 'Simpan'}
 				</button>
 				<button class="px-4 py-2 rounded-xl text-[12px] font-semibold" style="color: var(--sys-label3)" onclick={() => (showForm = false)}>Batal</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if !loading && !errorMsg && sopSertifikat.length > 0}
+		<!-- Integrasi SOP ↔ Training: SOP yang pelatihan & kuisnya sudah Anda lulus. Hilang otomatis bila SOP naik versi dengan kebijakan "wajib ulang". -->
+		<div class="glass-panel rounded-2xl p-4 mb-4">
+			<p class="text-[12px] font-bold mb-2 flex items-center gap-1.5" style="color: #16A34A"><IconCertificate size={14} /> Tersertifikasi SOP ({sopSertifikat.length})</p>
+			<div class="flex flex-col gap-1.5">
+				{#each sopSertifikat as s (s.sopId)}
+					<button class="text-left rounded-lg px-3 py-2" style="background: var(--sys-fill2)" onclick={() => goto(`/ess/pelatihan/sop/${s.sopId}`)}>
+						<p class="text-[12px] font-semibold" style="color: var(--sys-label)">{s.sop_code ? `${s.sop_code} · ` : ''}{s.title}</p>
+						<p class="text-[10px]" style="color: var(--sys-label4)">{s.sertifikat_no ? `No. ${s.sertifikat_no}` : 'Lulus'}{s.sertifikat_expired ? ` · berlaku s/d ${s.sertifikat_expired}` : ''}</p>
+					</button>
+				{/each}
 			</div>
 		</div>
 	{/if}

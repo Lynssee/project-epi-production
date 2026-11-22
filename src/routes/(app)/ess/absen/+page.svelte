@@ -19,6 +19,8 @@
 		type QueuedAttendanceSubmission
 	} from '$lib/utils/offlineAttendanceQueue';
 
+	import { triggerCultureMoment, type Momen } from '$lib/utils/culturePopupClient';
+
 	type Mode = 'in' | 'out' | 'break-out' | 'break-in';
 
 	function resolveMode(raw: string | null): Mode {
@@ -303,6 +305,20 @@
 	});
 	let queuedOffline = $state(false);
 
+	// Popup motivasi/tips/SOP: "sesudah" = setelah absen tersimpan (tidak menunda absen); "sebelum" hanya untuk konten
+	// yang diatur timing=before. Diam bila tak ada konten. Pemetaan: in→clock_in, out→clock_out, break-out→break_out, break-in→break_in.
+	const MOMEN_ABSEN: Record<string, Momen> = { in: 'clock_in', out: 'clock_out', 'break-out': 'break_out', 'break-in': 'break_in' };
+	function picuPopup(timing: 'before' | 'after') {
+		triggerCultureMoment(MOMEN_ABSEN[mode] ?? 'clock_in', { timing });
+	}
+	let sudahPicuSebelum = false;
+	$effect(() => {
+		if (!sudahPicuSebelum && !success) {
+			sudahPicuSebelum = true;
+			picuPopup('before');
+		}
+	});
+
 	async function handleSubmit() {
 		if (!canSubmit || !position) return;
 		vibrateTap();
@@ -329,6 +345,7 @@
 			absenPersist.clear();
 			await absenPersist.clearPhotos();
 			draftSavedAt = null;
+			picuPopup('after');
 		} catch (err: any) {
 			// L-02 fix: `err instanceof TypeError` terlalu luas — bisa match bug kode biasa (mis. akses
 			// properti undefined), bukan hanya kegagalan fetch jaringan. Cek juga pesan khas fetch gagal
@@ -367,6 +384,7 @@
 					absenPersist.clear();
 					await absenPersist.clearPhotos();
 					draftSavedAt = null;
+					picuPopup('after'); // offline: popup memakai payload cache; microquiz otomatis dilewati
 				} catch (queueErr: any) {
 					errorMsg = queueErr?.message || 'Gagal menyimpan absensi offline.';
 				}

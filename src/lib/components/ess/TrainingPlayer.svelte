@@ -16,6 +16,7 @@
 		type TrainingNoteRecord,
 		type TrainingDiskusiRecord
 	} from '$lib/services/ess/training';
+	import { getSecureAssetUrl } from '$lib/actions/secureAsset';
 	import TeksModulViewer from '$lib/components/ess/TeksModulViewer.svelte';
 	import { formatCountdown, isReadTimeType, remainingReadSeconds } from '$lib/utils/trainingGuards';
 	import { IconCircleCheck, IconLock, IconPlayerPlay, IconArrowRight, IconNotes, IconFileText, IconInfoCircle, IconTrash, IconPencilPlus, IconMessageCircle, IconFlag, IconPin } from '@tabler/icons-svelte';
@@ -125,7 +126,12 @@
 	// Modul Teks: waktu baca minimum. bacaDetik = akumulasi lintas sesi (dari progres tersimpan) + sesi ini;
 	// hanya bertambah saat tab terlihat. Server menegakkan aturan yang sama di POST /progress.
 	// Berlaku untuk Teks/PDF/Link, dan Video bila pemutar tak terlacak (apiGagal / non-YouTube → tombol manual).
-	let modeBaca = $derived(isReadTimeType(modul.tipe_konten) || (modul.tipe_konten === 'Video' && (apiGagal || !isYoutube(modul.konten_url))));
+	// Video native (HTML5): file Directus (modul.file) atau URL langsung .mp4/.webm — dilacak seperti YouTube (segmen, anti-skip, % tonton).
+	let useNative = $derived(modul.tipe_konten === 'Video' && !isYoutube(modul.konten_url) && (!!modul.file || isDirectVideo(modul.konten_url)));
+	let nativeSrc = $state('');
+	let nativeGagal = $state(false);
+	let videoEl: HTMLVideoElement | null = $state(null);
+	let modeBaca = $derived(isReadTimeType(modul.tipe_konten) || (modul.tipe_konten === 'Video' && ((useNative ? nativeGagal : apiGagal || !isYoutube(modul.konten_url)))));
 	let bacaDetik = $state(progress?.detik_ditonton ?? 0);
 	let sisaBaca = $derived(modeBaca && !selesai ? remainingReadSeconds(minBacaDetik, bacaDetik) : 0);
 	let katalogAksi = $derived(modul.tipe_konten === 'Video' ? 'Tonton video' : modul.tipe_konten === 'Link' ? 'Pelajari materi di tautan' : 'Baca materi');
@@ -198,6 +204,51 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	function isDirectVideo(url: string | null) {
+		return /\.(mp4|webm|ogv|mov|m4v)(\?|#|$)/i.test(url || '') || /\/assets\/[a-zA-Z0-9-]{20,}/.test(url || '');
+	}
+
+	// ── Pemutar native: sampling per detik dari timeupdate (≈4x/dtk, murah), simpan progres tiap 5 dtk saat main ──
+	function nativeLoaded() {
+		if (!videoEl) return;
+		if (Number.isFinite(videoEl.duration) && videoEl.duration > 0) durasiVideo = Math.round(videoEl.duration);
+		if (furthestWatched > 0 && furthestWatched < videoEl.duration - 1) videoEl.currentTime = furthestWatched;
+		apiSiap = true;
+	}
+	function nativeTimeUpdate() {
+		if (!videoEl) return;
+		const current = Math.floor(videoEl.currentTime);
+		if (current === lastSampleTime) return;
+		if (wajib && current - lastSampleTime > 3 && lastSampleTime > 0) {
+			videoEl.currentTime = furthestWatched; // lompatan maju ditolak untuk kursus wajib
+			return;
+		}
+		for (let s = Math.max(0, lastSampleTime); s <= current; s++) watchedSeconds.add(s);
+		lastSampleTime = current;
+		furthestWatched = Math.max(furthestWatched, current);
+		recomputePersen();
+	}
+	function nativeSeeking() {
+		if (wajib && videoEl && videoEl.currentTime > furthestWatched + 1) videoEl.currentTime = furthestWatched;
+	}
+	function nativePlay() {
+		if (saveTimer) clearInterval(saveTimer);
+		saveTimer = setInterval(() => persist(), 5000);
+	}
+	function nativePause() {
+		stopPolling();
+		persist();
+	}
+	function nativeEnded() {
+		stopPolling();
+		if (durasiVideo) for (let s = 0; s <= durasiVideo; s++) watchedSeconds.add(s);
+		recomputePersen();
+		persist(true);
+	}
+	function nativeRateChange() {
+		if (wajib && videoEl && videoEl.playbackRate !== 1) videoEl.playbackRate = 1;
 	}
 
 	function isYoutube(url: string | null) {
@@ -277,7 +328,10 @@
 
 	function seekTo(detik: number) {
 		if (wajib && detik > furthestWatched + 1) return; // anti-skip: tak bisa lompat ke bagian belum ditonton
-		if (player?.seekTo) {
+		if (videoEl) {
+			videoEl.currentTime = detik;
+			lastSampleTime = detik;
+		} else if (player?.seekTo) {
 			player.seekTo(detik, true);
 			lastSampleTime = detik;
 		}
@@ -287,11 +341,13 @@
 		if (wajib) return;
 		playbackRate = rate;
 		player?.setPlaybackRate?.(rate);
+		if (videoEl) videoEl.playbackRate = rate;
 	}
 
 	function catatDiSini() {
 		if (player?.pauseVideo) player.pauseVideo();
-		notingAt = player?.getCurrentTime ? Math.floor(player.getCurrentTime()) : 0;
+		videoEl?.pause();
+		notingAt = videoEl ? Math.floor(videoEl.currentTime) : player?.getCurrentTime ? Math.floor(player.getCurrentTime()) : 0;
 		noteText = '';
 		activeTab = 'catatan';
 	}
@@ -334,7 +390,16 @@
 		furthestWatched = progress?.last_position ? Number(progress.last_position) : 0;
 		recomputePersen();
 
-		if (modul.tipe_konten === 'Video' && isYoutube(modul.konten_url)) {
+		if (useNative) {
+			// File Directus dimuat lewat proxy terautentikasi (blob); URL langsung dipakai apa adanya.
+			if (modul.file) {
+				getSecureAssetUrl(modul.file)
+					.then((u) => { if (u) nativeSrc = u; else nativeGagal = true; })
+					.catch(() => { nativeGagal = true; });
+			} else {
+				nativeSrc = modul.konten_url || '';
+			}
+		} else if (modul.tipe_konten === 'Video' && isYoutube(modul.konten_url)) {
 			const videoId = modul.youtube_id || extractYoutubeId(modul.konten_url);
 			if (videoId) {
 				loadYoutubeApiScript()
@@ -405,9 +470,36 @@
 
 <div class="flex flex-col gap-4">
 	{#if modul.tipe_konten === 'Video'}
-		{#if isYoutube(modul.konten_url) && !apiGagal}
+		{#if (isYoutube(modul.konten_url) && !apiGagal) || useNative}
 			<div class="aspect-video rounded-2xl overflow-hidden glass-panel">
-				<div id={containerId} class="w-full h-full"></div>
+				{#if useNative}
+					{#if nativeGagal}
+						<p class="w-full h-full flex items-center justify-center text-xs font-semibold p-4 text-center" style="color: var(--amd)">Video tidak dapat dimuat (jaringan/format). Gunakan tombol “Tandai Selesai” setelah menonton lewat tautan lain, atau coba lagi nanti.</p>
+					{:else if nativeSrc}
+						<!-- svelte-ignore a11y_media_has_caption -->
+						<video
+							bind:this={videoEl}
+							src={nativeSrc}
+							controls
+							playsinline
+							preload="metadata"
+							controlslist={wajib ? 'nodownload noplaybackrate' : 'nodownload'}
+							class="w-full h-full bg-black"
+							onloadedmetadata={nativeLoaded}
+							ontimeupdate={nativeTimeUpdate}
+							onseeking={nativeSeeking}
+							onplay={nativePlay}
+							onpause={nativePause}
+							onended={nativeEnded}
+							onratechange={nativeRateChange}
+							onerror={() => (nativeGagal = true)}
+						></video>
+					{:else}
+						<p class="w-full h-full flex items-center justify-center text-xs font-medium" style="color: var(--sys-label4)">Memuat video...</p>
+					{/if}
+				{:else}
+					<div id={containerId} class="w-full h-full"></div>
+				{/if}
 			</div>
 			<div class="flex items-center gap-3">
 				<div class="flex-1 h-2.5 rounded-full bg-white/40 overflow-hidden">
@@ -415,7 +507,7 @@
 				</div>
 				<span class="text-xs font-bold shrink-0" style="color: var(--sys-label3)">{persenTonton}% / {ambang}%</span>
 			</div>
-			{#if !apiSiap}
+			{#if !useNative && !apiSiap}
 				<p class="text-xs font-medium" style="color: var(--sys-label4)">Memuat pemutar video...</p>
 			{/if}
 
@@ -454,7 +546,7 @@
 				</div>
 			</div>
 
-			{#if !selesai && (apiSiap || apiGagal)}
+			{#if !selesai && (apiSiap || apiGagal) && !nativeGagal}
 				<button
 					class="flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-xl w-fit hover-lift"
 					style="background: var(--sys-fill2); color: var(--sys-label3)"
@@ -493,7 +585,7 @@
 				<span class="flex items-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl" style="background: var(--gg); color: var(--ggd)">
 					<IconCircleCheck size={18} /> Modul Selesai
 				</span>
-			{:else if modul.tipe_konten === 'Video' && isYoutube(modul.konten_url) && !apiGagal}
+			{:else if modul.tipe_konten === 'Video' && ((isYoutube(modul.konten_url) && !apiGagal) || (useNative && !nativeGagal))}
 				<span class="flex items-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl opacity-60" style="background: var(--sys-fill2); color: var(--sys-label3)">
 					<IconLock size={18} /> Tonton hingga {ambang}% untuk membuka
 				</span>

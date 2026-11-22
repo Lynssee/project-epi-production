@@ -11,6 +11,26 @@ import {
 	getReadGateSettings
 } from '$lib/server/ess/training';
 import { computeMinReadSeconds } from '$lib/utils/trainingGuards';
+import { getSumberConfig, sumberOfProgram } from '$lib/server/ess/trainingSource';
+import { directusServerJson } from '$lib/server/directus';
+
+/** Kartu 360° terkait (hanya program Inventory 360°): modul → barang. Relasi diambil terpisah; gagal = tanpa tombol, dilog. */
+async function listKartu360(programId: number): Promise<Array<{ moduleId: number; itemId: number }>> {
+	try {
+		const mods = (await directusServerJson<{ data: Array<{ id: number; source_profile_id: number | null }> }>(`/items/training_module?filter[program_id][_eq]=${programId}&filter[source_profile_id][_nnull]=true&fields=id,source_profile_id&limit=100`))?.data || [];
+		const ids = [...new Set(mods.map((m) => Number(m.source_profile_id)).filter((n) => Number.isFinite(n) && n > 0))];
+		if (!ids.length) return [];
+		const profs = (await directusServerJson<{ data: Array<{ id: number; item_id: number | null }> }>(`/items/inventory_knowledge_profile?filter[id][_in]=${ids.join(',')}&fields=id,item_id&limit=100`))?.data || [];
+		const itemByProfile = new Map(profs.filter((p) => p.item_id != null).map((p) => [p.id, Number(p.item_id)]));
+		return mods.flatMap((m) => {
+			const itemId = itemByProfile.get(Number(m.source_profile_id));
+			return itemId ? [{ moduleId: m.id, itemId }] : [];
+		});
+	} catch (e) {
+		console.error('[ess/training] gagal memuat tautan Kartu 360°:', e);
+		return [];
+	}
+}
 
 export const GET: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
@@ -26,10 +46,13 @@ export const GET: RequestHandler = async (event) => {
 		await autoEnrollWajib(karyawan.id, program);
 	}
 
-	const [modules, enrollment, finalQuiz] = await Promise.all([
+	const isInv = /^TRN-INV-/i.test(program.kode || '');
+	const [modules, enrollment, finalQuiz, sumberConfig, kartu360] = await Promise.all([
 		listModulesByProgram(programId),
 		findMyEnrollmentForProgram(karyawan.id, programId),
-		findFinalQuizForProgram(programId)
+		findFinalQuizForProgram(programId),
+		getSumberConfig(),
+		isInv ? listKartu360(programId) : Promise.resolve([])
 	]);
 
 	const progress = enrollment ? await listProgressByEnrollment(enrollment.id) : [];
@@ -50,6 +73,8 @@ export const GET: RequestHandler = async (event) => {
 		enrollment,
 		modules: moduleList,
 		finalQuizId: finalQuiz?.id ?? null,
+		sumber: sumberOfProgram(program, sumberConfig),
+		kartu360,
 		bisaSelfEnroll: !program.wajib && program.self_enroll && !enrollment
 	});
 };

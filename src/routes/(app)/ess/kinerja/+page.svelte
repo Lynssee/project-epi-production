@@ -1,7 +1,7 @@
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { onMount } from 'svelte';
-	import { getKpiList, submitSelfAssessment, type KpiRecord, type KriteriaItem, type KpiReview, type LiveKpiRecord, type KpiNotification } from '$lib/services/ess/kpi';
+	import { getKpiList, submitSelfAssessment, type KpiRecord, type KriteriaItem, type KpiReview, type LiveKpiRecord, type KpiNotification, type GayaKerjaSummary } from '$lib/services/ess/kpi';
 	import { getMyDisputes, submitDispute, type KpiDispute } from '$lib/services/ess/kpiDispute';
 	import { getMySkillGap, type SkillGapResult } from '$lib/services/ess/skillGap';
 	import { IconLoader2, IconAlertTriangle, IconTrophy, IconClipboardCheck, IconGavel, IconSparkles, IconTargetArrow, IconFileExport } from '@tabler/icons-svelte';
@@ -12,9 +12,13 @@
 	import SopSayaCard from '$lib/components/ess/SopSayaCard.svelte';
 	import TimProyekSayaCard from '$lib/components/ess/TimProyekSayaCard.svelte';
 	import KinerjaTrenCard from '$lib/components/ess/KinerjaTrenCard.svelte';
+	import TargetSayaCard from '$lib/components/ess/TargetSayaCard.svelte';
 	import KategoriKpiSayaCard from '$lib/components/ess/KategoriKpiSayaCard.svelte';
 	import PilarKpiKaryawanCard from '$lib/components/ess/PilarKpiKaryawanCard.svelte';
+	import IndikatorBedahCard from '$lib/components/ess/IndikatorBedahCard.svelte';
 	import KpiInteractivePreviewModal from '$lib/components/ess/KpiInteractivePreviewModal.svelte';
+	import KpiAksiHarianCard from '$lib/components/ess/KpiAksiHarianCard.svelte';
+	import TimPembinaanAlertCard from '$lib/components/ess/TimPembinaanAlertCard.svelte';
 
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -26,6 +30,7 @@
 	let defaultKriteria = $state<KriteriaItem[]>([]);
 	let myDisputes = $state<KpiDispute[]>([]);
 	let skillGap = $state<SkillGapResult | null>(null);
+	let gayaKerja = $state<GayaKerjaSummary | null>(null);
 
 	let raporOpen = $state(false);
 	let interactivePreviewOpen = $state(false);
@@ -57,6 +62,7 @@
 			notifications = res.notifications || [];
 			myDisputes = await getMyDisputes().catch(() => []);
 			skillGap = await getMySkillGap().catch(() => null);
+			gayaKerja = res.gayaKerja || null;
 		} catch (err: any) {
 			errorMsg = err?.message || 'Gagal memuat data kinerja.';
 		} finally {
@@ -68,9 +74,10 @@
 		return myDisputes.find((d) => d.scorecard_id === scorecardId) || null;
 	}
 
-	function openDisputeModal(kpi: KpiRecord) {
+	function openDisputeModal(kpi: KpiRecord, draft = '') {
 		disputeScorecard = kpi;
-		disputeAlasan = '';
+		// draft dari "Bedah Nilai Saya" (indikator + nomor dokumen yang dipermasalahkan); pengguna tinggal melengkapi alasan.
+		disputeAlasan = draft;
 		disputeError = '';
 		showDisputeModal = true;
 	}
@@ -79,6 +86,10 @@
 		if (!disputeScorecard) return;
 		if (!disputeAlasan.trim()) {
 			disputeError = 'Jelaskan alasan keberatan Anda.';
+			return;
+		}
+		if (/Alasan:\s*$/.test(disputeAlasan.trim())) {
+			disputeError = 'Lengkapi alasan keberatan Anda setelah kata "Alasan:".';
 			return;
 		}
 		disputeSaving = true;
@@ -361,9 +372,14 @@
 			</div>
 		{/if}
 
+		<!-- Pusat Aksi Harian KPI Lapangan (Pencetak Skor Hari Ini - Fase 5) -->
+		<TimPembinaanAlertCard />
+		<KpiAksiHarianCard />
+
 		<GateKpiSayaCard />
 
 		<KinerjaTrenCard />
+		<TargetSayaCard />
 		<KategoriKpiSayaCard />
 
 		<TimProyekSayaCard />
@@ -542,7 +558,40 @@
 							{/if}
 						{/if}
 
+						{#if gayaKerja?.available}
+							{@const p = gayaKerja.primaryLetter}
+							{@const bCls = p === 'D' ? 'bg-rose-50 text-rose-800 border-rose-200' :
+											p === 'I' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+											p === 'S' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+											'bg-indigo-50 text-indigo-800 border-indigo-200'}
+							<div class="rounded-xl p-3.5 mb-4 border relative z-10 space-y-2 {bCls}" data-testid="ess-gaya-kerja-card">
+								<div class="flex items-center justify-between gap-2">
+									<div class="flex items-center gap-1.5 font-bold text-xs">
+										<span>🧠</span>
+										<span>Gaya Kerja Anda: <strong>{gayaKerja.dimensiLabel}</strong></span>
+									</div>
+									<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-white/80 font-mono font-semibold">DISC: {gayaKerja.profil}</span>
+								</div>
+								<div class="text-[11px] space-y-1">
+									<p class="leading-relaxed">
+										💪 <strong>Kekuatan Anda di Lapangan:</strong> {gayaKerja.kekuatan}
+									</p>
+									<p class="leading-relaxed opacity-90">
+										🌱 <strong>Tips Pengembangan Diri:</strong> {gayaKerja.tipPengembangan}
+									</p>
+								</div>
+								{#if gayaKerja.tanggalTes}
+									<p class="text-[9px] opacity-70 italic text-right">Asesmen tercatat: {gayaKerja.tanggalTes}</p>
+								{/if}
+							</div>
+						{/if}
+
 						<PilarKpiKaryawanCard pilar={kpi.pilar} />
+						<IndikatorBedahCard
+							indikator={kpi.indikator ?? []}
+							bolehSanggah={cutoff.tone === 'released' && !disputeForScorecard(kpi.id)}
+							onSanggah={(draft) => openDisputeModal(kpi, draft)}
+						/>
 
 						{#if tip}
 							<div class="rounded-xl p-3 mb-4 relative z-10" style="background: var(--am, #FFFBEB); border: 1px solid var(--am2, #FDE68A)">

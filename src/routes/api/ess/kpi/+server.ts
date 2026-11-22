@@ -9,20 +9,22 @@ import {
 	submitSelfReview,
 	listKpiNotifications,
 	listKpiTrend,
+	getMyGayaKerja,
 	SELF_ASSESSMENT_KRITERIA
 } from '$lib/server/ess/kpi';
 
 export const GET: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
-	const [kpiList, pendingList, liveKpiList, notifications, trend] = await Promise.all([
+	const [kpiList, pendingList, liveKpiList, notifications, trend, gayaKerja] = await Promise.all([
 		listKpiKaryawan(karyawan.id),
 		listPendingKpi(karyawan.id),
 		listLiveKpiKaryawan(karyawan.id),
 		listKpiNotifications(karyawan.id).catch(() => []),
-		listKpiTrend(karyawan.id, 6).catch(() => [])
+		listKpiTrend(karyawan.id, 6).catch(() => []),
+		getMyGayaKerja(karyawan.id).catch(() => null)
 	]);
 	const selfReviews = await listSelfReviews(pendingList.map((k) => k.id));
-	return json({ kpiList, pendingList, liveKpiList, selfReviews, defaultKriteria: SELF_ASSESSMENT_KRITERIA, notifications, trend });
+	return json({ kpiList, pendingList, liveKpiList, selfReviews, defaultKriteria: SELF_ASSESSMENT_KRITERIA, notifications, trend, gayaKerja });
 };
 
 export const POST: RequestHandler = async (event) => {

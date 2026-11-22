@@ -18,6 +18,8 @@ export interface JabatanSilabusRecord {
 	is_wajib: boolean;
 	urutan: number | null;
 	status: string;
+	level?: string | null;
+	prerequisite_id?: number | { id: number } | null;
 }
 
 export interface SilabusMateriRecord {
@@ -60,6 +62,8 @@ export interface SilabusProgress {
 	namaSilabus: string;
 	deskripsi: string | null;
 	kategori: string | null;
+	level?: string | null;
+	prerequisiteId?: number | null;
 	isWajib: boolean;
 	target: { targetHari: number | null; passingGrade: number | null } | null;
 	materi: SilabusMateriProgress[];
@@ -101,7 +105,7 @@ async function listSilabusRecords(positionId: number): Promise<JabatanSilabusRec
 	const query = new URLSearchParams({
 		'filter[position_id][_eq]': String(positionId),
 		'filter[status][_eq]': 'aktif',
-		fields: 'id,nama_silabus,deskripsi,kategori,is_wajib,urutan,status',
+		fields: 'id,nama_silabus,deskripsi,kategori,is_wajib,urutan,status,level,prerequisite_id',
 		sort: 'urutan'
 	});
 	const result = await directusServerJson<{ data: JabatanSilabusRecord[] }>(`/items/jabatan_silabus?${query.toString()}`);
@@ -193,6 +197,8 @@ export async function getSilabusProgressForKaryawan(karyawan: ServerKaryawan): P
 				namaSilabus: s.nama_silabus,
 				deskripsi: s.deskripsi,
 				kategori: s.kategori,
+				level: s.level ?? null,
+				prerequisiteId: unwrapId(s.prerequisite_id),
 				isWajib: s.is_wajib !== false,
 				target: target ? { targetHari: target.target_hari, passingGrade: target.passing_grade } : null,
 				materi,

@@ -33,11 +33,14 @@ import { authStore, getUserDisplay, getUserInitials, shouldFilterProjectsByLeade
 	import { fetchSewaAlatSiteSaya } from '$lib/services/sewaAlatLapanganApi';
 	import { getMyWorkloadSummary, type WorkloadSummary } from '$lib/services/plDelegation';
 	import PersonalWidget from '$lib/components/ess/PersonalWidget.svelte';
+	import SopSayaWidget from '$lib/components/ess/SopSayaWidget.svelte';
 	import KesiapanProyekWidget from '$lib/components/anggaran/KesiapanProyekWidget.svelte';
 	import GateChangeBanner from '$lib/components/anggaran/GateChangeBanner.svelte';
 	import DisiplinKesiapanWidget from '$lib/components/DisiplinKesiapanWidget.svelte';
 	import PengecualianProyekWidget from '$lib/components/PengecualianProyekWidget.svelte';
 	import FieldActionAlertWidget from '$lib/components/project/FieldActionAlertWidget.svelte';
+	import KpiProyekHarianWidget from '$lib/components/project/KpiProyekHarianWidget.svelte';
+	import KelengkapanProyekSayaWidget from '$lib/components/project/KelengkapanProyekSayaWidget.svelte';
 	import GateKpiBannerMendesak from '$lib/components/ess/GateKpiBannerMendesak.svelte';
 	import TunggakanFisikWidget from '$lib/components/TunggakanFisikWidget.svelte';
 	import VisitBelumDitutupWidget from '$lib/components/site-checkin/VisitBelumDitutupWidget.svelte';
@@ -608,6 +611,12 @@ import { authStore, getUserDisplay, getUserInitials, shouldFilterProjectsByLeade
 			<!-- PRJ-31 — Pengecualian Hari Ini (ringkas) untuk Leader/PM; komponen mandiri, nol tampil bila tidak ada masalah. -->
 			<FieldActionAlertWidget />
 
+			<!-- Dashboard lapangan: kartu KPI harian + banner peringatan Health Score proyek (mandiri; nol tampil bila tak memimpin proyek). -->
+			<KpiProyekHarianWidget />
+
+			<!-- Kelengkapan Proyek Fase 4: "Yang harus saya lengkapi hari ini" (mandiri; nol tampil bila tak memimpin proyek). -->
+			<KelengkapanProyekSayaWidget />
+
 			<PengecualianProyekWidget />
 
 			<!-- Penajaman Gate SJ Fase 3 — Tunggakan Fisik Saya; nol tampil bila tidak ada SJ menunggak. -->
@@ -615,6 +624,9 @@ import { authStore, getUserDisplay, getUserInitials, shouldFilterProjectsByLeade
 
 			<!-- PDP-33 — Visit belum ditutup (tutup visit harian: catatan + foto); nol tampil bila tidak ada. -->
 			<VisitBelumDitutupWidget />
+
+			<!-- Rencana Penajaman Alur per Jabatan — langkah SOP + gate milik jabatan saya (ringkas; nol tampil bila tak ada data). -->
+			<SopSayaWidget />
 
 			<!-- PRJ-29 — satu pintu uang keluar; wizard menanyakan jenisnya lalu merutekan ke form yang benar. -->
 			{#if projects.length > 0}

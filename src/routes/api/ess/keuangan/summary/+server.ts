@@ -99,7 +99,7 @@ export const GET: RequestHandler = async (event) => {
 	// slip resmi tetap dari HRD setelah periode tutup.
 	const tunjanganTetap =
 		(Number(k?.tunjangan_jabatan) || 0) + (Number(k?.tunjangan_makan) || 0) +
-		(Number(k?.tunjangan_transport) || 0) + (Number(k?.tunjangan_lainnya) || 0);
+		(Number(k?.tunjangan_transport) || 0); // `tunjangan_lainnya` BUKAN kolom karyawan (dulu selalu 0 / berisiko 403 bila di-fetch)
 	const last3 = riwayatGaji.slice(-3);
 	const avgBpjsPph21 = last3.length > 0
 		? last3.reduce((s, r) => s + (Number(r.potongan_bpjs_kesehatan) || 0) + (Number(r.potongan_bpjs_ketenagakerjaan) || 0) + (Number(r.potongan_pph21) || 0), 0) / last3.length

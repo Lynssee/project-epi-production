@@ -92,7 +92,7 @@ export async function tryBindWorkstation(params: { karyawanId: number; lat: numb
 		if (!dalamRadius) return null; // "video-call layar dari kantin" — ditolak diam-diam, jatuh ke cadangan
 	}
 
-	const scanTokenJti = `${ws.id}|${matchedSlot}`;
+	const scanTokenJti = `${ws.id}|${verified.matchedSlot}`;
 	if (await isReplay(scanTokenJti)) return null;
 
 	return { workstationId: ws.id, scanTokenJti };

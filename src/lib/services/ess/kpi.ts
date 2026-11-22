@@ -63,12 +63,35 @@ export interface KpiRecord {
 	detail_spesifik?: KpiDetailKategori | null;
 	// 4 Pilar karyawan (dihitung server dari scorecard Finalized); null/undefined = disembunyikan
 	pilar?: KpiPilar | null;
+	// Bedah Nilai Saya (rincian per indikator + log audit + tip); hanya scorecard Finalized milik sendiri
+	indikator?: BedahIndikator[];
 	// L1 (bonus, General vs Spesifik v2) — peringkat anonim dalam departemen
 	peringkat_departemen?: number | null;
 	total_di_departemen?: number | null;
 }
 
 export type KpiPilarKey = 'general' | 'teknis' | 'administrasi' | 'inovasi';
+
+/** "Bedah Nilai Saya": rincian per indikator scorecard Finalized (dihitung server dari sumber_perhitungan tersimpan). */
+export interface BedahOutlier { ref: string; detail: string; nilai: number | null; satuan: string }
+export interface BedahIndikator {
+	nama: string;
+	pilar: KpiPilarKey;
+	bobot: number;
+	target: number | null;
+	nilai: number | null;
+	unit: string;
+	skor: number | null;
+	arah: 'tinggi' | 'rendah';
+	terukur: boolean;
+	otomatis: boolean;
+	catatan: string;
+	/** 'departemen' = capaian kolektif tim/sistem; 'individu' = pribadi; null = scorecard lama (belum dihitung ulang). */
+	atribusi: 'individu' | 'departemen' | null;
+	outliers: BedahOutlier[];
+	outliers_total: number | null;
+	tip: string | null;
+}
 export interface KpiPilar {
 	mode: 'shadow' | 'on';
 	composite: number | null;
@@ -139,6 +162,16 @@ async function parseErrorMessage(res: Response): Promise<string> {
 	}
 }
 
+export interface GayaKerjaSummary {
+	available: boolean;
+	profil: string | null;
+	primaryLetter: string | null;
+	dimensiLabel: string | null;
+	kekuatan: string | null;
+	tipPengembangan: string | null;
+	tanggalTes: string | null;
+}
+
 export async function getKpiList(): Promise<{
 	kpiList: KpiRecord[];
 	pendingList: KpiRecord[];
@@ -147,6 +180,7 @@ export async function getKpiList(): Promise<{
 	defaultKriteria: KriteriaItem[];
 	notifications: KpiNotification[];
 	trend: KpiTrendPoint[];
+	gayaKerja?: GayaKerjaSummary | null;
 }> {
 	const idToken = await getIdToken();
 	const res = await fetch('/api/ess/kpi', { headers: { Authorization: `Bearer ${idToken}` } });

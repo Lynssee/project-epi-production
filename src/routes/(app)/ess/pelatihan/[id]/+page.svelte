@@ -5,10 +5,14 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { getKursusDetail, selfEnrollKursus, downloadKursusSertifikatInfo, type KursusDetail } from '$lib/services/ess/training';
+	import OutcomeCard from '$lib/components/ess/OutcomeCard.svelte';
 	import TrainingPlayer from '$lib/components/ess/TrainingPlayer.svelte';
+	import KnowledgeCard from '$lib/components/inventory360/KnowledgeCard.svelte';
 	import TrainingQuiz from '$lib/components/ess/TrainingQuiz.svelte';
+	import TeksModulViewer from '$lib/components/ess/TeksModulViewer.svelte';
+	import { cacheKursusDetail, getCachedKursusDetail } from '$lib/utils/offlineTrainingCache';
 	import {
-		IconAlertTriangle, IconArrowLeft, IconAward, IconCircleCheck, IconClipboardCheck, IconDownload, IconLoader2, IconLock, IconPlayerPlay
+		IconAlertTriangle, IconArrowLeft, IconAward, IconCircleCheck, IconClipboardCheck, IconDownload, IconLoader2, IconLock, IconPlayerPlay, IconWifiOff
 	} from '@tabler/icons-svelte';
 
 	const programId = Number($page.params.id);
@@ -21,15 +25,30 @@
 	let showQuiz = $state(false);
 	let downloadingSertifikat = $state(false);
 	let sertifikatBelumBerQr = $state(false);
+	let offlineMode = $state(false); // true = menampilkan salinan tersimpan (read-only)
+	let cachedAtLabel = $state('');
 
 	async function load() {
 		loading = true;
 		errorMsg = '';
+		offlineMode = false;
 		try {
 			detail = await getKursusDetail(programId);
 			if (!activeModuleId && detail.modules.length > 0) activeModuleId = detail.modules[0].modul.id;
+			// Simpan materi teks untuk dibaca offline (hanya kursus yang diikuti; gagal simpan tidak mengganggu).
+			if (detail.enrollment) void cacheKursusDetail(detail);
 		} catch (err: any) {
-			errorMsg = err?.message || 'Gagal memuat detail kursus.';
+			// Sinyal buruk di lapangan (fetch gagal total) → pakai salinan tersimpan bila ada. Error server (404/403) tetap ditampilkan apa adanya.
+			const offline = err instanceof TypeError || (typeof navigator !== 'undefined' && navigator.onLine === false);
+			const cached = offline ? await getCachedKursusDetail(programId) : null;
+			if (cached) {
+				detail = cached.detail;
+				offlineMode = true;
+				cachedAtLabel = new Date(cached.cachedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+				if (!activeModuleId && detail.modules.length > 0) activeModuleId = detail.modules[0].modul.id;
+			} else {
+				errorMsg = offline ? 'Tidak ada sinyal dan kursus ini belum tersimpan untuk offline. Buka sekali saat ada sinyal agar materi teksnya tersimpan.' : err?.message || 'Gagal memuat detail kursus.';
+			}
 		} finally {
 			loading = false;
 		}
@@ -104,6 +123,14 @@
 			<button class="px-6 py-2.5 rounded-xl text-sm font-bold text-white gradient-bg" onclick={load}>Coba Lagi</button>
 		</div>
 	{:else if detail}
+		{#if offlineMode}
+			<div class="glass-panel rounded-2xl p-3 mb-4 flex items-start gap-2" style="background: var(--rel)">
+				<IconWifiOff size={16} class="shrink-0 mt-0.5" style="color: var(--red)" />
+				<p class="text-xs font-semibold" style="color: var(--red)">
+					Mode offline — menampilkan salinan tersimpan ({cachedAtLabel}). Materi teks bisa dibaca; progres, kuis, catatan, dan video/PDF butuh sinyal.
+				</p>
+			</div>
+		{/if}
 		<div class="mb-6">
 			<div class="flex items-center gap-2 mb-2 flex-wrap">
 				{#if detail.program.wajib}
@@ -112,11 +139,23 @@
 				{#if detail.program.kategori}
 					<span class="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">{detail.program.kategori}</span>
 				{/if}
+				{#if detail.sumber && detail.sumber.key !== 'manual_hrd'}
+					<span class="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200" title="Asal materi ini">{detail.sumber.icon} {detail.sumber.label}</span>
+				{/if}
 			</div>
 			<h1 class="text-2xl font-extrabold tracking-tight gradient-text">{detail.program.judul}</h1>
 			{#if detail.program.deskripsi}
 				<p class="text-sm mt-2" style="color: var(--sys-label3)">{detail.program.deskripsi}</p>
 			{/if}
+			{#if detail.kartu360?.length}
+				<!-- Materi bersumber Inventory 360°: buka kartu barang aslinya (spek, cara pakai, K3) tanpa meninggalkan halaman ini. -->
+				<div class="mt-3 flex flex-wrap items-center gap-2">
+					{#each detail.kartu360.slice(0, 4) as k (k.moduleId)}
+						<KnowledgeCard itemId={k.itemId} context="usage" label="📦 Lihat Kartu 360°{detail.kartu360.length > 1 ? ' · ' + (detail.modules.find((x) => x.modul.id === k.moduleId)?.modul.judul || '') : ''}" />
+					{/each}
+				</div>
+			{/if}
+			{#if !offlineMode}<OutcomeCard {programId} />{/if}
 		</div>
 
 		{#if !detail.enrollment}
@@ -165,7 +204,16 @@
 
 			<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 				<div class="lg:col-span-8 order-2 lg:order-1">
-					{#if showQuiz && detail.finalQuizId}
+					{#if offlineMode && activeModule}
+						<div class="glass-panel rounded-2xl p-5">
+							<h3 class="text-lg font-bold mb-4" style="color: var(--sys-label)">{activeModule.modul.judul}</h3>
+							{#if (activeModule.modul.tipe_konten ?? 'Teks') === 'Teks' && activeModule.modul.konten_teks}
+								{#key activeModule.modul.id}<TeksModulViewer modul={activeModule.modul} />{/key}
+							{:else}
+								<p class="text-sm" style="color: var(--sys-label3)">Modul {activeModule.modul.tipe_konten || ''} ini butuh sinyal. Buka kembali saat online.</p>
+							{/if}
+						</div>
+					{:else if showQuiz && detail.finalQuizId}
 						<TrainingQuiz quizId={detail.finalQuizId} onLulus={load} />
 					{:else if activeModule}
 						{#key activeModule.modul.id}
@@ -213,7 +261,8 @@
 						<button
 							class="glass-panel rounded-xl p-3.5 text-left flex items-center gap-3 mt-2 disabled:opacity-50"
 							style={showQuiz ? 'outline: 2px solid var(--p)' : ''}
-							disabled={!semuaModulSelesai}
+							disabled={!semuaModulSelesai || offlineMode}
+							title={offlineMode ? 'Kuis butuh sinyal' : ''}
 							onclick={() => (showQuiz = true)}
 						>
 							{#if !semuaModulSelesai}

@@ -38,7 +38,7 @@ function kolomDurasi(
 	const d = susunPayloadDurasi({
 		statusUtama: m.statusUtama,
 		tipeDurasi: m.tipeDurasi,
-		sesi: sesiInput || null
+		sesi: sesiInput === 'PAGI' || sesiInput === 'SIANG' ? sesiInput : null
 	});
 	return {
 		tipe_durasi: d.tipe_durasi,

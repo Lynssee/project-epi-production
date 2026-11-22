@@ -52,7 +52,7 @@
 	// Tanpa transkrip: bacakan isi slide itu sendiri.
 	let narrationText = $derived(
 		(modul.transkrip ?? '').trim() ||
-			slides.map((s) => `${s.title}. ${s.items.map((it) => [it.text, ...it.sub].join('. ')).join('. ')}`).join('\n')
+			slides.map((s) => `${s.title}. ${s.items.map((it: any) => [it.text, ...it.sub].join('. ')).join('. ')}`).join('\n')
 	);
 	let sentences = $derived(splitNarration(narrationText));
 	let slideOf = $derived(assignNarrationToSlides(sentences, slides));
