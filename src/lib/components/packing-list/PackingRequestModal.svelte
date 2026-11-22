@@ -253,7 +253,7 @@
 		}
 		const tplMatch = templateItems.find(t => (t.material_name || t.description || '').toLowerCase().includes(lower));
 		if (tplMatch) {
-			return { type: 'template', item: tplMatch.material_name || tplMatch.description };
+			return { type: 'template', item: tplMatch.material_name || tplMatch.description || '' };
 		}
 		return null;
 	}
@@ -862,7 +862,7 @@
 														{#if item.material_color}
 															<div class="text-[9px] text-gray-400">{item.material_color}</div>
 														{/if}
-														{#if isSelected && item.id != null && isPaintItem(item.material_name || item.description, { category: item.budget_category }) && !cleanColor(item.material_color)}
+														{#if isSelected && item.id != null && isPaintItem(item.material_name || item.description || '', { category: item.budget_category }) && !cleanColor(item.material_color)}
 															<input type="text" value={templateColorMap[item.id] || ''} oninput={(e) => setColor(item.id!, (e.target as HTMLInputElement).value)}
 																   placeholder="Warna cat (wajib), cth: RAL 7035 / Clear" title="Item cat wajib punya warna. Isi nama warna / kode RAL, atau 'Clear' untuk cat bening."
 																   class="mt-0.5 w-full text-[10px] py-0.5 px-1.5 border border-amber-300 rounded bg-amber-50 focus:border-[var(--g)] outline-none" />

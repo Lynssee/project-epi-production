@@ -89,6 +89,8 @@ export interface SubmitPackingListInput {
 	overrideAllowed?: boolean;
 	/** dipakai untuk mencatat jejak override ke app_notifications. */
 	firebaseUid?: string;
+	/** Alasan terstruktur leader (Skor Keyakinan Kuning/Merah) — dititipkan di payload approval, dibaca ERP saat Dasar Permintaan. */
+	alasanKeyakinan?: { kategori: string; catatan: string } | null;
 }
 
 /**
@@ -103,7 +105,8 @@ export async function submitPackingListRequest({
 	departmentKey,
 	items,
 	overrideAllowed = false,
-	firebaseUid
+	firebaseUid,
+	alasanKeyakinan = null
 }: SubmitPackingListInput) {
 	if (!requesterId) throw new Error('requesterId wajib diisi');
 	const cleanItems = (items || []).filter((it) => it?.id && num(it.qty) > 0);
@@ -203,7 +206,7 @@ export async function submitPackingListRequest({
 		departmentKey: departmentKey || undefined,
 		requesterId,
 		callbackUrl: `${ERP_EPI_1_ORIGIN}/api/packing-list/approval-callback`,
-		payload: { itemIds: ids }
+		payload: { itemIds: ids, ...(alasanKeyakinan ? { alasan_keyakinan: alasanKeyakinan } : {}) }
 	});
 
 	createMasterPengajuanEntry({

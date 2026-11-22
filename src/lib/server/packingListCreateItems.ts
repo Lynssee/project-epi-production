@@ -67,6 +67,8 @@ export interface CreatePackingItemsInput {
 	projectName?: string | null;
 	overrideAllowed?: boolean;
 	firebaseUid?: string;
+	/** Alasan terstruktur leader (Skor Keyakinan Kuning/Merah) — dititipkan di payload approval, dibaca ERP saat Dasar Permintaan. */
+	alasanKeyakinan?: { kategori: string; catatan: string } | null;
 }
 
 export async function createPackingItemsRequest({
@@ -77,7 +79,8 @@ export async function createPackingItemsRequest({
 	items,
 	projectName,
 	overrideAllowed = false,
-	firebaseUid
+	firebaseUid,
+	alasanKeyakinan = null
 }: CreatePackingItemsInput) {
 	if (!projectId) throw new Error('projectId wajib diisi');
 	if (!requesterId) throw new Error('requesterId wajib diisi');
@@ -223,7 +226,7 @@ export async function createPackingItemsRequest({
 			departmentKey: departmentKey || 'PROJECT',
 			requesterId,
 			callbackUrl: `${ERP_EPI_1_ORIGIN}/api/packing-list/approval-callback`,
-			payload: { itemIds: ids, nonRap: true }
+			payload: { itemIds: ids, nonRap: true, ...(alasanKeyakinan ? { alasan_keyakinan: alasanKeyakinan } : {}) }
 		});
 		approvalRequestId = approvalRequest?.id || null;
 		if (!approvalRequestId) throw new Error('Approval engine tidak mengembalikan id request');

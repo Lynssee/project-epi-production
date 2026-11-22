@@ -92,7 +92,17 @@ export interface OpnameSession {
 	data_snapshot: { projectId: number; projectName: string; submittedBy: string; items: any[] };
 }
 
-export async function fetchOpnameSessions(): Promise<{ sessions: OpnameSession[]; pilotProjectIds: number[] }> {
+export interface OpnameSessionsResponse {
+	sessions: OpnameSession[];
+	pilotProjectIds: number[];
+	/** Nama proyek pilot (untuk pemilih proyek) — diisi API; kosong bila tak ada proyek pilot. */
+	pilotProjects?: Array<{ id: number; name: string }>;
+	userProjects?: Array<{ id: number; name: string }>;
+	userRole?: string;
+	userKaryawan?: string;
+}
+
+export async function fetchOpnameSessions(): Promise<OpnameSessionsResponse> {
 	const res = await authedFetch('/api/inventory-proyek/opname');
 	if (!res.ok) {
 		const err = await res.json().catch(() => ({}));

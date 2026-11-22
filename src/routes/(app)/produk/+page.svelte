@@ -274,7 +274,7 @@
 					<div class="flex flex-wrap gap-2 mt-3 pt-2" style="border-top: 1px solid var(--sys-sep)">
 						<button
 							class="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-semibold text-white bg-indigo-600 hover:bg-indigo-500"
-							onclick={() => goToMix(selected.namaKode)}
+							onclick={() => goToMix(selected!.namaKode)}
 							title="Buka kalkulator rasio pencampuran base & hardener"
 						>
 							<IconCalculator size={14} /> Hitung Campuran
@@ -288,7 +288,7 @@
 						</button>
 						<button
 							class="flex-1 min-w-[110px] flex items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800"
-							onclick={() => goto(`/support/baru?tipe=Komplain&departemen=QC%20%2F%20R%26D&judul=${encodeURIComponent('Kendala Aplikasi Cat: ' + selected.namaKode)}`)}
+							onclick={() => goto(`/support/baru?tipe=Komplain&departemen=QC%20%2F%20R%26D&judul=${encodeURIComponent('Kendala Aplikasi Cat: ' + selected!.namaKode)}`)}
 							title="Laporkan masalah aplikasi (menggumpal, blistering, beda warna) ke tim QC/R&D"
 						>
 							<IconAlertCircle size={14} /> Lapor Kendala

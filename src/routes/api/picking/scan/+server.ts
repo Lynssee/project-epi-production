@@ -36,7 +36,7 @@ export async function POST(event: RequestEvent) {
 	let itemId: number | null = null;
 	const parsed = parseEpiQr(rawCode);
 	if (parsed?.type === 'ITEM') {
-		itemId = parsed.id;
+		itemId = Number(parsed.id);
 	} else {
 		const found = await directusServerJson<{ data: Array<{ id: number }> }>(
 			`/items/identitas_barang?filter[_or][0][kode_item][_eq]=${encodeURIComponent(rawCode)}&filter[_or][1][kode_singkat_item][_eq]=${encodeURIComponent(rawCode)}&fields=id&limit=1`

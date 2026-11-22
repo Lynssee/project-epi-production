@@ -35,6 +35,9 @@
 	import { isPlanningDerived, plannedFirst } from '$lib/shared/planningRef';
 	import PlanningFieldPanels from '$lib/components/packing-list/PlanningFieldPanels.svelte';
 	import PlCoverageLivePanel from '$lib/components/packing-list/PlCoverageLivePanel.svelte';
+	import PlKitCard from '$lib/components/packing-list/PlKitCard.svelte';
+	import PlSetCard from '$lib/components/packing-list/PlSetCard.svelte';
+	import PlApdCard from '$lib/components/packing-list/PlApdCard.svelte';
 
 	interface PackingListBaruDraft {
 		selectedProject: string;
@@ -396,6 +399,37 @@
 	let totalNewItems = $derived(validNewItems.length);
 	let totalItems = $derived(totalExistingSelected + totalNewItems);
 
+	// Product Pairing Fase 3: tambah pasangan (thinner / aksesoris) dari PlSetCard. Satu baris per nama (tidak menggandakan yang sudah ada di daftar);
+	// qty & satuan hanya saran. Tautan katalog dicoba otomatis (nama persis), selain itu label "Belum tertaut" tampil seperti chip cepat.
+	async function addSetItems(rows: Array<{ name: string; qty: number; unit: string; kind: 'thinner' | 'aksesoris' }>) {
+		const have = new Set(newItems.map((i) => (i.material_name || '').trim().toUpperCase()));
+		const fresh = rows.filter((r) => r.name && !have.has(r.name.trim().toUpperCase()));
+		if (!fresh.length) return;
+		const start = newItems.length;
+		newItems = [
+			...newItems,
+			...fresh.map((r) => ({
+				material_name: r.name,
+				material_color: '',
+				qty: Math.max(1, Number(r.qty) || 1),
+				unit: normalizeUnitLabel(r.unit, unitMasterList) || '',
+				unit_price: 0,
+				description: r.kind === 'thinner' ? 'Pasangan cat (Set Produk)' : 'Kelengkapan set alat (Set Equipment)',
+				budget_category: guessPlCategory(r.name, categoryKeywords) || (r.kind === 'thinner' ? 'packing_consumable' : 'packing_sewa_alat'),
+				identitas_barang_id: null
+			}))
+		];
+		await Promise.all(fresh.map(async (r, k) => {
+			try {
+				const hit = await resolveCatalogExact(r.name);
+				const idx = start + k;
+				if (hit && newItems[idx]?.material_name === r.name && !newItems[idx].identitas_barang_id) newItems[idx].identitas_barang_id = hit.id;
+			} catch (e) {
+				console.warn('[addSetItems] Gagal mencocokkan katalog:', e);
+			}
+		}));
+	}
+
 	// Menu Lampiran v2 F4 — item draf untuk pratinjau lampiran otomatis (barang baru manual tak punya master → "?").
 	let lampiranPreviewItems = $derived([
 		...existingItems.filter((i) => selectedExisting.has(i.id)).map((i) => ({
@@ -408,6 +442,8 @@
 	]);
 
 	// Gate Rasionalitas PL (Fase 4) — daftar item untuk kalkulator kewajaran qty (RAB terpilih + barang baru). key menunjuk balik ke baris form.
+	// Alasan terstruktur leader dari PlCoverageLivePanel (null bila tak perlu/belum lengkap) — dititipkan di payload approval saat Ajukan.
+	let alasanKeyakinan = $state<{ kategori: string; catatan: string } | null>(null);
 	let coverageItems = $derived([
 		...existingItems.filter((i) => selectedExisting.has(i.id)).map((i) => ({
 			key: 'e:' + i.id,
@@ -670,7 +706,8 @@
 
 				const result = await submitPackingRequest(itemsToSubmit, {
 					projectName,
-					requesterName: currentKaryawanName || undefined
+					requesterName: currentKaryawanName || undefined,
+					alasanKeyakinan
 				});
 				if (!result) success = false;
 			}
@@ -681,7 +718,8 @@
 					Number(selectedProject),
 					validNewItems,
 					currentKaryawanName || 'Leader',
-					projectName
+					projectName,
+					alasanKeyakinan
 				);
 				if (!result) success = false;
 			}
@@ -948,7 +986,7 @@
 									</p>
 									<p class="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
 										{#if cleanColor(item.material_color)}
-											<ColorChip color={cleanColor(item.material_color)} size="xs" />
+											<ColorChip color={cleanColor(item.material_color) ?? undefined} size="xs" />
 											<span>·</span>
 										{:else if isPaintItem(item.material_name || item.description)}
 											<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold text-[9.5px]">
@@ -1241,7 +1279,13 @@
 				{/if}
 			</div>
 
-			<PlCoverageLivePanel projectId={selectedProject ? Number(selectedProject) : null} items={coverageItems} onApply={applyCoverageQty} />
+			<PlCoverageLivePanel projectId={selectedProject ? Number(selectedProject) : null} items={coverageItems} onApply={applyCoverageQty} bind:alasan={alasanKeyakinan} />
+
+			<PlSetCard projectId={selectedProject ? Number(selectedProject) : null} items={coverageItems} onAdd={addSetItems} />
+
+			<PlKitCard projectId={selectedProject ? Number(selectedProject) : null} itemNames={coverageItems.map((i) => i.nama_barang)} />
+
+			<PlApdCard projectId={selectedProject ? Number(selectedProject) : null} items={coverageItems} />
 
 			<PlLampiranPreviewCard projectId={selectedProject ? Number(selectedProject) : null} items={lampiranPreviewItems} />
 
@@ -1316,7 +1360,7 @@
 												{#if kodeItemMap[item.identitas_barang_id]}<span class="text-[10px] font-mono font-bold text-emerald-600 ml-1">{kodeItemMap[item.identitas_barang_id]}</span>{/if}
 											</div>
 											{#if cleanColor(item.material_color)}
-												<div class="text-[10px] text-gray-500 mt-0.5"><ColorChip color={cleanColor(item.material_color)} size="xs" /></div>
+												<div class="text-[10px] text-gray-500 mt-0.5"><ColorChip color={cleanColor(item.material_color) ?? undefined} size="xs" /></div>
 											{:else if isPaintItem(item.material_name || item.description)}
 												<div class="text-[10px] text-amber-600 font-bold mt-0.5">⚠️ Belum ada spesifikasi warna</div>
 											{/if}
@@ -1343,7 +1387,7 @@
 											<div class="text-[12px] font-semibold text-gray-800 truncate">{item.material_name}</div>
 											<div class="text-[10px] text-gray-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
 												{#if cleanColor(item.material_color)}
-													<ColorChip color={cleanColor(item.material_color)} size="xs" />
+													<ColorChip color={cleanColor(item.material_color) ?? undefined} size="xs" />
 													<span>·</span>
 												{:else if isPaintItem(item.material_name, { category: item.budget_category })}
 													<span class="text-amber-600 font-bold">⚠️ Belum ada spesifikasi warna</span>

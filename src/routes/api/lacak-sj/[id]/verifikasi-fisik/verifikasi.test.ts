@@ -39,7 +39,7 @@ beforeEach(() => {
 	projRow = { id: 3, leader_id: 20, gr_backup_karyawan_ids: [21] };
 	aktorMock = { karyawan: { id: 20, nama_karyawan: 'PL ANDI' }, projectIds: [3], isAdmin: false };
 });
-const status = async (p: Promise<any>) => p.then(() => 200, (e) => e?.status ?? 500);
+const status = async (p: any) => Promise.resolve(p).then(() => 200, (e) => e?.status ?? 500);
 
 describe('POST verifikasi-fisik (SJ-06)', () => {
 	it('semua sesuai: kontrak §4.4, scan_log tanpa pindah tahap, tanpa log/notif bermasalah', async () => {

@@ -14,9 +14,9 @@ vi.mock('$lib/server/directus', () => ({
 	})
 }));
 const gateMode = vi.fn(async () => 'shadow' as 'shadow' | 'soft' | 'hard');
-vi.mock('$lib/server/gateEnforcement', () => ({ getFieldGateMode: (k: string) => gateMode(k) }));
+vi.mock('$lib/server/gateEnforcement', () => ({ getFieldGateMode: (k: string) => (gateMode as any)(k) }));
 const audit = vi.fn(async () => {});
-vi.mock('$lib/server/gates/gateAudit', () => ({ writeGateAudit: (p: any) => audit(p) }));
+vi.mock('$lib/server/gates/gateAudit', () => ({ writeGateAudit: (p: any) => (audit as any)(p) }));
 const createDoc = vi.fn();
 vi.mock('$lib/server/returGudangServer', () => ({ createReturDocument: (i: any) => createDoc(i) }));
 

@@ -67,6 +67,9 @@ export interface SesiRingkas {
 	id: number;
 	kode: string;
 	status: string;
+	scope_type?: 'gudang' | 'project' | string;
+	project_id?: number | null;
+	project_nama?: string | null;
 	gudang_id: number | null;
 	gudang_nama: string | null;
 	total_lines: number;
@@ -79,7 +82,7 @@ export interface SesiRingkas {
 
 export async function listSesiAktif(karyawan: { nama_karyawan: string; email_company?: string | null }): Promise<SesiRingkas[]> {
 	const rows = await dget(
-		`/items/${SESSION}?filter[status][_eq]=counting&sort=-id&limit=50&fields=id,kode,status,gudang_id,rak_id,total_lines,counted_lines,pic_hitung,jadwal_tanggal`
+		`/items/${SESSION}?filter[status][_eq]=counting&sort=-id&limit=50&fields=id,kode,status,scope_type,project_id,gudang_id,rak_id,total_lines,counted_lines,pic_hitung,jadwal_tanggal`
 	);
 	if (!rows.length) return [];
 	const gIds = [...new Set(rows.map((r) => Number(idOf(r.gudang_id) || idOf(r.rak_id))).filter(Boolean))];
@@ -87,6 +90,13 @@ export async function listSesiAktif(karyawan: { nama_karyawan: string; email_com
 	if (gIds.length) {
 		for (const g of await dget(`/items/gudang?filter[id][_in]=${gIds.join(',')}&fields=id,kode_gudang,nama_gudang&limit=-1`)) {
 			gName.set(g.id, `${g.kode_gudang || ''} ${g.nama_gudang || ''}`.trim());
+		}
+	}
+	const pIds = [...new Set(rows.map((r) => Number(idOf(r.project_id))).filter(Boolean))];
+	const pName = new Map<number, string>();
+	if (pIds.length) {
+		for (const p of await dget(`/items/projects?filter[id][_in]=${pIds.join(',')}&fields=id,name&limit=-1`)) {
+			pName.set(p.id, p.name || `Proyek #${p.id}`);
 		}
 	}
 	// jumlah baris "hitung ulang" per sesi — 1 aggregate groupBy (bukan fetch baris)
@@ -98,28 +108,42 @@ export async function listSesiAktif(karyawan: { nama_karyawan: string; email_com
 	});
 	const recMap = new Map<number, number>(recount.map((r: any) => [Number(idOf(r.session)), Number(r.count) || 0]));
 	const me = [karyawan.nama_karyawan, karyawan.email_company].filter(Boolean).map((s) => String(s).toLowerCase());
-	return rows.map((r) => ({
-		id: r.id,
-		kode: r.kode,
-		status: r.status,
-		gudang_id: Number(idOf(r.gudang_id) || idOf(r.rak_id)) || null,
-		gudang_nama: gName.get(Number(idOf(r.gudang_id) || idOf(r.rak_id))) || null,
-		total_lines: Number(r.total_lines) || 0,
-		counted_lines: Number(r.counted_lines) || 0,
-		pic_hitung: r.pic_hitung || null,
-		mine: !!r.pic_hitung && me.includes(String(r.pic_hitung).toLowerCase()),
-		jadwal_tanggal: r.jadwal_tanggal || null,
-		recount_lines: recMap.get(r.id) || 0
-	}));
+	return rows.map((r) => {
+		const prjId = Number(idOf(r.project_id)) || null;
+		const gid = Number(idOf(r.gudang_id) || idOf(r.rak_id)) || null;
+		return {
+			id: r.id,
+			kode: r.kode,
+			status: r.status,
+			scope_type: r.scope_type || (prjId ? 'project' : 'gudang'),
+			project_id: prjId,
+			project_nama: prjId ? pName.get(prjId) || `Proyek #${prjId}` : null,
+			gudang_id: gid,
+			gudang_nama: gid ? gName.get(gid) || null : null,
+			total_lines: Number(r.total_lines) || 0,
+			counted_lines: Number(r.counted_lines) || 0,
+			pic_hitung: r.pic_hitung || null,
+			mine: !!r.pic_hitung && me.includes(String(r.pic_hitung).toLowerCase()),
+			jadwal_tanggal: r.jadwal_tanggal || null,
+			recount_lines: recMap.get(r.id) || 0
+		};
+	});
 }
 
 /** Detail sesi + baris. Blind count: qty sistem/mutasi/selisih TIDAK PERNAH dikirim ke klien saat sesi counting. */
 export async function getSesiLapangan(id: number) {
 	const header = (
-		await directusServerJson<{ data: any }>(`/items/${SESSION}/${id}?fields=id,kode,status,blind_count,gudang_id,rak_id,total_lines,counted_lines,pic_hitung`)
+		await directusServerJson<{ data: any }>(`/items/${SESSION}/${id}?fields=id,kode,status,blind_count,scope_type,project_id,gudang_id,rak_id,total_lines,counted_lines,pic_hitung`)
 	)?.data;
 	if (!header) throw fail('Sesi tidak ditemukan.', 404);
 	if (header.status !== 'counting') throw fail('Sesi ini sedang tidak dalam tahap menghitung.', 409);
+
+	const prjId = Number(idOf(header.project_id)) || null;
+	let projectNama: string | null = null;
+	if (prjId) {
+		const prj = (await directusServerJson<{ data: any }>(`/items/projects/${prjId}?fields=id,name`))?.data;
+		projectNama = prj?.name || `Proyek #${prjId}`;
+	}
 
 	const lines = await dget(
 		`/items/${LINE}?filter[session][_eq]=${id}&limit=-1&sort=id&fields=id,item_id,rak_id,status,qty_fisik,alasan_selisih,alasan_catatan,foto_bukti,qty_sistem_snapshot`
@@ -136,7 +160,17 @@ export async function getSesiLapangan(id: number) {
 	}
 	const blind = !!header.blind_count;
 	return {
-		session: { id: header.id, kode: header.kode, status: header.status, blind_count: blind, total_lines: header.total_lines, counted_lines: header.counted_lines },
+		session: {
+			id: header.id,
+			kode: header.kode,
+			status: header.status,
+			scope_type: header.scope_type || (prjId ? 'project' : 'gudang'),
+			project_id: prjId,
+			project_nama: projectNama,
+			blind_count: blind,
+			total_lines: header.total_lines,
+			counted_lines: header.counted_lines
+		},
 		lines: lines.map((l) => {
 			const it = items.get(Number(idOf(l.item_id)));
 			const rak = raks.get(Number(idOf(l.rak_id)));

@@ -8,7 +8,7 @@ const ledger = vi.fn(async () => ({ entry: { id: 1 }, deduped: false }));
 
 vi.mock('$lib/server/goodsReceived/guard', () => ({ authenticateProjectLeader: vi.fn(async () => ({ karyawan: { id: 7 }, projectIds: [1] })) }));
 vi.mock('$lib/server/projectLedger', () => ({
-	appendLedgerEntry: (p: unknown) => ledger(p),
+	appendLedgerEntry: (p: unknown) => (ledger as any)(p),
 	rebuildProjectStockBalance: vi.fn(async () => {}),
 	TRANSACTION_TYPES: { TRANSFER_OUT: 'TRANSFER-OUT', TRANSFER_IN: 'TRANSFER-IN' }
 }));

@@ -9,6 +9,7 @@ import { requireUser } from '$lib/server/firebaseAuth';
 import { getKaryawanByFirebaseUid } from '$lib/server/approvalSubmit';
 import { submitPackingListRequest } from '$lib/server/packingListSubmit';
 import { resolveFieldOverrideAllowed } from '$lib/server/gates/plFieldOverride';
+import { sanitizeAlasanInput } from '$lib/shared/plConfidence';
 
 export async function POST(event: RequestEvent) {
 	const fbUser = await requireUser(event);
@@ -28,7 +29,8 @@ export async function POST(event: RequestEvent) {
 			departmentKey: karyawan.divisi,
 			items,
 			overrideAllowed,
-			firebaseUid: fbUser.localId
+			firebaseUid: fbUser.localId,
+			alasanKeyakinan: sanitizeAlasanInput(body?.alasan_keyakinan)
 		});
 		return json({ success: true, data: result });
 	} catch (e: any) {

@@ -10,6 +10,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { IconInfoCircle, IconX } from '@tabler/icons-svelte';
+	import { getStatusSayaProgram } from '$lib/services/ess/training';
 	import { getKnowledgeCard, isCardContextEnabled, isFeedbackEnabled, submitCardFeedback, isInspectionEnabled, getInspectionChecked, saveInspection, trackCardOpen, type KnowledgeCardData } from '$lib/services/inventoryCardApi';
 	import { buildInspectionItems, summarizeInspection } from '$lib/services/inventory360/inventoryKnowledgeInspection.js';
 	import { FEEDBACK_KINDS, FEEDBACK_NOTE_MAX } from '$lib/services/inventory360/inventoryKnowledgeFeedback.js';
@@ -47,6 +48,15 @@
 	let loaded = $state(false);
 	let error = $state('');
 	let open = $state(false);
+	// Status kelulusan SAYA untuk program training kartu ini (null = belum ikut / tak terbaca). Dimuat sekali, di-cache per sesi.
+	let statusSaya = $state<string | null>(null);
+	$effect(() => {
+		const pid = card?.profile?.training_program_id;
+		if (!pid || card?.profile?.status !== 'verified') { statusSaya = null; return; }
+		let batal = false;
+		getStatusSayaProgram(pid).then((s) => { if (!batal) statusSaya = s; });
+		return () => { batal = true; };
+	});
 
 	// Checklist inspeksi terima (Fase C)
 	let inspectionOn = $state(false);
@@ -204,9 +214,15 @@
 		{/if}
 
 		{#if card.profile?.training_program_id && card.profile.status === 'verified'}
-			<a class="mb-2 block rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800" href="/ess/pelatihan/{card.profile.training_program_id}">
-				📘 Pelajari (5 menit){card.profile.wajib_training ? ' — WAJIB sebelum meminta barang ini' : ''}
-			</a>
+			{#if statusSaya === 'Lulus'}
+				<a class="mb-2 block rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800" href="/ess/pelatihan/{card.profile.training_program_id}">
+					✅ Anda sudah lulus kuis barang ini <span class="font-normal">— ketuk untuk mengulang materi</span>
+				</a>
+			{:else}
+				<a class="mb-2 block rounded-lg border {card.profile.wajib_training ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-blue-300 bg-blue-50 text-blue-800'} px-3 py-2 text-sm font-semibold" href="/ess/pelatihan/{card.profile.training_program_id}">
+					🎓 Pelajari &amp; Kuis 5 Menit{statusSaya === 'Remedial' ? ' — perlu diulang' : ''}{card.profile.wajib_training ? ' — WAJIB sebelum meminta barang ini' : ''}
+				</a>
+			{/if}
 		{/if}
 
 		{#if !card.profile}

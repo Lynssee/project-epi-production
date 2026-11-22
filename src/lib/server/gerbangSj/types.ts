@@ -33,7 +33,9 @@ export const GATE_KODE = [
 	// Blocker SJH-12 yang sudah ada sebelum GSP (guard cetak/barang bermasalah/gate ERP) — dipertahankan.
 	'BELUM_DICETAK', 'BARANG_BERMASALAH', 'GATE',
 	// Umum
-	'TIDAK_DITEMUKAN', 'INPUT_TIDAK_VALID', 'TIDAK_ADA_AKSES', 'BELUM_LOGIN'
+	'TIDAK_DITEMUKAN', 'INPUT_TIDAK_VALID', 'TIDAK_ADA_AKSES', 'BELUM_LOGIN',
+	// Dipakai langsung oleh mutasi.ts / rules.ts (GateError) tetapi belum terdaftar di tipe ini.
+	'AKSI_TIDAK_VALID', 'FOTO_GERBANG_WAJIB'
 ] as const;
 export type GateKode = (typeof GATE_KODE)[number];
 

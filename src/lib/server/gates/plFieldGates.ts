@@ -120,6 +120,8 @@ export interface FieldPLCtx {
 export interface FieldGate {
 	gate_key: string;
 	label: string;
+	/** Mode efektif gate (shadow/warn/soft/hard) — diisi bila gate dibaca dari konfigurasi mode (opsional). */
+	mode?: string;
 	severity: 'WAJIB' | 'SEMI';
 	status: 'passed' | 'failed' | 'not_applicable';
 	message: string;
@@ -378,14 +380,14 @@ export function evaluateFieldPLGates(
 				const cr = evaluateCoverage({ areaM2: cov.area.areaM2, items, rates: cov.rates, priorByRateId: cov.priorByRateId, settings: cov.settings });
 				bucket.G_PKL_COVERAGE_M2.evaluated += cr.evaluatedCount;
 				for (const r of cr.items.filter((x: any) => x.status === 'over')) {
-					bucket.G_PKL_COVERAGE_M2.problems.push(`${r.nama_barang} (diminta ${r.qty} ${r.unit}, wajar maks ${r.suggestedQty} ${r.unit} untuk ${Math.round(cov.area.areaM2 * 10) / 10} m²)`);
+					bucket.G_PKL_COVERAGE_M2.problems.push(`${r.nama_barang} (diminta ${r.qty} ${r.unit}, wajar maks ${(r as any).suggestedQty} ${r.unit} untuk ${Math.round(cov.area.areaM2 * 10) / 10} m²)`);
 					note('G_PKL_COVERAGE_M2', r.key);
 				}
 			if (cov.dailyRate) {
 					const rr = evaluateRunRate({ areaM2: cov.area.areaM2, dailyRate: cov.dailyRate, items, rates: cov.rates, siteStockByRateId: cov.siteStockByRateId, settings: cov.settings });
 					bucket.G_PKL_TIMELINE_RUNRATE.evaluated += rr.evaluatedCount;
 					for (const r of rr.items.filter((x: any) => x.status === 'over')) {
-						bucket.G_PKL_TIMELINE_RUNRATE.problems.push(`${r.nama_barang} (diminta ${r.qty} ${r.unit}, kebutuhan ${cov.settings.max_buffer_days} hari kerja maks ${r.suggestedQty} ${r.unit})`);
+						bucket.G_PKL_TIMELINE_RUNRATE.problems.push(`${r.nama_barang} (diminta ${r.qty} ${r.unit}, kebutuhan ${cov.settings.max_buffer_days} hari kerja maks ${(r as any).suggestedQty} ${r.unit})`);
 						note('G_PKL_TIMELINE_RUNRATE', r.key);
 					}
 				}

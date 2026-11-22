@@ -13,6 +13,7 @@ import { requireUser } from '$lib/server/firebaseAuth';
 import { getKaryawanByFirebaseUid } from '$lib/server/approvalSubmit';
 import { createPackingItemsRequest } from '$lib/server/packingListCreateItems';
 import { resolveFieldOverrideAllowed } from '$lib/server/gates/plFieldOverride';
+import { sanitizeAlasanInput } from '$lib/shared/plConfidence';
 
 export async function POST(event: RequestEvent) {
 	const fbUser = await requireUser(event);
@@ -36,7 +37,8 @@ export async function POST(event: RequestEvent) {
 			items: rawItems,
 			projectName: body?.projectName || null,
 			overrideAllowed,
-			firebaseUid: fbUser.localId
+			firebaseUid: fbUser.localId,
+			alasanKeyakinan: sanitizeAlasanInput(body?.alasan_keyakinan)
 		});
 		return json({ success: true, data: result });
 	} catch (e: any) {
