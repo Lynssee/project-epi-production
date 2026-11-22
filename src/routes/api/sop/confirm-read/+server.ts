@@ -4,6 +4,19 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { directusServerJson } from '$lib/server/directus';
+import { signKonfirmasi, persistSignatureHash } from '$lib/server/paktaSign';
+
+/** Kode tanda tangan otomatis pakta (null bila rahasia belum diset). Alur → versi alur; SOP → version_seq. */
+function tandaTangan(karyawanId: number, sopId: number | null, flowKey: string | null, sopVersionSeq: number, flowVersion: number | null | undefined, at: string, ip: string | null): string | null {
+	return signKonfirmasi({
+		karyawanId,
+		docType: flowKey ? 'flow' : 'sop',
+		docKey: flowKey ?? (sopId as number),
+		version: flowKey ? Number(flowVersion) || 1 : sopVersionSeq,
+		confirmedAt: at,
+		ip
+	});
+}
 
 export const POST: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
@@ -37,6 +50,7 @@ export const POST: RequestHandler = async (event) => {
 		const existingRes = await directusServerJson<{ data: any[] }>(`/items/sop_read_confirmations?${filterStr}limit=1&fields=id,sop_version_seq,flow_version`);
 		const existing = existingRes?.data?.[0];
 		const clientIp = event.getClientAddress ? event.getClientAddress() : null;
+		const createdAt = new Date().toISOString();
 
 		if (existing) {
 			const hasSopMatch = sopId && Number(existing.sop_version_seq || 0) >= sopVersionSeq;
@@ -44,19 +58,28 @@ export const POST: RequestHandler = async (event) => {
 			if (hasSopMatch || hasFlowMatch) {
 				return json({ success: true, message: 'Sudah dikonfirmasi sebelumnya', already_confirmed: true });
 			}
+			const updatedAt = new Date().toISOString();
+			const updatedFlowVersion = flowVersion || existing.flow_version;
 			await directusServerJson(`/items/sop_read_confirmations/${existing.id}`, {
 				method: 'PATCH',
 				body: JSON.stringify({
 					sop_version_seq: sopVersionSeq,
-					flow_version: flowVersion || existing.flow_version,
-					confirmed_at: new Date().toISOString(),
+					flow_version: updatedFlowVersion,
+					confirmed_at: updatedAt,
 					ip_address: clientIp
 				})
 			});
-			return json({ success: true, message: 'Pembaruan konfirmasi baca berhasil dicatat' });
+			const updatedSig = tandaTangan(karyawan.id, sopId, flowKey, sopVersionSeq, updatedFlowVersion, updatedAt, clientIp);
+			await persistSignatureHash('sop_read_confirmations', existing.id, updatedSig);
+			return json({
+				success: true,
+				message: 'Pembaruan konfirmasi baca berhasil dicatat',
+				confirmed_at: updatedAt,
+				signature: updatedSig
+			});
 		}
 
-		await directusServerJson('/items/sop_read_confirmations', {
+		const created = await directusServerJson<{ data: any }>('/items/sop_read_confirmations', {
 			method: 'POST',
 			body: JSON.stringify({
 				karyawan_id: karyawan.id,
@@ -64,12 +87,21 @@ export const POST: RequestHandler = async (event) => {
 				sop_version_seq: sopVersionSeq,
 				flow_key: flowKey || null,
 				flow_version: flowVersion || null,
-				confirmed_at: new Date().toISOString(),
+				confirmed_at: createdAt,
 				ip_address: clientIp
 			})
 		});
 
-		return json({ success: true, message: 'Konfirmasi baca berhasil dicatat' });
+		// Directus mengisi confirmed_at (date-created) sendiri → tanda tangan memakai nilai TERSIMPAN.
+		const storedAt = created?.data?.confirmed_at ?? createdAt;
+		const signature = tandaTangan(karyawan.id, sopId, flowKey, sopVersionSeq, flowVersion, storedAt, clientIp);
+		await persistSignatureHash('sop_read_confirmations', created?.data?.id, signature);
+		return json({
+			success: true,
+			message: 'Konfirmasi baca berhasil dicatat',
+			confirmed_at: storedAt,
+			signature
+		});
 	} catch (err: any) {
 		console.error('[/api/sop/confirm-read project-epi] Gagal mencatat konfirmasi:', err?.message || err);
 		return json({ success: false, error: err?.message || 'Gagal mencatat konfirmasi baca' }, { status: 500 });

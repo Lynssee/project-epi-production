@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildBukuSakuRows, buildBukuSakuHtml, isControlled, orderedSteps } from './bukuSakuAlurPdf';
+import { buildBukuSakuRows, buildBukuSakuHtml, buildBukuSakuJabatanHtml, isControlled, orderedSteps } from './bukuSakuAlurPdf';
 import type { ProcessFlow } from '$lib/data/processGuidance';
 
 const flow = (over: Partial<ProcessFlow> = {}): ProcessFlow =>
@@ -81,5 +81,38 @@ describe('buildBukuSakuHtml', () => {
 		expect(none).toContain('tidak terbaca saat dicetak: admin down');
 		expect(none).toContain('G_X');
 		expect(buildBukuSakuHtml({ flow: flow(), gateInfo: null })).toContain('tidak terbaca saat dicetak');
+	});
+});
+
+describe('onlyNodeIds / bodyOnly / buildBukuSakuJabatanHtml', () => {
+	const f: any = { id: 'f', title: 'Alur X', description: '', lanes: [], edges: [], approval_status: 'published', nodes: [
+		{ id: 'a', type: 'task', lane: 'l', col: 0, label: 'Langkah A', pic: 'P1' },
+		{ id: 'b', type: 'task', lane: 'l', col: 1, label: 'Langkah B', pic: 'P2' },
+		{ id: 'c', type: 'task', lane: 'l', col: 2, label: 'Langkah C', pic: 'P1' }
+	] };
+	it('onlyNodeIds menyaring langkah & menomori ulang; tanpa opsi → perilaku lama (semua langkah)', () => {
+		const sebagian = buildBukuSakuHtml({ flow: f, onlyNodeIds: ['a', 'c'] });
+		expect(sebagian).toContain('Langkah A');
+		expect(sebagian).not.toContain('Langkah B');
+		expect(sebagian).toMatch(/<td class="c">2<\/td>\s*<td><b>Langkah C/);
+		expect(buildBukuSakuHtml({ flow: f })).toContain('Langkah B');
+	});
+	it('bodyOnly mengembalikan isi body tanpa <html>/<style>', () => {
+		const body = buildBukuSakuHtml({ flow: f, bodyOnly: true });
+		expect(body).not.toContain('<html');
+		expect(body).not.toContain('<style>');
+		expect(body).toContain('Alur X');
+	});
+	it('Buku Saku Jabatan: satu dokumen, sampul + daftar alur + pemisah halaman; judul di-escape', () => {
+		const html = buildBukuSakuJabatanHtml({ posisiNama: 'MEKANIK <b>', groups: [{ flow: f, nodeIds: ['a', 'c'] }, { flow: { ...f, id: 'g', title: 'Alur Y' }, nodeIds: ['b'] }], dicetakOleh: 'Budi' });
+		expect((html.match(/<html/g) || []).length).toBe(1);
+		expect(html).toContain('MEKANIK &lt;b&gt;');
+		expect(html).toContain('Langkah milik jabatan ini:</b> 3');
+		expect(html).toContain('Alur terkait:</b> 2');
+		expect((html.match(/break-before:page/g) || []).length).toBe(2);
+		expect(html).toContain('<style>');
+	});
+	it('tanpa grup → tidak melempar (sampul saja)', () => {
+		expect(() => buildBukuSakuJabatanHtml({ posisiNama: 'X', groups: [] })).not.toThrow();
 	});
 });

@@ -5,6 +5,7 @@ import { directusServerJson } from '$lib/server/directus';
 import { todayJakarta } from '$lib/server/ess/time';
 import { getRoomMeta, getRoomItemCount } from '$lib/server/gaRuanganMeta';
 import { getGaAsetSettings } from '$lib/server/gaAsetSettings';
+import { cleanCheckpointCode } from '$lib/utils/checkpointScanRoute';
 
 /**
  * Resolusi QR untuk tombol "Scan" universal & /scan/[code] (rencana konsolidasi
@@ -20,8 +21,10 @@ import { getGaAsetSettings } from '$lib/server/gaAsetSettings';
 export const POST: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
 	const body = await event.request.json().catch(() => null);
-	const code = String(body?.code || '').trim();
-	if (!code) throw error(400, 'Kode checkpoint kosong.');
+	const rawCode = String(body?.code || '').trim();
+	if (!rawCode) throw error(400, 'Kode checkpoint kosong.');
+	const code = cleanCheckpointCode(rawCode);
+	if (!code) throw error(400, 'Kode checkpoint tidak valid.');
 
 	const cpRes = await directusServerJson<{ data: any[] }>(
 		`/items/security_checkpoint?${new URLSearchParams({

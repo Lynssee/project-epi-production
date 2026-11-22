@@ -5,6 +5,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { IconArrowsExchange, IconCamera, IconLoader2, IconInfoCircle, IconCheck, IconX, IconTruckDelivery, IconQrcode, IconScan } from '@tabler/icons-svelte';
+	import { sopHrefForStatus } from '$lib/utils/mutasiSopLink';
 	import MutasiQrModal from '$lib/components/inventory/MutasiQrModal.svelte';
 	import QrScannerModal from '$lib/components/scanner/QrScannerModal.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
@@ -74,6 +75,8 @@
 			if (!tersedia) return;
 			await Promise.all([muat(), muatProyek()]);
 			const q = page.url.searchParams;
+			// Deep-link dari langkah SOP lapangan ("Pindai QR e-SJ Mutasi"): ?scan=1 langsung membuka pemindai.
+			if (q.get('scan') === '1') showScanner = true;
 			if (docDeepLink) {
 				if (daftar.some((m) => m.id === docDeepLink)) {
 					tab = perluTindakan.some((m) => m.id === docDeepLink) ? 'tindakan' : 'semua';
@@ -258,6 +261,7 @@
 						<span class="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full {WARNA[m.status] || 'bg-slate-100 text-slate-600'}">{LABEL_STATUS[m.status] || m.status}</span>
 					</div>
 					<p class="text-slate-600">{m.asal_nama} → {m.tujuan_nama}{m.rute === 'via_gudang' ? ' · via gerbang' : ''}</p>
+					<a class="inline-block text-[11px] font-semibold text-indigo-700 underline" href={sopHrefForStatus(m.status)} title="Lihat apa yang harus dilakukan di tahap ini, bukti yang diminta, dan gate yang berlaku">📖 Panduan langkah ini (SOP)</a>
 					<ul class="list-disc pl-4 text-slate-700">
 						{#each m.items as it (it.id)}<li>{it.nama} — {it.qty} {it.unit || ''}{it.qty_diterima != null ? ` (diterima ${it.qty_diterima})` : ''}</li>{/each}
 					</ul>

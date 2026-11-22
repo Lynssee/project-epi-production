@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
+	import SopSayaWidget from '$lib/components/ess/SopSayaWidget.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { fetchActiveCheckpoints } from '$lib/services/security';
@@ -41,6 +42,8 @@
 				<IconShieldCheck size={18} style="color: #DC2626" />
 			</div>
 		</div>
+
+		<SopSayaWidget />
 
 		{#if loading}
 			<CircularProgressGauge size={48} strokeWidth={4} label="Memuat checkpoint satpam..." />

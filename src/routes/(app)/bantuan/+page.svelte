@@ -128,11 +128,46 @@
   let loadingSops = $state(false);
   let errorMsgSops = $state('');
   let sopSearchQuery = $state('');
+  let selectedSopTag = $state<string>('');
+  let selectedSopSubKategori = $state<string>('');
   let activeCompanySop = $state<CompanySopItem | null>(null);
   let loadingDetailSop = $state(false);
   let confirmingSop = $state(false);
 
-  let unconfirmedSopCount = $derived(companySops.filter((s) => !s.is_confirmed).length);
+  let availableSopTags = $derived.by(() => {
+    const set = new Set<string>();
+    for (const s of companySops) {
+      if (Array.isArray(s.tags)) {
+        for (const t of s.tags) {
+          if (t && typeof t === 'string') set.add(t.toLowerCase().trim());
+        }
+      }
+    }
+    return Array.from(set).sort();
+  });
+
+  let availableSubKategoris = $derived.by(() => {
+    const set = new Set<string>();
+    for (const s of companySops) {
+      if (s.sub_kategori) set.add(s.sub_kategori.trim());
+    }
+    return Array.from(set).sort();
+  });
+
+  let filteredCompanySops = $derived.by(() => {
+    let list = companySops;
+    if (selectedSopTag) {
+      const tLower = selectedSopTag.toLowerCase().trim();
+      list = list.filter((s) => Array.isArray(s.tags) && s.tags.some((t) => String(t).toLowerCase() === tLower));
+    }
+    if (selectedSopSubKategori) {
+      const skLower = selectedSopSubKategori.toLowerCase().trim();
+      list = list.filter((s) => (s.sub_kategori || '').toLowerCase() === skLower);
+    }
+    return list;
+  });
+
+  let unconfirmedSopCount = $derived(filteredCompanySops.filter((s) => s.source !== 'flow' && !s.is_confirmed).length);
 
   async function loadCompanySops() {
     loadingSops = true;
@@ -155,6 +190,11 @@
   }
 
   async function openCompanySopDetail(sop: CompanySopItem) {
+    // Alur terbit (SOP Proyek/K3 dari Peta Alur) dibuka di halaman alur — di sana ada diagram + tombol "sudah paham".
+    if (sop.source === 'flow' && sop.flow_key) {
+      goto(`/panduan/alur?alur=${encodeURIComponent(sop.flow_key)}`);
+      return;
+    }
     activeCompanySop = sop;
     loadingDetailSop = true;
     const res = await fetchSopDetail(sop.id);
@@ -219,12 +259,20 @@
         <p class="text-[11px] text-gray-500">SOP resmi, instruksi proyek, kendala &amp; panduan</p>
       </div>
 
-      <a
-        href="/panduan"
-        class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 text-[var(--p)] hover:bg-blue-100 transition-colors"
-      >
-        <span>📘 Panduan Modul →</span>
-      </a>
+      <div class="flex items-center gap-1.5">
+        <a
+          href="/panduan/alur"
+          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+        >
+          <span>🗺️ Alur &amp; Buku Saku</span>
+        </a>
+        <a
+          href="/panduan"
+          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 text-[var(--p)] hover:bg-blue-100 transition-colors"
+        >
+          <span>📘 Panduan Modul</span>
+        </a>
+      </div>
     </div>
 
     <!-- Segmented Control Tabs -->
@@ -415,8 +463,33 @@
           />
         </div>
 
+        <!-- Horizontal Scrollable Tag Pills -->
+        <div class="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none -mx-1 px-1">
+          <button
+            type="button"
+            onclick={() => { selectedSopTag = ''; selectedSopSubKategori = ''; }}
+            class="px-3 py-1 text-xs font-semibold rounded-full whitespace-nowrap transition-colors {selectedSopTag === '' && selectedSopSubKategori === '' ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
+          >
+            Semua ({companySops.length})
+          </button>
+          {#each availableSopTags as tag}
+            <button
+              type="button"
+              onclick={() => { selectedSopTag = (selectedSopTag === tag ? '' : tag); }}
+              class="px-3 py-1 text-xs font-semibold rounded-full whitespace-nowrap transition-colors {selectedSopTag === tag ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-white border border-gray-200 text-gray-700 hover:border-indigo-400 hover:text-indigo-600'}"
+            >
+              #{tag}
+            </button>
+          {/each}
+        </div>
+
         <div class="flex items-center justify-between text-[11px] text-gray-500 px-0.5">
-          <span>{companySops.length} dokumen SOP ditemukan</span>
+          <span>
+            {filteredCompanySops.length} dokumen SOP
+            {#if selectedSopTag}
+              <span class="text-indigo-600 font-semibold"> (filter: #{selectedSopTag})</span>
+            {/if}
+          </span>
           {#if unconfirmedSopCount > 0}
             <span class="text-amber-700 font-bold">⚠️ {unconfirmedSopCount} belum Anda konfirmasi</span>
           {:else}
@@ -441,15 +514,30 @@
             Coba Lagi
           </button>
         </div>
-      {:else if companySops.length === 0}
+      {:else if filteredCompanySops.length === 0}
         <div class="p-8 text-center text-gray-400 text-xs bg-white rounded-2xl border border-gray-200 space-y-2">
           <div class="text-3xl">📂</div>
           <p class="font-bold text-gray-700">Tidak ada SOP ditemukan</p>
-          <p class="text-gray-400">Coba ubah kata kunci pencarian Anda.</p>
+          <p class="text-gray-400">
+            {#if selectedSopTag}
+              Tidak ada SOP dengan tag <strong>#{selectedSopTag}</strong>.
+            {:else}
+              Coba ubah kata kunci pencarian Anda.
+            {/if}
+          </p>
+          {#if selectedSopTag}
+            <button
+              type="button"
+              onclick={() => { selectedSopTag = ''; }}
+              class="px-3 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-semibold"
+            >
+              Tampilkan Semua SOP
+            </button>
+          {/if}
         </div>
       {:else}
         <div class="space-y-3">
-          {#each companySops as sop (sop.id)}
+          {#each filteredCompanySops as sop (sop.id)}
             <div
               tabindex="0"
               role="button"
@@ -458,11 +546,22 @@
               class="bg-white rounded-2xl border border-gray-200 p-3.5 shadow-2xs active:bg-gray-50 transition-colors cursor-pointer space-y-2 text-left"
             >
               <div class="flex items-start justify-between gap-2">
-                <span class="px-2 py-0.5 text-[11px] font-mono font-bold rounded bg-slate-100 text-slate-800 border border-slate-200">
-                  {sop.sop_code || `SOP-${sop.id}`}
-                </span>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="px-2 py-0.5 text-[11px] font-mono font-bold rounded bg-slate-100 text-slate-800 border border-slate-200">
+                    {sop.sop_code || `SOP-${sop.id}`}
+                  </span>
+                  {#if sop.sub_kategori}
+                    <span class="px-2 py-0.5 text-[10px] font-semibold rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
+                      {sop.sub_kategori}
+                    </span>
+                  {/if}
+                </div>
                 <div class="flex items-center gap-1">
-                  {#if sop.is_confirmed}
+                  {#if sop.source === 'flow'}
+                    <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-sky-100 text-sky-800" title="Alur kerja terbit — buka untuk melihat langkah & menandai paham">
+                      📘 Alur Kerja
+                    </span>
+                  {:else if sop.is_confirmed}
                     <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800">
                       ✓ Sudah Dibaca
                     </span>
@@ -478,9 +577,23 @@
                 {sop.title}
               </h3>
 
-              {#if sop.ai_summary}
+              {#if Array.isArray(sop.tags) && sop.tags.length > 0}
+                <div class="flex flex-wrap gap-1">
+                  {#each sop.tags as tag}
+                    <button
+                      type="button"
+                      onclick={(e) => { e.stopPropagation(); selectedSopTag = tag; }}
+                      class="px-2 py-0.5 rounded-full text-[9.5px] font-medium {selectedSopTag === tag ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'} border border-slate-200 transition"
+                    >
+                      #{tag}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if sop.ai_summary || sop.keterangan}
                 <p class="text-[11px] text-gray-600 line-clamp-2 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  {sop.ai_summary}
+                  {sop.ai_summary || sop.keterangan}
                 </p>
               {/if}
 
@@ -551,6 +664,18 @@
             <span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-indigo-50 text-indigo-700">
               {activeCompanySop.department || 'Umum'}
             </span>
+            {#if activeCompanySop.sub_kategori}
+              <span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-blue-50 text-blue-700">
+                {activeCompanySop.sub_kategori}
+              </span>
+            {/if}
+            {#if Array.isArray(activeCompanySop.tags) && activeCompanySop.tags.length > 0}
+              {#each activeCompanySop.tags as tag}
+                <span class="px-1.5 py-0.5 text-[9px] font-medium rounded-full bg-slate-100 text-slate-600">
+                  #{tag}
+                </span>
+              {/each}
+            {/if}
           </div>
           <h2 class="text-sm font-bold text-gray-900 leading-snug">
             {activeCompanySop.title}

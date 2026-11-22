@@ -6,6 +6,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
+	import SopKnowledgeCard from './SopKnowledgeCard.svelte';
 	import { PROCESS_FLOWS, type ProcessFlow } from '$lib/data/processGuidance';
 	import { loadFlowIndex, loadFlowById, loadFlowChain, type FlowSource } from '$lib/services/processGuidanceFlowsApi';
 	import type { FlowChain } from '$lib/utils/processHandoffChain';
@@ -15,20 +16,50 @@
 	import { waLink } from '$lib/utils/waNumber';
 	import { loadTrainingStatus, type TrainingStatus } from '$lib/services/processGuidanceTrainingApi';
 	import ProcessGuidanceMobile from '$lib/components/help/ProcessGuidanceMobile.svelte';
+	import ProcessInfographicFlow from '$lib/components/help/ProcessInfographicFlow.svelte';
+	import ProcessVisualInstructionCards from '$lib/components/help/ProcessVisualInstructionCards.svelte';
 	import FieldProjectStepper from '$lib/components/help/FieldProjectStepper.svelte';
 	import { getMatchingFlowsForStage, type ProjectStage } from '$lib/utils/fieldProjectStepper.js';
 	import FieldStateAndGateCard from './FieldStateAndGateCard.svelte';
 	import KendalaSearch from './KendalaSearch.svelte';
+	import NegativeScenariosPanel from './NegativeScenariosPanel.svelte';
 	import PdfFetchSheet from '$lib/components/shared/PdfFetchSheet.svelte';
 	import FieldAiGuidanceSheet from './FieldAiGuidanceSheet.svelte';
+	import FieldHierarchyCard from './FieldHierarchyCard.svelte';
+	import { buildFieldHierarchyView, DEFAULT_FIELD_HIERARCHY_LABELS } from './fieldHierarchyModel';
 
 	const DEFAULT_FLOW = 'sales_to_inventory';
 	const alurParam = page.url.searchParams.get('alur') ?? '';
 	const kategoriParam = page.url.searchParams.get('kategori');
 	const sifatParam = page.url.searchParams.get('sifat') ?? page.url.searchParams.get('procedure_type');
+	const isPreview = page.url.searchParams.get('preview') === '1';
+
+	let copyToast = $state(false);
+
+	async function salinLinkSop() {
+		if (typeof window !== 'undefined') {
+			const url = `${window.location.origin}/panduan/alur?alur=${encodeURIComponent(flowId)}`;
+			try {
+				await navigator.clipboard.writeText(url);
+				copyToast = true;
+				setTimeout(() => { copyToast = false; }, 3000);
+			} catch (_) {}
+		}
+	}
+
+	function bagikanSopWa() {
+		if (typeof window !== 'undefined') {
+			const url = `${window.location.origin}/panduan/alur?alur=${encodeURIComponent(flowId)}`;
+			const docCode = flow?.sop_code ? ` (${flow.sop_code})` : '';
+			const text = `*STANDAR OPERASIONAL PROSEDUR (SOP)*\nPT. Eltama Prima Indo\n\n📌 *${flow?.title || 'Panduan Kerja'}*${docCode}\n\nSilakan pelajari langkah kerja pada tautan berikut:\n🔗 ${url}\n\n_Pesan otomatis dari Sistem Informasi Eltama (SI-TAMA)._`;
+			window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+		}
+	}
 
 	let index = $state<FlowSummary[]>(PROCESS_FLOWS.map((f) => summarizeFlow(f)));
 	let filterProcedureType = $state<string>(sifatParam !== null ? sifatParam : '');
+	/** Filter Topik / Sub-Kategori ('' = semua · '__none__' = belum berkategori · selain itu = label). Data sudah ada di payload ?lite=1 — tanpa panggilan tambahan. */
+	let filterTopik = $state<string>('');
 	let showAiSheet = $state(false);
 	let aiSheetQuery = $state('');
 
@@ -38,6 +69,10 @@
 	}
 	let sumber = $state<FlowSource>('local');
 	let flowId = $state(alurParam || DEFAULT_FLOW);
+	let viewParam = page.url.searchParams.get('view');
+	let fieldViewMode = $state<'infographic' | 'visual' | 'accordion'>(
+		viewParam === 'infographic' || viewParam === 'visual' ? viewParam : 'accordion'
+	);
 	// Tampil seketika dari salinan bawaan bila ada; diganti hasil server setelah dimuat.
 	let flow = $state<ProcessFlow | null>(PROCESS_FLOWS.find((f) => f.id === (alurParam || DEFAULT_FLOW)) ?? null);
 	let fokus = $state(page.url.searchParams.get('fokus') ?? '');
@@ -54,14 +89,33 @@
 		bukuSakuOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
 		if (!bukuSakuOffline) bukuSakuOpen = true;
 	}
-	let onlyMine = $state(false);
+	let onlyMine = $state(true); // Default Mode Ringkas untuk lapangan
 	/** Filter "Belum Saya Baca": flow_key yang sudah saya tandai paham (server + catatan lokal perangkat). */
 	let readKeys = $state<Set<string>>(new Set());
 	let readLoaded = $state(false);
 	let onlyUnread = $state(false);
-	let openMine = $state(false);
+	let openMine = $state(true); // Default terbuka pada Mode Ringkas
 	let trainingMap = $state<Map<number, TrainingStatus>>(new Map());
 
+	/** Training per alur (dari tugas saya): program unik yang TERBIT; belum = belum lulus. Alur tanpa training saya tidak ada di peta. */
+	let flowTraining = $derived.by(() => {
+		const progs = new Map<string, Set<number>>();
+		for (const t of mine?.tasks ?? []) {
+			for (const x of t.training ?? []) {
+				if (!progs.has(t.flow_id)) progs.set(t.flow_id, new Set());
+				progs.get(t.flow_id)!.add(x.program_id);
+			}
+		}
+		const out = new Map<string, { total: number; belum: number }>();
+		for (const [fid, ids] of progs) {
+			const list = [...ids].map((id) => trainingMap.get(id)).filter((p): p is TrainingStatus => !!p && p.terbit);
+			// Status belum termuat / tak terbit: alur tetap terhitung "terkait training saya" (total dari tautan), belum-lulus belum diketahui (0).
+			out.set(fid, { total: ids.size, belum: list.filter((p) => p.status_saya !== 'lulus').length });
+		}
+		return out;
+	});
+	let onlyTraining = $state(false);
+	let onlyTrainingBelum = $state(false);
 	/** Ringkasan training satu tugas: hanya program TERBIT yang dihitung; belum = belum lulus. null = tak ada training / status belum termuat. */
 	function trainingChip(t: MyTask): { total: number; belum: number } | null {
 		const progs = (t.training ?? []).map((x) => trainingMap.get(x.program_id)).filter((p): p is TrainingStatus => !!p && p.terbit);
@@ -75,6 +129,11 @@
 	let hasRead = $derived(Boolean(readTime));
 	/** Jumlah konfirmasi baca yang menunggu terkirim (offline). */
 	let pendingSync = $state(0);
+	/** Label & filter Lampiran G dari app_settings admin (dimuat malas maks 1x per sesi saat membuka Master/Induk). */
+	let hierarchyLabels = $state({ ...DEFAULT_FIELD_HIERARCHY_LABELS });
+	let includeDraftHierarchy = $state(true);
+	let hierarchyConfigLoaded = false;
+	let hierarchyUserToggled = false;
 
 	async function kirimBaca(item: PendingRead, queued: boolean): Promise<{ ok: boolean; status: number }> {
 		try {
@@ -113,6 +172,14 @@
 	let countInduk = $derived(index.filter((f) => f.kategori_sop === 'induk').length);
 	let countTurunan = $derived(index.filter((f) => f.kategori_sop === 'turunan').length);
 
+	let topikCounts = $derived.by(() => {
+		const m = new Map<string, number>();
+		for (const f of index) {
+			const k = (f.sub_kategori ?? '').trim();
+			if (k) m.set(k, (m.get(k) ?? 0) + 1);
+		}
+		return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'id'));
+	});
 	let countFieldOps = $derived(index.filter((f) => f.procedure_type === 'field_ops').length);
 	let countEmergency = $derived(index.filter((f) => f.procedure_type === 'emergency_qhse').length);
 	let countAdmin = $derived(index.filter((f) => f.procedure_type === 'administrative').length);
@@ -214,6 +281,48 @@
 		}
 		return out.length > 1 ? out : [];
 	});
+	let curFlowSummary = $derived(index.find((f) => f.id === flowId) ?? null);
+	let hierarchyView = $derived(
+		buildFieldHierarchyView(flowId, index, {
+			currentKategori: flow?.kategori_sop ?? curFlowSummary?.kategori_sop,
+			currentSopCode: flow?.sop_code ?? curFlowSummary?.sop_code,
+			currentTitle: flow?.title ?? curFlowSummary?.title,
+			labels: hierarchyLabels,
+			includeDraftApproval: includeDraftHierarchy
+		})
+	);
+	let showHierarchyStatement = $derived(
+		Boolean(
+			flow?.kategori_sop ||
+				curFlowSummary?.kategori_sop ||
+				hierarchyView.ancestors.length > 0 ||
+				hierarchyView.counts.totalDescendants > 0
+		)
+	);
+
+	async function ensureFieldHierarchyConfig(roleKey: string) {
+		if (hierarchyConfigLoaded || (roleKey !== 'master' && roleKey !== 'induk')) return;
+		if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+		if (typeof fetch !== 'function') return;
+		hierarchyConfigLoaded = true;
+		try {
+			const res = await fetch('/api/process-guidance/flows?hierarchy_config=1');
+			if (!res?.ok) return;
+			const data = await res.json().catch(() => null);
+			if (data?.success && data?.config) {
+				hierarchyLabels = {
+					master: data.config.labelMaster || DEFAULT_FIELD_HIERARCHY_LABELS.master,
+					induk: data.config.labelInduk || DEFAULT_FIELD_HIERARCHY_LABELS.induk,
+					turunan: data.config.labelTurunan || DEFAULT_FIELD_HIERARCHY_LABELS.turunan
+				};
+				if (!hierarchyUserToggled && typeof data.config.defaultIncludeDraftApproval === 'boolean') {
+					includeDraftHierarchy = data.config.defaultIncludeDraftApproval;
+				}
+			}
+		} catch {
+			/* fail-soft offline: tetap memakai label bawaan */
+		}
+	}
 	// Daftar pilihan: dicari + (opsional) hanya alur saya + filter kategori; alur yang sedang dibuka selalu tersedia agar <select> tidak kosong.
 	let options = $derived.by(() => {
 		const needle = q.trim().toLowerCase();
@@ -221,13 +330,17 @@
 			const matchMine = !onlyMine || myFlowIds.has(f.id);
 			const matchUnread = !onlyUnread || !readKeys.has(f.id);
 			const matchKategori = !filterKategori || f.kategori_sop === filterKategori;
+			const ft = flowTraining.get(f.id);
+			const matchTraining = (!onlyTraining || !!ft) && (!onlyTrainingBelum || (ft?.belum ?? 0) > 0);
 			const matchProcedure = !filterProcedureType || f.procedure_type === filterProcedureType;
+			const sub = (f.sub_kategori ?? '').trim();
+			const matchTopik = !filterTopik || (filterTopik === '__none__' ? !sub : sub === filterTopik);
 			const matchNeedle =
 				!needle ||
 				f.title.toLowerCase().includes(needle) ||
 				(f.sop_code && f.sop_code.toLowerCase().includes(needle)) ||
 				(f.sub_kategori && f.sub_kategori.toLowerCase().includes(needle));
-			return matchMine && matchUnread && matchKategori && matchProcedure && matchNeedle;
+			return matchMine && matchUnread && matchKategori && matchProcedure && matchTopik && matchTraining && matchNeedle;
 		});
 		const cur = index.find((f) => f.id === flowId);
 		return cur && !list.some((f) => f.id === cur.id) ? [cur, ...list] : list;
@@ -262,6 +375,8 @@
 		} else {
 			flow = r.flow;
 			if (r.source === 'cached') sumber = 'cached';
+			const rk = (r.flow.kategori_sop || index.find((f) => f.id === id)?.kategori_sop || '').toLowerCase();
+			void ensureFieldHierarchyConfig(rk);
 		}
 		swap += 1;
 	}
@@ -298,7 +413,15 @@
 
 	async function muatAwal() {
 		// Daftar & tugas saya dimuat paralel; tugas saya tidak menahan tampilan alur.
-		const minePromise = loadMyTasks().then((m) => (mine = m));
+		const minePromise = loadMyTasks().then((m) => {
+			mine = m;
+			if (m?.tasks?.length) {
+				openMine = true;
+				onlyMine = true;
+			} else {
+				onlyMine = false;
+			}
+		});
 		const idx = await loadFlowIndex();
 		sumber = idx.source;
 		index = idx.flows;
@@ -319,13 +442,46 @@
 </svelte:head>
 
 <div class="flex flex-col min-h-screen bg-gray-50 pb-6">
-	<div class="bg-white border-b border-gray-200 px-4 py-4">
-		<a href="/bantuan" class="text-xs text-gray-500">← Bantuan</a>
-		<h1 class="text-lg font-bold text-gray-900 mt-1">🗺️ Alur Kerja</h1>
+	{#if isPreview}
+		<div class="bg-emerald-600 text-white px-4 py-1.5 text-xs font-semibold flex items-center justify-between shadow-xs">
+			<span class="flex items-center gap-1.5">
+				<span>📱</span>
+				<span>Pratinjau Lapangan (project.eltama)</span>
+			</span>
+			<span class="text-[10px] bg-emerald-700/60 px-2 py-0.5 rounded">v{flow?.version || 1}</span>
+		</div>
+	{/if}
+
+	<div class="bg-white border-b border-gray-200 px-4 py-3.5">
+		{#if !isPreview}
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-2 text-xs text-gray-500">
+					<a href="/bantuan" class="hover:text-gray-800">← Bantuan</a>
+					<span>/</span>
+					<span class="text-gray-800 font-semibold">Alur &amp; Buku Saku</span>
+				</div>
+				<div class="flex items-center gap-1.5 text-xs font-semibold">
+					<a
+						href="/panduan"
+						class="px-2.5 py-1 rounded-lg bg-blue-50 text-[var(--p)] hover:bg-blue-100 border border-blue-200 transition-colors"
+					>
+						📘 Panduan Modul
+					</a>
+					<a
+						href="/bantuan?tab=sop"
+						class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+					>
+						📜 SOP &amp; K3
+					</a>
+				</div>
+			</div>
+		{/if}
+
+		<h1 class="text-lg font-bold text-gray-900 mt-2">🗺️ Peta Alur Kerja &amp; Buku Saku</h1>
 		<p class="text-xs text-gray-500 mt-0.5">{flow?.description ?? ''}</p>
 
 		{#if flow && flow.id === flowId && flow.nodes?.length}
-			<div class="mt-2">
+			<div class="mt-2 flex items-center gap-2 flex-wrap">
 				<button
 					type="button"
 					onclick={bukaBukuSaku}
@@ -335,9 +491,38 @@
 				>
 					🖨️ Buku Saku &amp; Checklist (PDF)
 				</button>
-				<span class="ml-2 text-[10px] text-gray-400">Butuh internet · dibuat dari versi terbit</span>
+				<a
+					href={`${typeof window !== 'undefined' && window.location.hostname.includes('localhost') ? 'http://localhost:9392' : 'https://internal.eltamaprimaindo.com'}/print/sop/${encodeURIComponent(flowId)}?stakeholder=ops&depth=detailed`}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white active:scale-95 transition inline-flex items-center gap-1.5"
+					title="Buka naskah SOP Dossier A4 Lengkap (dilengkapi SOP Process Flow, Panduan Visual & Lampiran Kesiapan Jabatan)"
+				>
+					<span>📄</span>
+					<span>Dokumen SOP Resmi (A4)</span>
+				</a>
+
+				<!-- Tombol Salin Tautan & Bagikan WhatsApp -->
+				<button
+					type="button"
+					onclick={salinLinkSop}
+					class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200 active:scale-95 transition inline-flex items-center gap-1 cursor-pointer"
+					title="Salin hyperlink alur lapangan ke clipboard"
+				>
+					<span>{copyToast ? '✓ Tersalin!' : '📋 Salin Link'}</span>
+				</button>
+				<button
+					type="button"
+					onclick={bagikanSopWa}
+					class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 active:scale-95 transition inline-flex items-center gap-1 cursor-pointer"
+					title="Bagikan SOP ini ke WhatsApp rekan/grup lapangan"
+				>
+					<span>💬</span>
+					<span>Bagikan WA</span>
+				</button>
+
 				{#if bukuSakuOffline}
-					<p class="mt-1 text-[11px] text-amber-700" role="alert">Anda sedang offline. PDF dibuat di server — sambungkan internet lalu coba lagi. Isi alur tetap bisa dibaca di layar ini.</p>
+					<p class="w-full mt-1 text-[11px] text-amber-700" role="alert">Anda sedang offline. PDF dibuat di server — sambungkan internet lalu coba lagi. Isi alur tetap bisa dibaca di layar ini.</p>
 				{/if}
 			</div>
 		{/if}
@@ -352,6 +537,25 @@
 						class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white"
 						aria-label="Cari alur"
 					/>
+				{/if}
+
+				{#if topikCounts.length > 0}
+					<label class="flex items-center gap-2 text-[11px] font-semibold text-gray-600">
+						<span class="whitespace-nowrap">📂 Topik kerja</span>
+						<select
+							bind:value={filterTopik}
+							class="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white font-normal text-gray-800"
+							aria-label="Saring SOP menurut topik kerja"
+							data-testid="alur-topik-filter"
+						>
+							<option value="">Semua topik ({index.length})</option>
+							{#each topikCounts as [label, n] (label)}
+								<option value={label}>{label} ({n})</option>
+							{/each}
+							<option value="__none__">Belum berkategori</option>
+						</select>
+					</label>
+					<p class="-mt-1 text-[10px] text-gray-400">Pilih topik untuk menyaring daftar SOP (mis. Training, K3, Material). Dikombinasikan dengan pencarian dan filter lain.</p>
 				{/if}
 
 				<!-- Pill Filter Sifat Prosedur (Operasional Lapangan vs Kantor / Manajemen) -->
@@ -444,6 +648,16 @@
 						<input type="checkbox" bind:checked={onlyMine} /> Hanya alur yang memuat tugas saya ({myFlowIds.size})
 					</label>
 				{/if}
+				{#if flowTraining.size > 0}
+					<label class="flex items-center gap-2 text-xs text-gray-600" title="Tampilkan hanya alur yang memuat training untuk tugas saya (🎓). ❗ = ada training yang belum lulus.">
+						<input type="checkbox" bind:checked={onlyTraining} /> Terkait training saya ({flowTraining.size})
+					</label>
+					{#if onlyTraining}
+						<label class="flex items-center gap-2 text-xs text-gray-600 ml-5">
+							<input type="checkbox" bind:checked={onlyTrainingBelum} /> Hanya yang belum lulus
+						</label>
+					{/if}
+				{/if}
 				{#if readLoaded && unreadCount > 0}
 					<label class="flex items-center gap-2 text-xs text-gray-600" title="Tampilkan hanya alur yang belum Anda tandai paham. Buka alurnya lalu ketuk Tandai Paham.">
 						<input type="checkbox" bind:checked={onlyUnread} /> Hanya yang belum saya baca ({unreadCount})
@@ -459,10 +673,13 @@
 						<option value={f.id}>
 							{f.procedure_type === 'field_ops' ? '🏗️ ' : f.procedure_type === 'emergency_qhse' ? '🚨 ' : f.procedure_type === 'management_gate' ? '⚖️ ' : '📋 '}
 							{f.kategori_sop === 'turunan' ? '📄 ' : f.kategori_sop === 'master' ? '🌟 ' : '📘 '}
-							{readKeys.has(f.id) ? '✓ ' : ''}{myFlowIds.has(f.id) ? '⭐ ' : ''}{f.sop_code ? `[${f.sop_code}] ` : ''}{f.title}
+							{readKeys.has(f.id) ? '✓ ' : ''}{myFlowIds.has(f.id) ? '⭐ ' : ''}{flowTraining.get(f.id) ? ((flowTraining.get(f.id)?.belum ?? 0) > 0 ? '🎓❗ ' : '🎓 ') : ''}{(f.gate_count ?? 0) > 0 ? '🛡️ ' : ''}{f.sop_code ? `[${f.sop_code}] ` : ''}{f.title}
 						</option>
 					{/each}
 				</select>
+				{#if flowTraining.size > 0 || index.some((f) => (f.gate_count ?? 0) > 0)}
+					<p class="text-[10px] text-gray-400">Penanda di daftar: ⭐ ada tugas saya · 🎓 ada training · ❗ belum lulus · 🛡️ ada gate kontrol · ✓ sudah dibaca.</p>
+				{/if}
 				{#if options.length === 0}<p class="text-xs text-gray-400">Tidak ada alur yang cocok dengan pencarian.</p>{/if}
 			</div>
 		{/if}
@@ -472,23 +689,38 @@
 	</div>
 
 	<div class="p-4 space-y-3">
-		<!-- Cari kendala / pesan gate → loncat ke langkah SOP -->
-		<KendalaSearch onjump={lompatKe} ontanyaai={bukaAiSheet} />
+		<!-- Switcher Mode Lapangan: Ringkas (Tugas Saya) vs Lengkap (Semua SOP) -->
+		<div class="inline-flex p-1 rounded-xl bg-gray-200/90 w-full text-xs font-bold shadow-2xs">
+			<button
+				type="button"
+				class="flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 {onlyMine ? 'bg-amber-500 text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'}"
+				onclick={() => { onlyMine = true; openMine = true; }}
+			>
+				<span>⭐ Mode Ringkas (Tugas Saya)</span>
+				{#if mine?.tasks?.length}
+					<span class="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20 font-mono">{mine.tasks.length}</span>
+				{/if}
+			</button>
+			<button
+				type="button"
+				class="flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 {!onlyMine ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'}"
+				onclick={() => { onlyMine = false; }}
+			>
+				<span>📚 Semua SOP ({index.length})</span>
+			</button>
+		</div>
 
-		<!-- Stepper 5 Tahap Proyek Lapangan (Mobile-First) -->
-		<FieldProjectStepper
-			onselectstage={handleStageSelect}
-			onfiltersop={handleFilterSop}
-		/>
-
-		<!-- Tugas Saya -->
+		<!-- Tugas Saya di Alur (Prioritas Utama Mode Ringkas) -->
 		{#if mine?.tasks?.length && mine.posisi}
-			<section class="bg-amber-50/70 border border-amber-200 rounded-2xl p-3.5" data-testid="tugas-saya">
-				<button type="button" class="w-full flex items-start justify-between gap-2 text-left" aria-expanded={openMine} onclick={() => (openMine = !openMine)}>
+			<section class="bg-amber-50/80 border border-amber-300 rounded-2xl p-3.5 shadow-xs" data-testid="tugas-saya">
+				<button type="button" class="w-full flex items-start justify-between gap-2 text-left cursor-pointer" aria-expanded={openMine} onclick={() => (openMine = !openMine)}>
 					<span>
-						<span class="block text-sm font-bold text-amber-900">⭐ Tugas Saya di Alur</span>
+						<span class="block text-sm font-bold text-amber-950 flex items-center gap-1.5">
+							<span>⭐</span>
+							<span>Tugas Saya: {mine.posisi.nama}</span>
+						</span>
 						<span class="block text-[11px] text-amber-800 mt-0.5">
-							{mine.posisi.nama} · {mine.tasks.length} langkah di {tasksByFlow.length} alur
+							{mine.tasks.length} langkah operasional di {tasksByFlow.length} alur kerja lapangan
 						</span>
 					</span>
 					<span class="text-amber-700 text-xs mt-1 transition-transform {openMine ? 'rotate-180' : ''}">▾</span>
@@ -496,22 +728,25 @@
 				{#if openMine}
 					<div class="mt-3 space-y-3">
 						{#each tasksByFlow as [fid, tasks] (fid)}
-							<div>
-								<p class="text-[11px] font-bold text-amber-900">{tasks[0].flow_title}</p>
-								<ul class="mt-1 space-y-1">
+							<div class="bg-white/90 rounded-xl border border-amber-200 p-2.5 space-y-1.5">
+								<p class="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+									<span>📘</span>
+									<span>{tasks[0].flow_title}</span>
+								</p>
+								<ul class="space-y-1">
 									{#each tasks as t (t.node_id)}
 										<li>
 											<button
 												type="button"
-												class="w-full text-left px-2.5 py-2 rounded-lg bg-white border border-amber-200 text-xs active:scale-[0.99]"
+												class="w-full text-left px-2.5 py-2 rounded-lg bg-slate-50/80 hover:bg-amber-50 border border-gray-200 hover:border-amber-300 text-xs active:scale-[0.99] transition"
 												onclick={() => bukaAlur(t.flow_id, t.node_id)}
 											>
-												<span class="font-semibold text-gray-800">{t.label}</span>
+												<span class="font-bold text-gray-800 block">{t.label}</span>
 												<span class="block text-[10px] text-gray-500">
 													{t.lane_label}{t.sla_hours ? ` · target ${t.sla_hours} jam` : ''}{t.has_actions ? ' · ada formulir' : ''}
 												</span>
 												{#if t.gate_keys?.length}
-													<span class="block text-[10px] mt-0.5 text-amber-700" data-testid="task-gates" title="Gate = pemeriksaan sistem sebelum dokumen bisa lanjut. Ketuk langkah untuk melihat syarat lolosnya.">
+													<span class="block text-[10px] mt-0.5 text-amber-700 font-medium" data-testid="task-gates" title="Gate = pemeriksaan sistem sebelum dokumen bisa lanjut. Ketuk langkah untuk melihat syarat lolosnya.">
 														🛡 {t.gate_keys.length} gate menjaga langkah ini · ketuk untuk lihat syarat lolos
 													</span>
 												{/if}
@@ -570,6 +805,17 @@
 			</p>
 		{/if}
 
+		{#if !onlyMine}
+			<!-- Cari kendala / pesan gate → loncat ke langkah SOP -->
+			<KendalaSearch onjump={lompatKe} ontanyaai={bukaAiSheet} />
+
+			<!-- Stepper 5 Tahap Proyek Lapangan (Mobile-First) -->
+			<FieldProjectStepper
+				onselectstage={handleStageSelect}
+				onfiltersop={handleFilterSop}
+			/>
+		{/if}
+
 		{#if flow}
 			<div class="bg-white border border-gray-200 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
 				{#if crumbs.length > 1}
@@ -599,8 +845,9 @@
 						</span>
 					{/if}
 					{#if flow.kategori_sop && KATEGORI_BADGE[flow.kategori_sop]}
+						{@const kIcon = flow.kategori_sop === 'master' ? '🌟' : flow.kategori_sop === 'induk' ? '📘' : '📄'}
 						<span class="px-2 py-0.5 rounded text-[11px] font-semibold border {KATEGORI_BADGE[flow.kategori_sop].cls}">
-							{KATEGORI_BADGE[flow.kategori_sop].label}
+							{kIcon} {hierarchyView.roleLabel}
 						</span>
 					{/if}
 					{#if flow.sub_kategori}
@@ -609,6 +856,19 @@
 						</span>
 					{/if}
 				</div>
+
+				{#if showHierarchyStatement}
+					<div
+						class="rounded-xl border px-3 py-2 text-[11px] font-semibold leading-snug {hierarchyView.roleKey === 'master'
+							? 'bg-purple-50 border-purple-200 text-purple-950'
+							: hierarchyView.roleKey === 'induk'
+								? 'bg-sky-50 border-sky-200 text-sky-950'
+								: 'bg-teal-50 border-teal-200 text-teal-950'}"
+						data-testid="field-hierarchy-statement"
+					>
+						📌 {hierarchyView.statement}
+					</div>
+				{/if}
 
 				{#if flow.approval_status === 'sosialisasi'}
 					<div class="rounded-xl border border-purple-200 bg-purple-50/80 p-3 text-xs text-purple-900 space-y-1">
@@ -656,6 +916,7 @@
 						{hasRead ? '✓ Terkonfirmasi' : 'Tandai Paham'}
 					</button>
 				</div>
+				<SopKnowledgeCard flowKey={flow.id} refreshKey={hasRead ? 1 : 0} />
 				{#if pendingSync > 0}
 					<p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5" role="status" data-testid="read-pending">
 						📶 {pendingSync} konfirmasi baca tersimpan di perangkat — akan terkirim otomatis saat sinyal kembali.
@@ -665,12 +926,56 @@
 		{/if}
 
 		<!-- Siklus dokumen & syarat lolos gate (detail gate baru diunduh saat kartu dibuka) -->
+		<NegativeScenariosPanel {flow} onjump={(id) => lompatKe(id)} />
+
 		<FieldStateAndGateCard {flow} {flowId} {fokus} />
+
+		<FieldHierarchyCard
+			view={hierarchyView}
+			includeDraft={includeDraftHierarchy}
+			onselectflow={(id) => lompatKe(id)}
+			ontoggledraft={(v) => {
+				hierarchyUserToggled = true;
+				includeDraftHierarchy = v;
+			}}
+		/>
+
+		<!-- Mode Tampilan Alur Lapangan: Infografis (Gambar 2) | Foto Visual (Gambar 1) | Rinci -->
+		<div class="flex items-center justify-between gap-1.5 p-1 bg-gray-100 rounded-xl border border-gray-200 text-xs">
+			<button
+				type="button"
+				class="flex-1 py-1.5 px-2 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 {fieldViewMode === 'infographic' ? 'bg-white text-blue-700 shadow-xs' : 'text-gray-600 hover:text-gray-900'}"
+				onclick={() => (fieldViewMode = 'infographic')}
+			>
+				<span>📊</span>
+				<span>Alur Cepat</span>
+			</button>
+			<button
+				type="button"
+				class="flex-1 py-1.5 px-2 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 {fieldViewMode === 'visual' ? 'bg-white text-teal-700 shadow-xs' : 'text-gray-600 hover:text-gray-900'}"
+				onclick={() => (fieldViewMode = 'visual')}
+			>
+				<span>📸</span>
+				<span>Foto Visual</span>
+			</button>
+			<button
+				type="button"
+				class="flex-1 py-1.5 px-2 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 {fieldViewMode === 'accordion' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'}"
+				onclick={() => (fieldViewMode = 'accordion')}
+			>
+				<span>📂</span>
+				<span>Rinci</span>
+			</button>
+		</div>
 
 		{#if loadingFlow}
 			<p class="text-xs text-gray-400 text-center py-6" role="status">Memuat alur…</p>
 		{:else if flowError}
 			<p class="text-sm text-gray-500 text-center py-8" role="alert">{flowError}</p>
+		{:else if fieldViewMode === 'infographic'}
+			<ProcessInfographicFlow {flow} onSelectStep={(id) => (fokus = id)} />
+		{:else if fieldViewMode === 'visual'}
+			<ProcessVisualInstructionCards {flow} />
 		{:else}
 			{#key `${flowId}:${swap}`}
 				<ProcessGuidanceMobile {flow} {fokus} mine={myNodeIds} {chain} onjump={lompatKe} />

@@ -3,9 +3,9 @@
 	// Daftar SOP (Fase 2C) — hanya status=published yang tampil (lihat $lib/server/ess/sop.ts).
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { getSopList, type SopDocument } from '$lib/services/ess/sop';
+	import { getSopList, getSopSertifikasi, getSopSkor, type SopDocument, type SopSkor } from '$lib/services/ess/sop';
 	import { cacheSopList, getCachedSopList } from '$lib/utils/offlineSopCache';
-	import { IconAlertTriangle, IconChevronRight, IconFileText, IconLoader2, IconSchool, IconWifiOff } from '@tabler/icons-svelte';
+	import { IconAlertTriangle, IconCertificate, IconChevronRight, IconFileText, IconLoader2, IconSchool, IconWifiOff } from '@tabler/icons-svelte';
 
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -13,15 +13,20 @@
 	let compliance = $state<{ confirmed: number; total: number } | null>(null);
 	let search = $state('');
 	let offlineMode = $state(false);
+	let tersertifikasi = $state<Set<number>>(new Set()); // sopId yang training-nya sudah lulus
+	let skorBySop = $state<Map<number, SopSkor>>(new Map()); // Skor Pengetahuan SOP Saya (best-effort)
+	const SKOR_CLS: Record<string, string> = { kompeten: '#16A34A', penguatan: '#D97706', remedial: '#DC2626', belum_diuji: '#6B7280' };
 
 	async function load() {
 		loading = true;
 		errorMsg = '';
 		offlineMode = false;
 		try {
-			const res = await getSopList();
+			const [res, sertifikasi, skor] = await Promise.all([getSopList(), getSopSertifikasi(), getSopSkor()]);
+			skorBySop = new Map(skor.map((x) => [x.sopId, x]));
 			sopList = res.sopList;
 			compliance = res.compliance;
+			tersertifikasi = new Set(sertifikasi.map((s) => s.sopId));
 			await cacheSopList(res.sopList);
 		} catch (err: any) {
 			// R2: sinyal buruk di lapangan -- coba tampilkan salinan tersimpan alih-alih error kosong.
@@ -108,7 +113,15 @@
 						<div class="flex-1 min-w-0">
 							<p class="text-sm font-bold truncate">{sop.title}</p>
 							<p class="text-xs mt-0.5" style="color: var(--sys-label3)">{sop.department || '-'} · v{sop.version}</p>
-							{#if sop.requires_training}
+							{#if skorBySop.get(sop.id)?.score != null}
+								{@const k = skorBySop.get(sop.id)}
+								<span class="inline-flex items-center gap-1 mt-1 mr-2 text-[10px] font-bold" style="color: {SKOR_CLS[k?.status ?? 'belum_diuji']}" title="Skor Pengetahuan SOP Anda: kuis × bobot + konfirmasi baca × bobot (KKM {k?.passing})">🎯 Skor {k?.score}/100</span>
+							{/if}
+							{#if tersertifikasi.has(sop.id)}
+								<span class="inline-flex items-center gap-1 mt-1 text-[10px] font-bold" style="color: #16A34A">
+									<IconCertificate size={12} /> Tersertifikasi SOP{sop.sop_code ? ` ${sop.sop_code}` : ''}
+								</span>
+							{:else if sop.requires_training}
 								<span class="inline-flex items-center gap-1 mt-1 text-[10px] font-bold" style="color: var(--p, var(--g))">
 									<IconSchool size={12} /> Training wajib
 								</span>

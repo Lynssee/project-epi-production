@@ -14,6 +14,7 @@ import type { RequestHandler } from './$types';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { directusServerJson } from '$lib/server/directus';
 import { resolveGateMode } from '$lib/server/gateDefinitionsMode';
+import { signKonfirmasi, persistSignatureHash } from '$lib/server/paktaSign';
 import { computeUnconfirmed, type ConfirmRow, type FlowRow, type SopRow } from '$lib/utils/sopReadRequirement';
 
 const GATE_KEY = 'G_FLD_SOP_READ_CONFIRMATION';
@@ -57,7 +58,7 @@ export const GET: RequestHandler = async (event) => {
 			? `filter[flow_key][_eq]=${encodeURIComponent(flowKey)}`
 			: `filter[sop_id][_eq]=${encodeURIComponent(String(Number(sopId) || 0))}`;
 		const records = await loadList<any>(
-			`/items/sop_read_confirmations?${filterKey}&filter[karyawan_id][_eq]=${karyawan.id}&fields=id,confirmed_at,flow_version,sop_version_seq&sort=-confirmed_at&limit=1`,
+			`/items/sop_read_confirmations?${filterKey}&filter[karyawan_id][_eq]=${karyawan.id}&fields=id,confirmed_at,flow_version,sop_version_seq,ip_address&sort=-confirmed_at&limit=1`,
 			'sop_read_confirmations',
 			errors
 		);
@@ -87,6 +88,18 @@ export const GET: RequestHandler = async (event) => {
 			confirmed,
 			needs_reconfirm: Boolean(record) && !confirmed,
 			confirmed_at: record?.confirmed_at ?? null,
+			// Bukti tanda tangan otomatis: dihitung ulang dari baris tersimpan (tanpa kolom baru); null bila rahasia belum diset.
+			signature:
+				confirmed && record?.confirmed_at
+					? signKonfirmasi({
+							karyawanId: karyawan.id,
+							docType: flowKey ? 'flow' : 'sop',
+							docKey: flowKey ?? Number(sopId),
+							version: confirmedVersion,
+							confirmedAt: record.confirmed_at,
+							ip: record.ip_address
+						})
+					: null,
 			current_version: currentVersion,
 			...(errors.length ? { errors } : {})
 		});
@@ -220,9 +233,22 @@ export const POST: RequestHandler = async (event) => {
 		body: JSON.stringify(payload)
 	});
 
+	// Directus mengisi confirmed_at (special date-created) sendiri; tanda tangan harus memakai nilai TERSIMPAN agar bisa dihitung ulang.
+	const storedAt = insertRes?.data?.confirmed_at ?? confirmedAt;
+	const signature = signKonfirmasi({
+		karyawanId: karyawan.id,
+		docType: flowKey ? 'flow' : 'sop',
+		docKey: flowKey ?? (sopId as number),
+		version: flowKey ? (flowVersion as number) : versionSeq,
+		confirmedAt: storedAt,
+		ip: ipAddress
+	});
+	await persistSignatureHash('sop_read_confirmations', insertRes?.data?.id, signature);
+
 	return json({
 		success: true,
 		id: insertRes?.data?.id ?? null,
-		confirmed_at: confirmedAt
+		confirmed_at: storedAt,
+		signature
 	});
 };

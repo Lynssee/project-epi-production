@@ -47,7 +47,18 @@
 						<title>{n.full}{n.gates ? ` · ${n.gates} gate` : ''}</title>
 						{#if n.shape === 'diamond'}
 							<polygon points="{n.cx},{n.y} {n.x + n.w},{n.cy} {n.cx},{n.y + n.h} {n.x},{n.cy}" fill="#fef3c7" stroke={sel ? '#7e22ce' : strokeOf(n)} stroke-width={sel ? 3 : 1.7} />
-							<text x={n.cx} y={n.cy + 4} text-anchor="middle" font-weight="700" fill="#1e293b">{n.label}</text>
+							<!-- Marker BPMN 2.0 Exclusive Gateway (XOR ✕) -->
+							<path d="M {n.cx - 5} {n.y + 6} L {n.cx + 5} {n.y + 16} M {n.cx + 5} {n.y + 6} L {n.cx - 5} {n.y + 16}" stroke="#b45309" stroke-width="2" stroke-linecap="round" />
+							<text x={n.cx} y={n.cy + 7} text-anchor="middle" font-weight="700" fill="#1e293b">{n.label}</text>
+						{:else if n.shape === 'pill' && n.type === 'start'}
+							<!-- Start Event BPMN 2.0: Lingkaran Hijau Tipis ○ -->
+							<circle cx={n.cx} cy={n.cy} r={17} fill="#dcfce7" stroke="#16a34a" stroke-width="2.5" />
+							<text x={n.cx} y={n.cy + 4} text-anchor="middle" font-weight="700" font-size="10" fill="#15803d">Mulai</text>
+						{:else if n.shape === 'pill' && n.type === 'end'}
+							<!-- End Event BPMN 2.0: Lingkaran Merah Tebal ◉ -->
+							<circle cx={n.cx} cy={n.cy} r={17} fill="#fee2e2" stroke="#dc2626" stroke-width="3.5" />
+							<circle cx={n.cx} cy={n.cy} r={11} fill="none" stroke="#dc2626" stroke-width="1.5" opacity="0.6" />
+							<text x={n.cx} y={n.cy + 4} text-anchor="middle" font-weight="700" font-size="10" fill="#b91c1c">Selesai</text>
 						{:else if n.shape === 'pill'}
 							<rect x={n.x} y={n.y} width={n.w} height={n.h} rx={n.h / 2} fill={n.type === 'start' ? '#dcfce7' : '#e2e8f0'} stroke={n.type === 'start' ? '#16a34a' : '#64748b'} stroke-width="1.5" />
 							<text x={n.cx} y={n.cy + 4} text-anchor="middle" font-weight="700" fill="#1e293b">{n.label}</text>
@@ -72,7 +83,7 @@
 			</svg>
 		</div>
 		<p class="text-[10px] text-gray-500 leading-relaxed" data-testid="mini-map-legend">
-			◇ = keputusan (pilih cabang sesuai label) · garis putus-putus oranye ↩ = kembali ke langkah sebelumnya (perbaikan) · lencana ungu/warna = jumlah gate. <b>Ketuk langkah</b> untuk melihat rinciannya di bawah. Geser ke samping bila diagram lebar.
+			BPMN 2.0: ○ Mulai (hijau) · ◉ Selesai (merah) · ▢ Tugas · ◇ Keputusan (✕) · garis putus-putus oranye ↩ = kembali/perbaikan · lencana warna = jumlah gate. <b>Ketuk langkah</b> untuk rincian.
 		</p>
 	</div>
 {/if}

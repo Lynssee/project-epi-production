@@ -4,7 +4,7 @@
 // (klien tidak perlu mengunduh seluruh alur ±2 MB hanya untuk mencari). Semua kata kunci harus muncul pada SATU bidang.
 import type { ProcessFlow } from '$lib/data/processGuidance';
 
-export type KendalaKind = 'kendala' | 'gate' | 'syarat' | 'langkah';
+export type KendalaKind = 'kendala' | 'negatif' | 'gate' | 'syarat' | 'langkah';
 export interface KendalaHit {
 	flow_id: string;
 	flow_title: string;
@@ -16,7 +16,16 @@ export interface KendalaHit {
 
 export const MIN_QUERY = 2;
 export const MAX_QUERY = 80;
-const KIND_RANK: Record<KendalaKind, number> = { kendala: 0, gate: 1, syarat: 2, langkah: 3 };
+const KIND_RANK: Record<KendalaKind, number> = { kendala: 0, negatif: 1, gate: 2, syarat: 3, langkah: 4 };
+// Kata kunci awam per kategori skenario negatif (agar "server down" / "sinyal mati" menemukan skenario walau teksnya memakai istilah lain).
+const NEG_KEYWORDS: Record<string, string> = {
+	system_erp_error: 'erp error server down error sistem gangguan sistem 5xx 500 n8n fallback rekonsiliasi',
+	network_offline: 'offline sinyal mati sinyal putus blankspot konflik sinkronisasi sync 409 fallback rekonsiliasi',
+	gate_blocked: 'gate tertahan hold diblokir override pengecualian fallback',
+	data_mismatch: 'selisih data dokumen tidak valid fallback rekonsiliasi',
+	operational_reject: 'ditolak penolakan gagal rework fallback',
+	force_majeure_k3: 'darurat k3 cuaca ekstrem stop work fallback'
+};
 const norm = (s: string) => s.toLowerCase().replace(/[_\-./]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 export function tokenize(q: string): string[] {
@@ -33,7 +42,12 @@ export function searchKendala(flows: ProcessFlow[], query: string, limit = 12): 
 		const t = norm(text);
 		return tokens.every((tok) => t.includes(tok));
 	};
-	const hits: KendalaHit[] = [];
+	const byNode = new Map<string, KendalaHit>();
+	const keep = (h: KendalaHit) => {
+		const k = `${h.flow_id}:${h.node_id}`;
+		const cur = byNode.get(k);
+		if (!cur || KIND_RANK[h.kind] < KIND_RANK[cur.kind]) byNode.set(k, h);
+	};
 	for (const f of Array.isArray(flows) ? flows : []) {
 		for (const n of f?.nodes ?? []) {
 			if (!n) continue; // data rusak: jangan menjatuhkan pencarian
@@ -47,8 +61,20 @@ export function searchKendala(flows: ProcessFlow[], query: string, limit = 12): 
 			for (const g of n.gates ?? []) offer('gate', `${g?.key ?? ''} ${g?.modul ?? ''} ${g?.documentType ?? ''}`.trim());
 			for (const c of n.checklist ?? []) offer('syarat', String(c ?? ''));
 			offer('langkah', `${n.label ?? ''} ${n.desc ?? ''}`);
-			if (best) hits.push(best);
+			if (best) keep(best);
+		}
+		// Skenario negatif (ERP Error / offline / gate / hambatan): dikaitkan ke langkahnya; tanpa step_id → langkah pertama alur.
+		const nodes = (f?.nodes ?? []).filter(Boolean);
+		for (const s of f?.sop?.negative_scenarios ?? []) {
+			if (!s) continue;
+			const target = nodes.find((n) => n.id === s.step_id) ?? nodes[0];
+			if (!target) continue;
+			const text = `${s.code ?? ''} ${s.trigger ?? ''} ${s.step_label ?? ''} ${s.related_gate_key ?? ''} ${NEG_KEYWORDS[s.category] ?? ''}`;
+			if (!matches(text)) continue;
+			const firstStep = String(s.fallback_action ?? '').split('\n')[0].replace(/^\d+\.\s*/, '');
+			keep({ flow_id: f.id, flow_title: f.title, node_id: target.id, node_label: target.label, kind: 'negatif', snippet: clip(`${s.trigger ?? ''} → ${firstStep}`) });
 		}
 	}
+	const hits = [...byNode.values()];
 	return hits.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.flow_title.localeCompare(b.flow_title) || a.node_label.localeCompare(b.node_label)).slice(0, limit);
 }

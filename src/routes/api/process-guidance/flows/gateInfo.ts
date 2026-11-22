@@ -74,7 +74,7 @@ export async function loadGateInfoForFlow(flow: ProcessFlow, authHeader: string)
 	let failed = 0;
 	let reason: string | undefined;
 	for (const r of results) {
-		if (!r.available || !r.modes) {
+		if (!r.available || !('modes' in r) || !r.modes) {
 			failed++;
 			reason ??= r.reason;
 			continue;

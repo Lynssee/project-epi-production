@@ -79,6 +79,10 @@ export interface BukuSakuInput {
 	dicetakOleh?: string;
 	gateInfo?: FieldGateInfoResult | null;
 	now?: Date;
+	/** Hanya langkah dengan id ini (Buku Saku Jabatan: langkah milik satu jabatan). Kosong/undefined = semua langkah. */
+	onlyNodeIds?: string[];
+	/** Kembalikan isi <body> saja (untuk digabung ke dokumen lain). */
+	bodyOnly?: boolean;
 }
 
 const MODE_LABEL: Record<string, string> = { hard: 'WAJIB (blokir)', soft: 'WAJIB (bisa pengecualian)', warn: 'PERINGATAN', shadow: 'PANTAU' };
@@ -86,7 +90,10 @@ const MODE_LABEL: Record<string, string> = { hard: 'WAJIB (blokir)', soft: 'WAJI
 export function buildBukuSakuHtml(input: BukuSakuInput): string {
 	const { flow, dicetakOleh = '', gateInfo = null } = input;
 	const now = (input.now ?? new Date()).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-	const rows = buildBukuSakuRows(flow);
+	const only = input.onlyNodeIds ? new Set(input.onlyNodeIds) : null;
+	const rows = buildBukuSakuRows(flow)
+		.filter((r) => !only || only.has(r.id))
+		.map((r, i) => ({ ...r, no: i + 1 }));
 	const controlled = isControlled(flow);
 	const docNo = str(flow.sop?.doc_number) || str(flow.sop_code);
 	const gi = gateInfo && gateInfo.available ? gateInfo.gates : null;
@@ -131,7 +138,7 @@ export function buildBukuSakuHtml(input: BukuSakuInput): string {
 				? `<p class="note">Detail gate (mode &amp; solusi) tidak terbaca saat dicetak${gateInfo?.reason ? `: ${escHtml(gateInfo.reason)}` : ''}; kunci gate tetap tercantum pada tabel langkah.</p>`
 				: '';
 
-	return `<!doctype html>
+	const doc = `<!doctype html>
 <html lang="id">
 <head>
 <meta charset="utf-8" />
@@ -190,4 +197,46 @@ ${gateSection}
 <div class="foot"><span>Dicetak ${escHtml(now)}${dicetakOleh ? ` oleh ${escHtml(dicetakOleh)}` : ''}</span><span>${escHtml(COMPANY_NAME)} · ${controlled ? 'Salinan lapangan' : 'DRAFT — bukan dokumen terkendali'}</span></div>
 </body>
 </html>`;
+	if (!input.bodyOnly) return doc;
+	const b0 = doc.indexOf('<body>');
+	const b1 = doc.lastIndexOf('</body>');
+	return b0 >= 0 && b1 > b0 ? doc.slice(b0 + 6, b1) : doc;
+}
+
+export interface BukuSakuJabatanInput {
+	posisiNama: string;
+	/** Satu entri per alur terbit yang punya langkah milik jabatan ini. */
+	groups: { flow: ProcessFlow; nodeIds: string[] }[];
+	dicetakOleh?: string;
+	now?: Date;
+}
+
+/**
+ * Buku Saku JABATAN: seluruh langkah milik satu jabatan dari semua alur terbit, dikelompokkan per alur — satu PDF yang bisa disimpan/dibagikan
+ * dan dibuka tanpa sinyal. Memakai tampilan per-alur yang sama (hanya langkah milik jabatan, penomoran ulang). Detail mode gate per alur tidak
+ * dimuat (satu dokumen bisa memuat puluhan alur); kunci gate tetap tampil di tiap langkah dan catatan di sampul menjelaskannya.
+ */
+export function buildBukuSakuJabatanHtml(input: BukuSakuJabatanInput): string {
+	const { posisiNama, groups, dicetakOleh = '' } = input;
+	const now = input.now ?? new Date();
+	const valid = (Array.isArray(groups) ? groups : []).filter((g) => g?.flow && g.nodeIds?.length);
+	const totalSteps = valid.reduce((n, g) => n + g.nodeIds.length, 0);
+	const full = buildBukuSakuHtml({ flow: valid[0]?.flow ?? ({ id: '', title: '', nodes: [], edges: [], lanes: [] } as unknown as ProcessFlow), onlyNodeIds: valid[0]?.nodeIds ?? [], dicetakOleh, now });
+	const head = full.slice(0, full.indexOf('<body>') + 6);
+	const cover = `<div class="kop">
+	<div class="company">${escHtml(COMPANY_NAME)}</div>
+	<div class="title">BUKU SAKU JABATAN</div>
+</div>
+<h1 style="font-size:14px;margin:8px 0 2px">${escHtml(posisiNama)}</h1>
+<div class="meta"><span><b>Alur terkait:</b> ${valid.length}</span><span><b>Langkah milik jabatan ini:</b> ${totalSteps}</span><span><b>Dicetak:</b> ${escHtml(now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}${dicetakOleh ? ` oleh ${escHtml(dicetakOleh)}` : ''}</span></div>
+<div class="banner ok">Salinan lapangan dari alur TERBIT saat dicetak — simpan/bagikan agar bisa dibuka tanpa sinyal. Versi terbaru selalu ada di aplikasi.</div>
+<h2>Daftar Alur</h2>
+<table><thead><tr><th style="width:5%">No</th><th>Alur</th><th style="width:14%">Langkah Anda</th></tr></thead><tbody>${valid
+		.map((g, i) => `<tr><td class="c">${i + 1}</td><td>${escHtml(g.flow.title)}</td><td class="c">${g.nodeIds.length}</td></tr>`)
+		.join('')}</tbody></table>
+<p class="note">Detail mode gate (wajib/peringatan/pantau) per alur tidak dimuat di buku saku jabatan; buka buku saku per alur untuk melihatnya. Kunci gate tetap tercantum pada tiap langkah.</p>`;
+	const parts = valid.map(
+		(g) => `<div style="break-before:page"></div>${buildBukuSakuHtml({ flow: g.flow, onlyNodeIds: g.nodeIds, dicetakOleh, now, bodyOnly: true })}`
+	);
+	return `${head}\n${cover}\n${parts.join('\n')}\n</body>\n</html>`;
 }

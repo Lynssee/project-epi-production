@@ -28,7 +28,7 @@ describe('loadPublishedFlowsForField', () => {
 		const url = mock.mock.calls[0][0] as string;
 		expect(url).toContain('filter[status][_eq]=published');
 		expect(url).toContain('filter[target_app][_in]=project-epi,both');
-		expect(url).toContain('fields=flow_key,title,description,target_app,urutan,version,definition');
+		expect(url).toMatch(/fields=[^&]*flow_key,title,description,target_app,urutan,version,definition/); // daftar field boleh didahului id/parent_flow_id (hirarki)
 		expect(url).not.toMatch(/fields=[^&]*\./);
 	});
 

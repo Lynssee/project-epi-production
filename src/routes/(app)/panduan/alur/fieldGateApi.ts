@@ -18,7 +18,7 @@ export interface KendalaHit {
 	flow_title: string;
 	node_id: string;
 	node_label: string;
-	kind: 'kendala' | 'gate' | 'syarat' | 'langkah';
+	kind: 'kendala' | 'negatif' | 'gate' | 'syarat' | 'langkah';
 	snippet: string;
 }
 
