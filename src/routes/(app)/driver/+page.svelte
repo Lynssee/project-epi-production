@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
+	import SopSayaWidget from '$lib/components/ess/SopSayaWidget.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { authStore } from '$lib/stores/auth';
@@ -7,7 +8,7 @@
 	import { hasPermission } from '$lib/constants/permissions';
 	import { resolveDriverId, getActiveTrip, getRecentTrips, startDailyTask } from '$lib/services/driver';
 	import { getIdToken } from '$lib/services/secureDirectus';
-	import { IconTruck, IconLoader2, IconMapPin, IconClock, IconPlus, IconClipboardCheck, IconClipboardList, IconSun, IconFileText } from '@tabler/icons-svelte';
+	import { IconTruck, IconLoader2, IconMapPin, IconClock, IconPlus, IconClipboardCheck, IconClipboardList, IconSun, IconFileText, IconAlertTriangle } from '@tabler/icons-svelte';
 
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -20,6 +21,20 @@
 	// (peruntukan_role='driver', BUKAN hardcode warna hijau lagi) yang masih dipegang driver.
 	let lembarHijau = $state<any[]>([]);
 	let setoringId = $state<number | null>(null);
+
+	// Skor driver bulan berjalan (rumus sama dgn tab Skor Driver di admin). Gagal memuat tidak
+	// mengganggu portal — kartu hanya disembunyikan, error dicatat di console.
+	let myScore = $state<any>(null);
+	async function loadMyScore() {
+		try {
+			const token = await getIdToken();
+			const res = await fetch('/api/driver/score', { headers: { Authorization: `Bearer ${token}` } });
+			if (res.ok) myScore = await res.json();
+			else console.warn('[driver] skor gagal dimuat:', res.status);
+		} catch (e) {
+			console.warn('[driver] skor gagal dimuat:', e);
+		}
+	}
 
 	async function loadLembarHijau() {
 		try {
@@ -74,6 +89,7 @@
 		}
 		loading = false;
 		loadLembarHijau();
+		loadMyScore();
 	});
 
 	async function handleStartDailyTask() {
@@ -106,6 +122,8 @@
 				<IconTruck size={18} style="color: var(--g)" />
 			</div>
 		</div>
+
+		<SopSayaWidget />
 
 		{#if loading}
 			<CircularProgressGauge size={48} strokeWidth={4} label="Memuat penugasan driver..." />
@@ -162,6 +180,40 @@
 				<IconClipboardCheck size={16} style="color: #1F6592" />
 				<span class="text-[12px] font-semibold" style="color: var(--sys-label)">Cek Kendaraan (P2H) & BBM</span>
 			</button>
+
+			{#if myScore}
+				<div class="rounded-xl p-3 mb-4" style="background: var(--sys-fill)">
+					<div class="flex items-center justify-between">
+						<span class="text-[12px] font-bold" style="color: var(--sys-label)">Skor Saya — {myScore.periode}</span>
+						<span class="text-[18px] font-bold" style="color: {myScore.band === 'baik' ? '#16A34A' : myScore.band === 'cukup' ? '#D97706' : myScore.band === 'rendah' ? '#DC2626' : 'var(--sys-label-2, #6B7280)'}">
+							{myScore.score ?? '–'}
+						</span>
+					</div>
+					{#if myScore.score == null}
+						<p class="text-[10px] mt-1" style="color: var(--sys-label-2, #6B7280)">Skor muncul setelah ada trip atau pengisian BBM bulan ini.</p>
+					{:else}
+						<div class="mt-2 space-y-1">
+							{#each Object.entries(myScore.components) as [k, v]}
+								<div class="flex justify-between text-[11px]" style="color: var(--sys-label)">
+									<span>{myScore.labels[k]}</span><span>{v ?? 'belum ada data'}</span>
+								</div>
+							{/each}
+						</div>
+						<p class="text-[10px] mt-2" style="color: var(--sys-label-2, #6B7280)">Naikkan skor: selesaikan trip, isi P2H sebelum berangkat, catat odometer & struk BBM dengan benar, perpanjang SIM sebelum habis.</p>
+					{/if}
+				</div>
+			{/if}
+
+			<!-- Lapor kecelakaan/mogok/tilang → form HSE yang sudah ada (triase, investigasi, CAPA, eskalasi WA kritis). Tipe "insiden" terisi otomatis. -->
+			<button
+				class="w-full rounded-lg p-3 mb-1 flex items-center gap-2"
+				style="background: var(--sys-fill); border: 1px solid #DC2626"
+				onclick={() => goto(`/hse?prefill_tipe=insiden&prefill_kategori=lainnya&prefill_kronologi=${encodeURIComponent('[ARMADA] Kendaraan' + (activeTrip?.tujuan ? ' — trip ke ' + activeTrip.tujuan : '') + ': ')}`)}
+			>
+				<IconAlertTriangle size={16} style="color: #DC2626" />
+				<span class="text-[12px] font-semibold" style="color: #DC2626">Lapor Insiden / Kendaraan Bermasalah</span>
+			</button>
+			<p class="text-[10px] mb-4 px-1" style="color: var(--sys-label-2, #6B7280)">Kecelakaan, mogok, atau tilang. Utamakan keselamatan dulu; korban jiwa hubungi 112.</p>
 
 			<button
 				class="w-full rounded-lg p-3 mb-4 flex items-center gap-2"

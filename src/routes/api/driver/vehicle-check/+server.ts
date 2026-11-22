@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { authenticateDriver } from '$lib/server/driver/driverGuard';
 import { directusServerJson, directusServerUpload } from '$lib/server/directus';
 import { todayJakarta } from '$lib/server/ess/time';
+import { autoWoIdentity } from '$lib/server/preventive/woNumber';
 
 // Sama persis dengan constants di src/lib/services/preventive.ts (P2H_WO_IDS) — id kategori
 // work_order ini berasal dari Directus bersama, jangan diubah tanpa menyamakan di sana juga.
@@ -110,6 +111,7 @@ export const POST: RequestHandler = async (event) => {
 		workOrder = await directusServerJson<{ data: any }>('/items/work_order', {
 			method: 'POST',
 			body: JSON.stringify({
+				...(await autoWoIdentity(today)), // wo_number + created_at wajib (KPI & Laporan Bulanan membaca keduanya)
 				equipment_id: equipmentId,
 				keluhan: temuan ? `${keluhan}\n\nCatatan driver: ${temuan}` : keluhan,
 				kategori_perbaikan_id: criticalRusak.length > 0 ? WO_IDS.DARURAT : WO_IDS.MINOR,

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PosisiLiniCard from '$lib/components/strategy/PosisiLiniCard.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -490,6 +491,9 @@
 					</div>
 				</div>
 			{/if}
+
+			<!-- Strategic Suite v2 Fase 6: kartu read-only (tampil hanya bila diaktifkan Superadmin) -->
+			<div class="mb-4"><PosisiLiniCard /></div>
 
 			<!-- Reminders Alert Widget -->
 			{#if reminders.length > 0}

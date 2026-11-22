@@ -4,6 +4,7 @@
 <!-- Menulis ke customer_complaints (kanonik) sebagai D0 "Diterima" -- tahap 8D -->
 <!-- lanjutan (investigasi, eskalasi R&D) dikerjakan di app admin & dipantau di sini. -->
 <script lang="ts">
+	import RadarChip from '$lib/components/strategy/RadarChip.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -1099,6 +1100,9 @@ ${item.deskripsi}
 							</button>
 						{/if}
 					</div>
+
+					<!-- Strategic Suite v2 Fase 6: chip radar opsional (berdiri sendiri, tidak ikut submit) -->
+					<RadarChip sourceForm="komplain_customer" />
 
 					<!-- SECTION 5: SUBMIT & OFFLINE-READY STATUS -->
 					<div class="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">

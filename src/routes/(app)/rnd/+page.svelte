@@ -37,8 +37,44 @@
 	import { IconArrowLeft, IconSearch, IconQrcode, IconAlertTriangle, IconFileText, IconSend, IconFlask } from '@tabler/icons-svelte';
 	import { compressPhoto } from '$lib/utils/photoCompress';
 
-	type Tab = 'tds' | 'msds' | 'b3' | 'katalog' | 'kompat' | 'mixing' | 'retensi' | 'weathering' | 'lapor' | 'minta';
+	import { RND_TAB_GROUPS, groupOfTab, complaintStageLabel, docRequestStatusLabel, type RndTab } from '$lib/config/rndFieldTabs';
+	import { assessPainting, type DewPointAssessment } from '$lib/utils/dewPoint';
+	import { fetchMyProductIssues, fetchMyDocRequests, type MyComplaintRow, type MyDocRequestRow } from '$lib/services/rndField';
+
+	type Tab = RndTab;
 	let tab = $state<Tab>('tds');
+	// 10 tab lama + 2 fitur baru dikelompokkan jadi 4 kelompok agar muat di layar HP (lihat config/rndFieldTabs.ts).
+	const activeGroup = $derived(groupOfTab(tab));
+	function pickGroup(id: string) {
+		const g = RND_TAB_GROUPS.find((x) => x.id === id);
+		if (g && !g.tabs.some((t) => t.id === tab)) tab = g.tabs[0].id;
+	}
+
+	// --- Dew Point & Cuaca Pengecatan (zero-API, rumus Magnus di perangkat) ---
+	let dpAir = $state('');
+	let dpRh = $state('');
+	let dpSub = $state('');
+	const dpResult = $derived<DewPointAssessment | null>(
+		dpAir === '' || dpRh === '' || dpSub === '' ? null : assessPainting({ airTempC: Number(dpAir), rhPercent: Number(dpRh), substrateTempC: Number(dpSub) })
+	);
+	const dpFilled = $derived(dpAir !== '' && dpRh !== '' && dpSub !== '');
+
+	// --- Status Laporan Saya (dimuat saat tab dibuka, bukan saat halaman dibuka) ---
+	let sayaLoading = $state(false);
+	let sayaLoaded = $state(false);
+	let sayaIssues = $state<MyComplaintRow[]>([]);
+	let sayaDocs = $state<MyDocRequestRow[]>([]);
+	async function loadSaya(force = false) {
+		if (sayaLoading || (sayaLoaded && !force)) return;
+		sayaLoading = true;
+		const nama = $authStore.user?.displayName || $authStore.user?.email || '';
+		[sayaIssues, sayaDocs] = await Promise.all([fetchMyProductIssues(nama), fetchMyDocRequests(nama)]);
+		sayaLoaded = true;
+		sayaLoading = false;
+	}
+	$effect(() => {
+		if (tab === 'saya') loadSaya();
+	});
 
 	// --- Modal Edukasi & Guidance Bahan ---
 	let guidanceModalOpen = $state(false);
@@ -160,7 +196,7 @@
 			scanMsg = 'QR tidak dikenali sebagai barang (format EPI:ITEM:<id>). Gunakan pencarian manual.';
 			return;
 		}
-		const kodeItem = await resolveProductCodeById(parsed.id);
+		const kodeItem = await resolveProductCodeById(Number(parsed.id));
 		if (!kodeItem) {
 			scanMsg = 'Barang tidak ditemukan di Master Barang.';
 			return;
@@ -239,18 +275,6 @@
 		}
 	}
 
-	const TABS: { id: Tab; label: string }[] = [
-		{ id: 'tds', label: 'TDS' },
-		{ id: 'msds', label: 'MSDS' },
-		{ id: 'katalog', label: 'Katalog Bahan' },
-		{ id: 'kompat', label: 'Cek Campur' },
-		{ id: 'mixing', label: 'Kalkulator Campuran' },
-		{ id: 'b3', label: 'B3 Darurat' },
-		{ id: 'retensi', label: 'Retensi Sample' },
-		{ id: 'weathering', label: 'Weathering' },
-		{ id: 'lapor', label: 'Lapor Masalah' },
-		{ id: 'minta', label: 'Minta Dokumen' }
-	];
 
 	// --- Retensi Sample QR (Rekomendasi Tambahan lapangan #2) ---
 	// Label batch FG (spk.batch_no) dicetak sebagai barcode/QR biasa, BUKAN format EPI: —
@@ -425,11 +449,40 @@
 			<p class="text-[11px] mb-3 px-2" style="color: #DC2626">{scanMsg}</p>
 		{/if}
 
-		<div class="flex gap-1 mb-4 overflow-x-auto">
-			{#each TABS as t}
+		<!-- Pintasan SOP & panduan kendala: langkah darurat (skenario negatif) + kuis pelatihan SOP R&D, bisa dibaca saat di lapangan. -->
+		<button
+			class="w-full h-11 mb-4 rounded-xl text-[13px] font-bold flex items-center justify-center gap-2"
+			style="background: rgba(59, 130, 246, 0.12); color: #3B82F6; border: 1px solid rgba(59, 130, 246, 0.3)"
+			onclick={() => goto('/panduan/alur?alur=rnd_master_quality_complaint_loop')}
+			title="Buka SOP R&D: langkah darurat saat sinyal putus, produk bermasalah, tumpahan B3, dan pelatihan SOP"
+			data-testid="rnd-field-sop-shortcut"
+		>
+			📘 SOP & Panduan Kendala R&D
+		</button>
+
+		<!-- 4 kelompok (segmented) → sub-tab dari kelompok aktif. Kelompok dipilih dulu, lalu fitur di dalamnya. -->
+		<div class="grid grid-cols-2 gap-2 mb-2" role="tablist" aria-label="Kelompok menu R&D">
+			{#each RND_TAB_GROUPS as g (g.id)}
 				<button
+					role="tab"
+					aria-selected={activeGroup.id === g.id}
+					class="px-2 py-2 rounded-xl text-[12px] font-bold flex items-center justify-center gap-1.5"
+					style={activeGroup.id === g.id ? 'background: var(--g); color: white' : 'background: var(--sys-fill); color: var(--sys-label-2)'}
+					onclick={() => pickGroup(g.id)}
+					data-testid="rnd-group-{g.id}"
+				>
+					<span>{g.icon}</span><span>{g.label}</span>
+				</button>
+			{/each}
+		</div>
+		<p class="text-[11px] mb-2 px-1" style="color: var(--sys-label-2)">{activeGroup.hint}</p>
+		<div class="flex gap-1 mb-4 overflow-x-auto" role="tablist" aria-label="Fitur {activeGroup.label}">
+			{#each activeGroup.tabs as t (t.id)}
+				<button
+					role="tab"
+					aria-selected={tab === t.id}
 					class="px-3 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap"
-					style={tab === t.id ? 'background: var(--g); color: white' : 'background: var(--sys-fill); color: var(--sys-label-2)'}
+					style={tab === t.id ? 'background: var(--sys-label); color: var(--sys-bg, white)' : 'background: var(--sys-fill); color: var(--sys-label-2)'}
 					onclick={() => (tab = t.id)}
 				>
 					{t.label}
@@ -863,6 +916,74 @@
 						<IconFileText size={16} /> {mintaSubmitting ? 'Mengirim…' : 'Kirim Permintaan'}
 					</button>
 				</div>
+			{/if}
+		{:else if tab === 'dewpoint'}
+			<p class="text-[11px] mb-3" style="color: var(--sys-label-2)">
+				Cek cuaca layak cat sebelum aplikasi. Isi suhu udara, kelembapan (RH), dan suhu pelat/substrat. Aturan: suhu pelat minimal 3 °C di atas dew point (ISO 8502-4) dan RH tidak lebih dari 85% (risiko amine blushing). Dihitung di HP — tanpa sinyal pun bisa.
+			</p>
+			<div class="grid grid-cols-3 gap-2">
+				<label class="text-[11px] font-semibold" style="color: var(--sys-label-2)">Suhu udara (°C)
+					<input type="number" inputmode="decimal" bind:value={dpAir} placeholder="30" class="mt-1 w-full rounded-lg px-2 py-2 text-[14px]" style="background: var(--sys-fill); border: 1px solid var(--sys-sep); color: var(--sys-label)" />
+				</label>
+				<label class="text-[11px] font-semibold" style="color: var(--sys-label-2)">RH (%)
+					<input type="number" inputmode="decimal" bind:value={dpRh} placeholder="80" class="mt-1 w-full rounded-lg px-2 py-2 text-[14px]" style="background: var(--sys-fill); border: 1px solid var(--sys-sep); color: var(--sys-label)" />
+				</label>
+				<label class="text-[11px] font-semibold" style="color: var(--sys-label-2)">Suhu pelat (°C)
+					<input type="number" inputmode="decimal" bind:value={dpSub} placeholder="32" class="mt-1 w-full rounded-lg px-2 py-2 text-[14px]" style="background: var(--sys-fill); border: 1px solid var(--sys-sep); color: var(--sys-label)" />
+				</label>
+			</div>
+			{#if dpFilled && !dpResult}
+				<p class="text-[12px] mt-3" style="color: #DC2626">Nilai tidak valid. RH harus 1–100%, suhu dalam rentang wajar.</p>
+			{:else if dpResult}
+				<div class="mt-3 rounded-xl p-3" style={dpResult.verdict === 'aman' ? 'background: rgba(22,163,74,.12); border: 1px solid rgba(22,163,74,.4)' : 'background: rgba(220,38,38,.12); border: 1px solid rgba(220,38,38,.4)'} data-testid="rnd-dewpoint-result">
+					<p class="text-[15px] font-extrabold" style={dpResult.verdict === 'aman' ? 'color:#16A34A' : 'color:#DC2626'}>
+						{dpResult.verdict === 'aman' ? '🟢 AMAN PENGECATAN' : '🔴 BAHAYA KONDENSASI / BLUSHING — tunda pengecatan'}
+					</p>
+					<p class="text-[12px] mt-1" style="color: var(--sys-label)">Dew point: <b>{dpResult.dewPointC.toFixed(1)} °C</b> · Selisih pelat–dew point: <b>{dpResult.marginC.toFixed(1)} °C</b></p>
+					{#each dpResult.reasons as r}
+						<p class="text-[12px] mt-1" style="color: var(--sys-label)">• {r}</p>
+					{/each}
+					{#if dpResult.verdict === 'bahaya'}
+						<p class="text-[11px] mt-2" style="color: var(--sys-label-2)">Tunggu pelat menghangat atau RH turun, ukur ulang, lalu cat. Bila terpaksa terjadi cacat, laporkan lewat <b>Lapor Masalah</b>.</p>
+					{/if}
+				</div>
+			{/if}
+			<p class="text-[10px] mt-3" style="color: var(--sys-label-2)">Alat bantu hitung, bukan pengganti ketentuan TDS produk dan instruksi Project Leader.</p>
+		{:else if tab === 'saya'}
+			<div class="flex items-center justify-between mb-3">
+				<p class="text-[11px]" style="color: var(--sys-label-2)">Tindak lanjut R&D atas laporan masalah dan permintaan dokumen yang Anda kirim.</p>
+				<button class="text-[12px] font-semibold shrink-0 ml-2" style="color: var(--g)" onclick={() => loadSaya(true)} disabled={sayaLoading}>{sayaLoading ? 'Memuat…' : '↻ Muat ulang'}</button>
+			</div>
+			{#if sayaLoading && !sayaLoaded}
+				<p class="text-[12px] text-center py-8" style="color: var(--sys-label-2)">Memuat...</p>
+			{:else}
+				<p class="text-[11px] font-bold mb-1" style="color: var(--sys-label-2)">Laporan Masalah Produk</p>
+				{#if sayaIssues.length === 0}
+					<p class="text-[12px] py-3" style="color: var(--sys-label-2)">Belum ada laporan atas nama Anda.</p>
+				{:else}
+					<div class="space-y-2 mb-4">
+						{#each sayaIssues as r (r.id)}
+							<div class="rounded-xl p-3" style="background: var(--sys-fill); border: 1px solid var(--sys-sep)">
+								<p class="text-[12px] font-bold" style="color: var(--sys-label)">{complaintStageLabel(r.status)}</p>
+								<p class="text-[11px]" style="color: var(--sys-label-2)">{r.tanggal ? new Date(r.tanggal).toLocaleDateString('id-ID') : '-'}{r.batch_number ? ` · Batch ${r.batch_number}` : ''}</p>
+								<p class="text-[12px] mt-1 line-clamp-3" style="color: var(--sys-label)">{(r.deskripsi || '').replace('[LAPANGAN - Internal]', '').trim() || '-'}</p>
+							</div>
+						{/each}
+					</div>
+				{/if}
+				<p class="text-[11px] font-bold mb-1" style="color: var(--sys-label-2)">Permintaan Dokumen</p>
+				{#if sayaDocs.length === 0}
+					<p class="text-[12px] py-3" style="color: var(--sys-label-2)">Belum ada permintaan dokumen atas nama Anda.</p>
+				{:else}
+					<div class="space-y-2">
+						{#each sayaDocs as d (d.id)}
+							<div class="rounded-xl p-3" style="background: var(--sys-fill); border: 1px solid var(--sys-sep)">
+								<p class="text-[12px] font-bold" style="color: var(--sys-label)">{(d.tipe || '').toUpperCase()} · {d.kode_produk || '-'}</p>
+								<p class="text-[11px]" style="color: var(--sys-label-2)">{docRequestStatusLabel(d.status)}</p>
+							</div>
+						{/each}
+					</div>
+				{/if}
 			{/if}
 		{/if}
 	</div>

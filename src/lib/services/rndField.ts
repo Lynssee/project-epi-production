@@ -200,6 +200,65 @@ export async function requestDocument(payload: { tipe: 'tds' | 'msds'; kodeProdu
 	);
 }
 
+// Blueprint SOP R&D Fase 6 — "Status Laporan Saya": pelapor lapangan melihat tindak lanjut R&D tanpa bertanya via WhatsApp.
+// Dua query terpisah & ringan (tanpa relasi bersarang), dibatasi 20 baris terbaru; gagal → daftar kosong (dilog), bukan crash.
+export interface MyComplaintRow {
+	id: number;
+	tanggal: string | null;
+	status: string | null;
+	batch_number: string | null;
+	deskripsi: string | null;
+	status_changed_at: string | null;
+	sla_due_at: string | null;
+}
+export interface MyDocRequestRow {
+	id: number;
+	tipe: string | null;
+	kode_produk: string | null;
+	catatan: string | null;
+	status: string | null;
+}
+
+/** Laporan masalah produk dari lapangan milik `reportedBy` (pic), terbaru dulu. Hanya yang bertanda [LAPANGAN. */
+export async function fetchMyProductIssues(reportedBy: string, limit = 20): Promise<MyComplaintRow[]> {
+	const pic = (reportedBy || '').trim();
+	if (!pic) return [];
+	try {
+		const rows = (await directus.request(
+			readItems('customer_complaints', {
+				filter: { _and: [{ pic: { _eq: pic } }, { deskripsi: { _starts_with: '[LAPANGAN' } }] },
+				fields: ['id', 'tanggal', 'status', 'batch_number', 'deskripsi', 'status_changed_at', 'sla_due_at'],
+				sort: ['-id'],
+				limit
+			})
+		)) as MyComplaintRow[];
+		return rows ?? [];
+	} catch (err) {
+		console.warn('[rndField] gagal memuat laporan saya:', err);
+		return [];
+	}
+}
+
+/** Permintaan dokumen TDS/MSDS milik `requestedBy`, terbaru dulu. */
+export async function fetchMyDocRequests(requestedBy: string, limit = 20): Promise<MyDocRequestRow[]> {
+	const who = (requestedBy || '').trim();
+	if (!who) return [];
+	try {
+		const rows = (await directus.request(
+			readItems('rnd_permintaan_dokumen', {
+				filter: { requested_by: { _eq: who } },
+				fields: ['id', 'tipe', 'kode_produk', 'catatan', 'status'],
+				sort: ['-id'],
+				limit
+			})
+		)) as MyDocRequestRow[];
+		return rows ?? [];
+	} catch (err) {
+		console.warn('[rndField] gagal memuat permintaan dokumen saya:', err);
+		return [];
+	}
+}
+
 // ==========================================
 // R&D v3 Fase 6 — Katalog Bahan (read-only) + Cek Kompatibilitas cepat.
 // Formula/komposisi TETAP tidak diekspos. Data profil dari rnd_material_profile,

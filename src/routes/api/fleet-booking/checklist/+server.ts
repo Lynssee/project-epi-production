@@ -19,6 +19,7 @@ import { applyCashAdvanceSettlement } from '$lib/server/fleetSettlement';
 import { checkinGateApplies, bookingHasCheckin } from '$lib/server/fleetCheckinGate';
 import { isBookingOwner, pesanTolakTulis } from '$lib/server/fleetBookingOwner';
 import { evaluasiJendelaP2h, normalizeJendelaJam, normalizeJendelaMode } from '$lib/server/fleetP2hJendela';
+import { autoWoIdentity } from '$lib/server/preventive/woNumber';
 
 // Sama persis dengan WO_IDS di api/driver/vehicle-check/+server.ts — id kategori work_order
 // dari Directus bersama, jangan diubah tanpa menyamakan di kedua tempat.
@@ -333,6 +334,7 @@ export const POST: RequestHandler = async (event) => {
 				workOrder = await directusServerJson<{ data: any }>('/items/work_order', {
 					method: 'POST',
 					body: JSON.stringify({
+						...(await autoWoIdentity(new Date().toISOString().slice(0, 10))), // wo_number + created_at wajib (KPI & Laporan Bulanan membaca keduanya)
 						equipment_id: equipmentId,
 						keluhan: temuanUser ? `${keluhan}\n\nCatatan peminjam: ${temuanUser}` : keluhan,
 						kategori_perbaikan_id: kritisRusak.length > 0 ? WO_IDS.DARURAT : WO_IDS.MINOR,

@@ -80,7 +80,7 @@ export interface FleetBookingRecord {
 	advance_disbursement_ref?: string | null;
 	advance_alasan_tolak?: string | null;
 	settlement_selisih?: number | null;
-	settlement_status?: 'none' | 'menunggu_setor_balik' | 'menunggu_reimburse' | 'balanced' | 'closed' | null;
+	settlement_status?: 'none' | 'menunggu_setor_balik' | 'menunggu_reimburse' | 'menunggu_struk_final' | 'balanced' | 'closed' | null;
 	settlement_bukti_setor_balik_file?: string | null;
 	realisasi_bbm?: number | null;
 	realisasi_tol?: number | null;

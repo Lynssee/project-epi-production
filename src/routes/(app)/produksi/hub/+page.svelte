@@ -3,6 +3,7 @@
 	import { rolesStore } from '$lib/stores/roles';
 	import { hasPermission, type FeatureKey } from '$lib/constants/permissions';
 	import ModuleMenuGrid, { type MenuCategory } from '$lib/components/navigation/ModuleMenuGrid.svelte';
+	import SpkDataHealthBanner from '$lib/components/produksi/SpkDataHealthBanner.svelte';
 
 	import IconBuildingFactory2 from '@tabler/icons-svelte/icons/building-factory-2';
 	import IconClipboardList from '@tabler/icons-svelte/icons/clipboard-list';
@@ -13,6 +14,7 @@
 	import IconPrinter from '@tabler/icons-svelte/icons/printer';
 	import IconRepeat from '@tabler/icons-svelte/icons/repeat';
 	import IconRecycle from '@tabler/icons-svelte/icons/recycle';
+	import IconChartLine from '@tabler/icons-svelte/icons/chart-line';
 
 	function canView(permissions?: FeatureKey[], roles?: string[]): boolean {
 		if ($authStore.roleId === 'super_admin' || $authStore.roleIds?.includes('super_admin')) return true;
@@ -86,6 +88,14 @@
 					show: true
 				},
 				{
+					id: 'rapor-kpi-saya',
+					label: 'Rapor KPI Saya',
+					desc: 'Lihat skor & indikator kinerja Anda bulan berjalan (output, kualitas, disiplin)',
+					href: '/ess/kinerja',
+					icon: IconChartLine,
+					show: true
+				},
+				{
 					id: 'kiosk-fg-terima',
 					label: 'Terima FG',
 					desc: 'Terima barang jadi hasil produksi ke gudang (butuh sesi PIN kiosk)',
@@ -129,6 +139,10 @@
 			</div>
 		</div>
 	</div>
+
+	{#if canView(['input_produksi_harian'])}
+		<SpkDataHealthBanner />
+	{/if}
 
 	<ModuleMenuGrid {categories} />
 </div>

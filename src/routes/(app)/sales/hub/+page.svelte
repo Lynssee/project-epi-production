@@ -3,6 +3,7 @@
 	import { authStore } from '$lib/stores/auth';
 	import { rolesStore } from '$lib/stores/roles';
 	import { hasPermission, type FeatureKey } from '$lib/constants/permissions';
+	import SalesScoreCard from '$lib/components/sales/SalesScoreCard.svelte';
 	import ModuleMenuGrid, { type MenuCategory } from '$lib/components/navigation/ModuleMenuGrid.svelte';
 	import { getMyPoStatusSummary } from '$lib/services/salesPo';
 	import { getMyProspectsWithFollowUps, getUpcomingFollowUps } from '$lib/services/sales';
@@ -370,6 +371,8 @@
 			</div>
 		</div>
 	</div>
+
+	{#if canView(['input_sales'])}<SalesScoreCard />{/if}
 
 	<ModuleMenuGrid {categories} />
 </div>

@@ -4,9 +4,9 @@
 
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { authenticateEss } from '$lib/server/ess/attendanceGuard.ts';
-import { directusServerJson, directusServerUpload } from '$lib/server/directus.ts';
-import { todayJakarta } from '$lib/server/ess/time.ts';
+import { authenticateEss } from '$lib/server/ess/attendanceGuard';
+import { directusServerJson, directusServerUpload } from '$lib/server/directus';
+import { todayJakarta } from '$lib/server/ess/time';
 
 const JENIS_TO_KATEGORI: Record<string, string> = {
 	bbm: 'Transport',

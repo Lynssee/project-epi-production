@@ -417,7 +417,7 @@
 					latitude,
 					longitude,
 					accuracy: gpsCoords?.accuracy ?? null,
-					fotoFile,
+					fotoFile: photoFile,
 					clientTxnId
 				});
 				if (entryTersimpan) await removeQueuedSiteCheckinSubmission(clientTxnId).catch(() => {});

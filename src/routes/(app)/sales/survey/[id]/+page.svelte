@@ -287,7 +287,7 @@
 						type="button"
 						class="w-full h-9 rounded-xl text-[11px] font-bold border flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
 						style="border-color: var(--sys-sep); background: var(--sys-fill); color: var(--sys-label)"
-						onclick={() => salinEstimasiWA(survey)}
+						onclick={() => survey && salinEstimasiWA(survey)}
 					>
 						<IconCopy size={14} /> Salin Ringkasan ke WhatsApp
 					</button>

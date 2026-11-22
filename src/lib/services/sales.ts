@@ -708,6 +708,72 @@ export const PROSPECT_STAGES: { value: ProspectStage; label: string }[] = [
 	{ value: 'lost', label: 'Kalah' }
 ];
 
+export interface MyMonthScorecard {
+	period: string;
+	omzet: number;
+	jumlahSo: number;
+	/** null = target bulan ini belum diatur / tidak terbaca (bukan 0). */
+	target: number | null;
+	kunjungan: number;
+	kunjunganTerverifikasi: number;
+	sphMenunggu: number;
+	errors: string[];
+}
+
+/**
+ * Kartu skor pribadi sales (/sales/hub): omzet SO bulan ini vs target, kunjungan terverifikasi, SPH menunggu follow-up.
+ * 4 query paralel (relasi dipisah); tiap sumber fail-soft — yang gagal ditandai di `errors`, tidak dihitung sebagai 0.
+ */
+export async function getMyMonthScorecard(params: { karyawanId: number | null; salesName: string | null }): Promise<MyMonthScorecard> {
+	const today = todayWib();
+	const period = today.slice(0, 7);
+	const [y, m] = period.split('-').map(Number);
+	const last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+	const from = `${period}-01`;
+	const errors: string[] = [];
+	const names = [...new Set([params.salesName, cleanSalesmanName(params.salesName)].filter(Boolean))] as string[];
+	const safe = async <T>(key: string, fn: () => Promise<T>): Promise<T | null> => {
+		try { return await fn(); } catch (e) { console.warn(`[scorecard] ${key} gagal:`, e); errors.push(key); return null; }
+	};
+	const [so, target, visits, sph] = await Promise.all([
+		params.karyawanId
+			? safe('so', async () => (await directus.request(readItems('so_customer', {
+				filter: { _and: [{ karyawan_id: { _eq: params.karyawanId } }, { tanggal_so: { _between: [from, last] } }, { status: { _neq: 'cancelled' } }] },
+				fields: ['id', 'grand_total'], limit: -1
+			}))) as any[])
+			: Promise.resolve(null),
+		names.length
+			? safe('target', async () => (await directus.request(readItems('sales_targets', {
+				filter: { _and: [{ sales_name: { _in: names } }, { tahun: { _eq: y } }, { bulan: { _eq: m } }] },
+				fields: ['id', 'target_amount'], limit: -1
+			}))) as any[])
+			: Promise.resolve(null),
+		params.karyawanId
+			? safe('kunjungan', async () => (await directus.request(readItems('visit_sales', {
+				filter: { _and: [{ sales_id: { _eq: params.karyawanId } }, { tanggal_kunjungan: { _between: [from, last] } }] },
+				fields: ['id', 'verifikasi_status'], limit: -1
+			}))) as any[])
+			: Promise.resolve(null),
+		names.length
+			? safe('sph', async () => (await directus.request(readItems('kalkulator_penawaran', {
+				filter: { _and: [{ prepared_by: { _in: names } }, { status: { _in: ['final', 'sent'] } }, { linked_so_id: { _null: true } }] },
+				fields: ['id'], limit: -1
+			}))) as any[])
+			: Promise.resolve(null)
+	]);
+	const sum = (rows: any[] | null, f: string) => (rows || []).reduce((s, r) => s + (Number(r?.[f]) || 0), 0);
+	return {
+		period,
+		omzet: sum(so, 'grand_total'),
+		jumlahSo: so?.length ?? 0,
+		target: target && target.length ? sum(target, 'target_amount') : null,
+		kunjungan: visits?.length ?? 0,
+		kunjunganTerverifikasi: (visits || []).filter((v) => v.verifikasi_status === 'verified').length,
+		sphMenunggu: sph?.length ?? 0,
+		errors
+	};
+}
+
 export function cleanSalesmanName(name?: string | null): string {
 	if (!name) return '';
 	const n = name.trim();
