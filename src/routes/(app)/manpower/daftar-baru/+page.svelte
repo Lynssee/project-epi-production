@@ -16,6 +16,8 @@
 	import { compressPhoto } from '$lib/utils/photoCompress';
 	import { uploadEvidencePhoto } from '$lib/services/stockLapangan';
 	import SignaturePad from '$lib/components/shared/SignaturePad.svelte';
+	import ManpowerK3Chip from '$lib/components/manpower/ManpowerK3Chip.svelte';
+	import { fetchStatusK3, type K3Ringkasan } from '$lib/services/manpowerK3';
 
 	// Pola toast repo ini: Toast.svelte global lewat window.__showToast (bukan svelte-sonner).
 	const toast = {
@@ -25,6 +27,13 @@
 
 	let step = $state(1);
 	let submitting = $state(false);
+
+	// Tes K3 dasar (wajib sebelum HRD memverifikasi): setelah terdaftar, tawarkan kirim tautan tes ke HP pekerja.
+	let terdaftar = $state<{ id: number; nama: string; noHp: number | null } | null>(null);
+	let k3 = $state<K3Ringkasan | null>(null);
+	async function muatK3() {
+		if (terdaftar) k3 = await fetchStatusK3([terdaftar.id]);
+	}
 
 	// ── Langkah 1: identitas ────────────────────────────────────────────────
 	let nama = $state('');
@@ -179,6 +188,13 @@
 			if (!res?.success) throw new Error(res?.error || 'Gagal membuat penugasan/SPK.');
 
 			toast.success('Pekerja terdaftar. SPK menunggu validasi admin — pekerja boleh diabsen sementara.');
+			// Bila kuis K3 sudah diatur admin, tahan di layar ini agar PL bisa langsung mengirim tes K3 ke HP pekerja; bila belum/gagal baca → langsung ke daftar.
+			const status = await fetchStatusK3([mp.id]);
+			if (status?.konfigurasi) {
+				k3 = status;
+				terdaftar = { id: mp.id, nama: nama.trim(), noHp: Number(String(noHp).replace(/\D/g, '')) || null };
+				return;
+			}
 			goto('/manpower');
 		} catch (e: any) {
 			toast.error(e?.message || 'Gagal mendaftarkan pekerja.');
@@ -187,6 +203,23 @@
 		}
 	}
 </script>
+
+{#if terdaftar}
+	<div class="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Tes K3 pekerja baru">
+		<div class="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 p-4 space-y-3 shadow-xl">
+			<div>
+				<h2 class="text-base font-bold">✅ {terdaftar.nama} terdaftar</h2>
+				<p class="text-[11px] text-gray-500 mt-1 leading-relaxed">
+					Sebelum HRD memverifikasi, pekerja wajib lulus <strong>tes K3 dasar</strong>. Kirim tautannya ke HP pekerja sekarang — dikerjakan dari HP tanpa login (± beberapa menit).
+					Hasil dinilai otomatis dan terlihat di daftar Manpower.
+				</p>
+			</div>
+			<ManpowerK3Chip manpowerId={terdaftar.id} nama={terdaftar.nama} noHp={terdaftar.noHp} status={k3?.map[String(terdaftar.id)]} kuisJudul={k3?.quiz?.judul ?? null} onChanged={muatK3} />
+			<button onclick={() => goto('/manpower')} class="w-full px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">Selesai — ke daftar Manpower</button>
+			<p class="text-[10px] text-gray-400 text-center">Bisa juga dikirim nanti dari kartu pekerja di menu Manpower.</p>
+		</div>
+	</div>
+{/if}
 
 <div class="max-w-lg mx-auto p-4 space-y-4">
 	<div class="flex items-center gap-2">

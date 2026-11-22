@@ -8,10 +8,13 @@
 	import { IconArrowLeft, IconLoader2 } from '@tabler/icons-svelte';
 	import { getProjectsForCurrentUser } from '$lib/services/projectScope';
 	import { getClosureStatusForProjects, type ClosureStatusForProject } from '$lib/services/projectClosureLapangan';
+	import directus from '$lib/services/directus';
+	import { readItems } from '@directus/sdk';
 
 	let loading = $state(true);
 	let projects = $state<any[]>([]);
 	let statusRows = $state<ClosureStatusForProject[]>([]);
+	let pendingReportsMap = $state<Record<number, number>>({});
 
 	onMount(load);
 
@@ -20,7 +23,31 @@
 		try {
 			projects = (await getProjectsForCurrentUser(false, { limit: -1 })) || [];
 			const projectIds = projects.map((p) => p.id);
-			statusRows = await getClosureStatusForProjects(projectIds);
+			if (projectIds.length > 0) {
+				const [closureStatuses, reportsRes] = await Promise.all([
+					getClosureStatusForProjects(projectIds),
+					directus.request(
+						readItems('reports', {
+							filter: {
+								project_id: { _in: projectIds },
+								status: { _in: ['submitted', 'revision_requested'] }
+							},
+							fields: ['id', 'project_id', 'status'],
+							limit: -1
+						})
+					).catch(() => [])
+				]);
+				statusRows = closureStatuses;
+				const mapCount: Record<number, number> = {};
+				for (const r of (reportsRes as any[]) || []) {
+					const pid = typeof r.project_id === 'object' ? r.project_id?.id : r.project_id;
+					if (pid) mapCount[pid] = (mapCount[pid] || 0) + 1;
+				}
+				pendingReportsMap = mapCount;
+			} else {
+				statusRows = [];
+				pendingReportsMap = {};
+			}
 		} finally {
 			loading = false;
 		}
@@ -70,6 +97,7 @@
 					<tr>
 						<th class="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase">Proyek</th>
 						<th class="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase">Stage Closing</th>
+						<th class="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase">Laporan Harian</th>
 						<th class="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase">Skor Evaluasi</th>
 						<th class="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase">Grade</th>
 						<th class="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase">Aksi</th>
@@ -84,6 +112,21 @@
 									<span class="px-2.5 py-1 rounded-full text-xs font-semibold {STAGE_BADGE[r.stage] || 'bg-gray-100 text-gray-600'}">{STAGE_LABEL[r.stage] || r.stage}</span>
 								{:else}
 									<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">Belum Dimulai</span>
+								{/if}
+							</td>
+							<td class="px-4 py-3 text-center">
+								{#if (pendingReportsMap[r.project_id] || 0) > 0}
+									<a
+										href={`/laporan/${r.project_id}`}
+										class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors"
+										title="Ada laporan harian belum disetujui menjelang tutup buku"
+									>
+										⚠️ {pendingReportsMap[r.project_id]} pending
+									</a>
+								{:else}
+									<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700">
+										✓ Bersih
+									</span>
 								{/if}
 							</td>
 							<td class="px-4 py-3 text-center text-gray-700">{r.total_skor ?? '-'}</td>

@@ -50,7 +50,7 @@ export interface LeaderDailyDisciplineSummary {
 export interface RawDisciplineRecords {
 	tbmList: Array<{ id: number; project_id: number; tanggal: string; status?: string; peserta_manpower_ids?: any }>;
 	p2hList: Array<{ id: string | number; equipment_id: string; is_go?: boolean; status_kondisi?: string; result?: string }>;
-	absensiList: Array<{ id: number; project_id: number; status?: string; is_late?: boolean; is_geofence_valid?: boolean; jarak_meter?: number }>;
+	absensiList: Array<{ id: number; project_id: number; status?: string; is_late?: boolean; menit_keterlambatan?: number | null; is_geofence_valid?: boolean; jarak_meter?: number }>;
 	reportList: Array<{ id: number; project_id: number; date: string; date_created?: string; status?: string; progress_photos?: any; area_kerja_photos?: any; attendance_photos?: any; is_susulan?: boolean }>;
 	weeklyReportList?: Array<{ date: string; is_susulan?: boolean; date_created?: string }>;
 	activeEquipmentCount: number;

@@ -168,7 +168,7 @@
 	const today = todayWib();
 
 	let searchQuery = $state('');
-	let statusFilter = $state<'Semua' | 'P2H Belum' | 'P2H Sudah' | 'PM Overdue'>('Semua');
+	let statusFilter = $state<'Semua' | 'P2H Belum' | 'P2H Sudah' | 'PM Overdue' | 'Unit Saya'>('Semua');
 	
 	// Fase A1 (P2H Alat Ukur QC, 5 Sep 2026): filter kategori dipertahankan per-HP
 	// supaya QC Gudang tidak perlu memilih ulang "Alat Ukur & Instrumen QC" tiap sesi.
@@ -458,7 +458,7 @@
 							onclick={() => goto(`/preventive/p2h/${os.equipment_id}`)}
 						>
 							<span class="min-w-0">
-								<span class="block text-[12px] font-semibold text-slate-900 dark:text-slate-100 truncate">{os.equipment_name || 'Unit'}{os.equipment_code ? ` · ${os.equipment_code}` : ''}</span>
+								<span class="block text-[12px] font-semibold text-slate-900 dark:text-slate-100 truncate">{os.name || 'Unit'}{os.code ? ` · ${os.code}` : ''}</span>
 								<span class="block text-[11px] text-slate-500 dark:text-slate-400">{os.dates.length === 1 ? `Dibuka ${os.dates[0]}` : `${os.dates.length} sesi belum ditutup (${os.dates[0]} s/d ${os.dates[os.dates.length - 1]})`}</span>
 							</span>
 							<span class="shrink-0 text-[11px] font-bold text-amber-800 dark:text-amber-300">Tutup →</span>

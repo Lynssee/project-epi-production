@@ -144,8 +144,9 @@ export function exportTimelineToExcel({
 					});
 				}
 
-				const subPlanProg = subVol > 0 ? Math.min(100, (sumPlan / subVol) * 100) : 0;
-				const subActProg = subVol > 0 ? Math.min(100, (sumAct / subVol) * 100) : 0;
+				const subVolNum = Number(subVol) || 0;
+				const subPlanProg = subVolNum > 0 ? Math.min(100, (sumPlan / subVolNum) * 100) : 0;
+				const subActProg = subVolNum > 0 ? Math.min(100, (sumAct / subVolNum) * 100) : 0;
 
 				// Baris PLAN
 				const planRow = [

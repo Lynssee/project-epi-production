@@ -23,7 +23,7 @@ vi.mock('../directus', () => ({
 	})
 }));
 const createDoc = vi.fn(async () => ({ id: 77, nomor_retur: 'RTN/261024/002', qr_token: 'q', status: 'draft', linked: 0, linkedEquipment: 0 }));
-vi.mock('../returGudangServer', () => ({ createReturDocument: (i: any) => createDoc(i) }));
+vi.mock('../returGudangServer', () => ({ createReturDocument: (i: any) => (createDoc as any)(i) }));
 vi.mock('./effects', () => ({ runEffect: async (_n: string, _id: number, fn: () => Promise<unknown>) => { await fn(); return null; }, notifyLogistik: vi.fn(async () => {}) }));
 
 const { parseReturQuery, cariRetur, loloskanRetur, tahanRetur, catatTanpaDokumen, resetReturChecklistCache } = await import('./retur');

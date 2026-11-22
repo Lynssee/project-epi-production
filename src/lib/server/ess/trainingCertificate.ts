@@ -7,9 +7,8 @@ import { directusServerJson, directusServerUpload } from '$lib/server/directus';
 import type { TrainingEnrollmentRecord, TrainingProgramRecord } from '$lib/server/ess/training';
 import { buildTrainingCertVerifyUrl, QR_FILE_SUFFIX } from '$lib/server/ess/trainingCertVerify';
 
-const COMPANY_NAME = 'PT Eltama Prima Indo';
-const SIGNATORY_NAME = 'HRD Manager';
-const SIGNATORY_TITLE = 'Human Resources Department';
+import { CERT_BRANDING_DEFAULTS, loadCertBranding, type CertBranding } from '$lib/server/ess/trainingCertBranding';
+// Branding & penandatangan: app_settings training_lms (cert_*), lihat trainingCertBranding.ts.
 
 function formatTanggal(dateStr: string | null | undefined) {
 	return new Date(dateStr || Date.now()).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -101,9 +100,12 @@ interface BuildCertificateParams {
 	sertifikatExpired: string | null;
 	/** URL verifikasi (memuat HMAC). null/kosong = PDF tanpa QR (secret verifikasi belum di-set). */
 	verifyUrl?: string | null;
+	/** Branding dari app_settings; kosong = default bawaan. */
+	branding?: CertBranding;
 }
 
 export async function buildCertificatePdf(params: BuildCertificateParams): Promise<Buffer> {
+	const branding = params.branding ?? CERT_BRANDING_DEFAULTS;
 	const { jsPDF } = await import('jspdf');
 	const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' });
 	const pageWidth = doc.internal.pageSize.getWidth();
@@ -120,12 +122,12 @@ export async function buildCertificatePdf(params: BuildCertificateParams): Promi
 	doc.setFont('helvetica', 'bold');
 	doc.setFontSize(20);
 	doc.setTextColor(30, 64, 175);
-	doc.text('EPI', centerX, y, { align: 'center' });
+	doc.text(branding.cert_logo_text, centerX, y, { align: 'center' });
 	y += 26;
 	doc.setFontSize(11);
 	doc.setTextColor(80);
 	doc.setFont('helvetica', 'normal');
-	doc.text(COMPANY_NAME, centerX, y, { align: 'center' });
+	doc.text(branding.cert_company_name, centerX, y, { align: 'center' });
 
 	y += 40;
 	doc.setFontSize(26);
@@ -188,10 +190,10 @@ export async function buildCertificatePdf(params: BuildCertificateParams): Promi
 	const sigX = pageWidth - 200;
 	doc.line(sigX, footerY + 20, sigX + 140, footerY + 20);
 	doc.setFont('helvetica', 'bold');
-	doc.text(SIGNATORY_NAME, sigX + 70, footerY + 34, { align: 'center' });
+	doc.text(branding.cert_signatory_name, sigX + 70, footerY + 34, { align: 'center' });
 	doc.setFont('helvetica', 'normal');
 	doc.setFontSize(8);
-	doc.text(SIGNATORY_TITLE, sigX + 70, footerY + 46, { align: 'center' });
+	doc.text(branding.cert_signatory_title, sigX + 70, footerY + 46, { align: 'center' });
 
 	const arrayBuffer = doc.output('arraybuffer');
 	return Buffer.from(arrayBuffer);
@@ -241,6 +243,7 @@ export async function issueCertificate(
 		}
 
 		const buffer = await buildCertificatePdf({
+			branding: await loadCertBranding(),
 			enrollment,
 			namaKaryawan,
 			program,

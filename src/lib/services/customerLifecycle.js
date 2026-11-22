@@ -33,7 +33,7 @@ export const LIFECYCLE_PHASES = [
   { id: 'C9', label: 'Komisi Agen', hint: 'Pengajuan komisi (eksternal/internal) untuk SO ini — hanya tampil bila ada.', conditional: true },
 ];
 
-function phase(id, state, source, evidence, extra = {}) {
+function phase(/** @type {any} */ id, /** @type {any} */ state, /** @type {any} */ source, /** @type {any} */ evidence, extra = {}) {
   const meta = LIFECYCLE_PHASES.find((p) => p.id === id);
   return {
     id,
@@ -57,7 +57,7 @@ const SJ_DELIVERED_STATUSES = new Set(['delivered', 'received', 'complete', 'clo
 const SJ_IN_PROGRESS_STATUSES = new Set(['loading', 'shipped', 'needs_security_check']);
 
 /** C1 — Asal & Lead. Fakta = prospects.converted_so_customer_id === so.id. Tanpa fallback klaim (tidak ada kolom lain). */
-function resolveC1(so, prospect) {
+function resolveC1(/** @type {any} */ so, /** @type {any} */ prospect) {
   if (!so) return phase('C1', 'belum', 'kosong', 'Belum ada SO.');
   if (prospect && String(prospect.converted_so_customer_id) === String(so.id)) {
     return phase('C1', 'selesai', 'fakta', `Berasal dari lead "${prospect.company || prospect.name || prospect.id}" (${prospect.source_channel || 'sumber tidak dicatat'}).`, { date: prospect.date_created ?? null });
@@ -66,11 +66,11 @@ function resolveC1(so, prospect) {
 }
 
 /** C2 — Survey. Fakta = baris sales_survey dengan so_customer_id === so.id. */
-function resolveC2(so, surveys) {
+function resolveC2(/** @type {any} */ so, /** @type {any} */ surveys) {
   if (!so) return phase('C2', 'belum', 'kosong', 'Belum ada SO.');
-  const list = (surveys || []).filter((s) => String(s.so_customer_id) === String(so.id));
+  const list = (surveys || []).filter((/** @type {any} */ s) => String(s.so_customer_id) === String(so.id));
   if (list.length === 0) return phase('C2', 'belum', 'kosong', 'Tidak ada survey tercatat untuk SO ini.');
-  const anyCompleted = list.some((s) => s.status === 'completed');
+  const anyCompleted = list.some((/** @type {any} */ s) => s.status === 'completed');
   if (anyCompleted) {
     return phase('C2', 'selesai', 'fakta', `${list.length} survey tercatat, sudah selesai.`, { date: list[0].date_updated || list[0].date_created || null });
   }
@@ -78,23 +78,23 @@ function resolveC2(so, surveys) {
 }
 
 /** C3 — Penawaran & Margin. Fakta = quotations.so_id ATAU kalkulator_penawaran.linked_so_id (dua sistem, dibaca keduanya). */
-function resolveC3(so, quotations, kalkulatorPenawaran) {
+function resolveC3(/** @type {any} */ so, /** @type {any} */ quotations, /** @type {any} */ kalkulatorPenawaran) {
   if (!so) return phase('C3', 'belum', 'kosong', 'Belum ada SO.');
-  const quoteMatches = (quotations || []).filter((q) => String(q.so_id) === String(so.id));
-  const kalkMatches = (kalkulatorPenawaran || []).filter((k) => String(k.linked_so_id) === String(so.id));
+  const quoteMatches = (quotations || []).filter((/** @type {any} */ q) => String(q.so_id) === String(so.id));
+  const kalkMatches = (kalkulatorPenawaran || []).filter((/** @type {any} */ k) => String(k.linked_so_id) === String(so.id));
   if (quoteMatches.length === 0 && kalkMatches.length === 0) {
     return phase('C3', 'belum', 'kosong', 'Tidak ada penawaran (CRM maupun kalkulator) tertaut ke SO ini.');
   }
   const marginParts = kalkMatches
-    .map((k) => (k.margin_terkini_pct ?? k.margin_snapshot_pct))
-    .filter((v) => v != null);
+    .map((/** @type {any} */ k) => (k.margin_terkini_pct ?? k.margin_snapshot_pct))
+    .filter((/** @type {any} */ v) => v != null);
   const marginInfo = marginParts.length ? ` Margin terakhir tercatat ${marginParts[marginParts.length - 1]}%.` : '';
   const totalCount = quoteMatches.length + kalkMatches.length;
   return phase('C3', 'selesai', 'fakta', `${totalCount} penawaran tertaut ke SO ini.${marginInfo}`);
 }
 
 /** C4 — Verifikasi Customer. Fakta = master_customer.verification_status. Fallback klaim = so.credit_status. */
-function resolveC4(so, masterCustomer) {
+function resolveC4(/** @type {any} */ so, /** @type {any} */ masterCustomer) {
   if (!so) return phase('C4', 'belum', 'kosong', 'Belum ada SO.');
   const vs = masterCustomer?.verification_status;
   if (vs === 'verified') {
@@ -116,7 +116,7 @@ function resolveC4(so, masterCustomer) {
 }
 
 /** C5 — SO & PO Customer. Fakta = so.po_status. Fallback klaim = so.status (SO lama sebelum kolom po_status ada). */
-function resolveC5(so) {
+function resolveC5(/** @type {any} */ so) {
   if (!so) return phase('C5', 'belum', 'kosong', 'Belum ada SO.');
   const poStatus = so.po_status;
   if (poStatus === 'terverifikasi') {
@@ -135,15 +135,15 @@ function resolveC5(so) {
 }
 
 /** C6 — Pengiriman. Fakta = baris surat_jalan untuk SO ini. Fallback klaim = so.status. */
-function resolveC6(so, suratJalanList) {
+function resolveC6(/** @type {any} */ so, /** @type {any} */ suratJalanList) {
   if (!so) return phase('C6', 'belum', 'kosong', 'Belum ada SO.');
-  const list = (suratJalanList || []).filter((sj) => String(sj.so_customer_id) === String(so.id));
+  const list = (suratJalanList || []).filter((/** @type {any} */ sj) => String(sj.so_customer_id) === String(so.id));
   if (list.length > 0) {
-    const anyDelivered = list.some((sj) => SJ_DELIVERED_STATUSES.has(sj.status));
+    const anyDelivered = list.some((/** @type {any} */ sj) => SJ_DELIVERED_STATUSES.has(sj.status));
     if (anyDelivered) {
       return phase('C6', 'selesai', 'fakta', `${list.length} Surat Jalan, sudah terkirim/diterima.`);
     }
-    const anyInProgress = list.some((sj) => SJ_IN_PROGRESS_STATUSES.has(sj.status));
+    const anyInProgress = list.some((/** @type {any} */ sj) => SJ_IN_PROGRESS_STATUSES.has(sj.status));
     if (anyInProgress) return phase('C6', 'proses', 'fakta', `${list.length} Surat Jalan, sedang dalam perjalanan.`);
     return phase('C6', 'proses', 'fakta', `${list.length} Surat Jalan dibuat, belum dikirim.`);
   }
@@ -154,16 +154,16 @@ function resolveC6(so, suratJalanList) {
 }
 
 /** C7 — Penagihan. Fakta = invoices.status untuk SO ini ('POSTED' vs 'DRAFT'). Fallback klaim = so.status. */
-function resolveC7(so, invoices) {
+function resolveC7(/** @type {any} */ so, /** @type {any} */ invoices) {
   if (!so) return phase('C7', 'belum', 'kosong', 'Belum ada SO.');
-  const list = (invoices || []).filter((inv) => String(inv.so_customer_id) === String(so.id) && inv.status !== 'CANCELLED');
+  const list = (invoices || []).filter((/** @type {any} */ inv) => String(inv.so_customer_id) === String(so.id) && inv.status !== 'CANCELLED');
   if (list.length === 0) {
     if (SO_INVOICED_CLAIM.has(so.status)) {
       return phase('C7', 'belum', 'klaim', `SO berstatus "${so.status}" tapi belum ada invoice ditemukan.`, { conflict: true });
     }
     return phase('C7', 'belum', 'kosong', 'Belum ada invoice.');
   }
-  const anyPosted = list.some((inv) => inv.status === 'POSTED');
+  const anyPosted = list.some((/** @type {any} */ inv) => inv.status === 'POSTED');
   if (anyPosted) {
     return phase('C7', 'selesai', 'fakta', `${list.length} invoice, sudah ada yang POSTED.`);
   }
@@ -171,14 +171,14 @@ function resolveC7(so, invoices) {
 }
 
 /** C8 — Pelunasan. Fakta = invoices.payment_status/outstanding_amount untuk SO ini. */
-function resolveC8(so, invoices) {
-  const list = (invoices || []).filter((inv) => String(inv.so_customer_id) === String(so?.id) && inv.status !== 'CANCELLED');
+function resolveC8(/** @type {any} */ so, /** @type {any} */ invoices) {
+  const list = (invoices || []).filter((/** @type {any} */ inv) => String(inv.so_customer_id) === String(so?.id) && inv.status !== 'CANCELLED');
   if (list.length === 0) return phase('C8', 'belum', 'kosong', 'Belum ada invoice untuk dilunasi.');
-  const postedList = list.filter((inv) => inv.status === 'POSTED');
+  const postedList = list.filter((/** @type {any} */ inv) => inv.status === 'POSTED');
   if (postedList.length === 0) return phase('C8', 'belum', 'kosong', 'Invoice belum POSTED, belum bisa dilunasi.');
-  const allPaid = postedList.every((inv) => inv.payment_status === 'PAID' || parseFloat(inv.outstanding_amount || 0) <= 0);
+  const allPaid = postedList.every((/** @type {any} */ inv) => inv.payment_status === 'PAID' || parseFloat(inv.outstanding_amount || 0) <= 0);
   if (allPaid) return phase('C8', 'selesai', 'fakta', `${postedList.length} invoice POSTED, semua lunas.`);
-  const anyPartial = postedList.some((inv) => inv.payment_status === 'partial' || (parseFloat(inv.paid_amount || 0) > 0));
+  const anyPartial = postedList.some((/** @type {any} */ inv) => inv.payment_status === 'partial' || (parseFloat(inv.paid_amount || 0) > 0));
   if (anyPartial) return phase('C8', 'proses', 'fakta', `${postedList.length} invoice POSTED, sebagian sudah dibayar.`);
   return phase('C8', 'proses', 'fakta', `${postedList.length} invoice POSTED, belum ada pembayaran.`);
 }
@@ -188,8 +188,8 @@ function resolveC8(so, invoices) {
  * komisi_external/komisi_internal dengan dynamic_fields.so_id === so.id.
  * Deteksi duplikat: >1 PA aktif (bukan Rejected) dengan agen yang sama untuk SO ini.
  */
-function resolveC9(so, komisiPengajuan) {
-  const list = (komisiPengajuan || []).filter((pa) => String(pa?.dynamic_fields?.so_id) === String(so?.id));
+function resolveC9(/** @type {any} */ so, /** @type {any} */ komisiPengajuan) {
+  const list = (komisiPengajuan || []).filter((/** @type {any} */ pa) => String(pa?.dynamic_fields?.so_id) === String(so?.id));
   if (list.length === 0) return phase('C9', 'belum', 'kosong', 'Tidak ada pengajuan komisi untuk SO ini.');
 
   const byAgen = new Map();
@@ -199,10 +199,10 @@ function resolveC9(so, komisiPengajuan) {
     if (!byAgen.has(agen)) byAgen.set(agen, []);
     byAgen.get(agen).push(pa);
   }
-  const duplicateAgents = [...byAgen.entries()].filter(([, arr]) => arr.filter((p) => p.status !== 'Rejected').length > 1);
+  const duplicateAgents = [...byAgen.entries()].filter(([, arr]) => arr.filter((/** @type {any} */ p) => p.status !== 'Rejected').length > 1);
 
-  const paidCount = list.filter((pa) => ['Completed', 'Selesai', 'Dibukukan'].includes(pa.status)).length;
-  const pendingCount = list.filter((pa) => pa.status === 'Pending').length;
+  const paidCount = list.filter((/** @type {any} */ pa) => ['Completed', 'Selesai', 'Dibukukan'].includes(pa.status)).length;
+  const pendingCount = list.filter((/** @type {any} */ pa) => pa.status === 'Pending').length;
 
   const summary = `${list.length} pengajuan komisi (${paidCount} selesai, ${pendingCount} pending).`;
   if (duplicateAgents.length > 0) {
@@ -218,15 +218,15 @@ function resolveC9(so, komisiPengajuan) {
  * TERPISAH per relasi oleh pemanggil (Aturan #2).
  *
  * @param {object} params
- * @param {object|null} params.so - baris `so_customer`
- * @param {object|null} [params.prospect] - baris `prospects` dengan converted_so_customer_id === so.id (bila ada)
- * @param {object[]} [params.surveys] - baris `sales_survey`
- * @param {object[]} [params.quotations] - baris `quotations`
- * @param {object[]} [params.kalkulatorPenawaran] - baris `kalkulator_penawaran`
- * @param {object|null} [params.masterCustomer] - baris `master_customer` untuk kode_customer SO ini
- * @param {object[]} [params.suratJalan] - baris `surat_jalan`
- * @param {object[]} [params.invoices] - baris `invoices`
- * @param {object[]} [params.komisiPengajuan] - baris `pengajuan_anggaran` kategori_belanja komisi_*
+ * @param {any|null} params.so - baris `so_customer`
+ * @param {any|null} [params.prospect] - baris `prospects` dengan converted_so_customer_id === so.id (bila ada)
+ * @param {any[]} [params.surveys] - baris `sales_survey`
+ * @param {any[]} [params.quotations] - baris `quotations`
+ * @param {any[]} [params.kalkulatorPenawaran] - baris `kalkulator_penawaran`
+ * @param {any|null} [params.masterCustomer] - baris `master_customer` untuk kode_customer SO ini
+ * @param {any[]} [params.suratJalan] - baris `surat_jalan`
+ * @param {any[]} [params.invoices] - baris `invoices`
+ * @param {any[]} [params.komisiPengajuan] - baris `pengajuan_anggaran` kategori_belanja komisi_*
  */
 export function resolveCustomerLifecycle({
   so,
@@ -238,7 +238,7 @@ export function resolveCustomerLifecycle({
   suratJalan = [],
   invoices = [],
   komisiPengajuan = [],
-} = {}) {
+} = /** @type {any} */ ({})) {
   const c1 = resolveC1(so, prospect);
   const c2 = resolveC2(so, surveys);
   const c3 = resolveC3(so, quotations, kalkulatorPenawaran);

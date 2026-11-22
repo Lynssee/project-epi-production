@@ -16,6 +16,7 @@
 
 import { directusServerJson } from '$lib/server/directus';
 import { hitungMttr, loadMttrSettings, type MttrResult } from './maintenanceMttr';
+import { ringkasPmP2h, type PmP2hSaya } from './maintenanceSaya';
 
 export interface MyWorkOrder {
 	id: string;
@@ -26,6 +27,12 @@ export interface MyWorkOrder {
 	tanggal_rusak: string | null;
 	tanggal_done: string | null;
 	created_at: string | null;
+	/** Target selesai (WO tanpa target = null). */
+	target_finish_date: string | null;
+	/** WO belum selesai yang sudah melewati target_finish_date (hari ini WIB). */
+	terlambat: boolean;
+	/** Sedang menunggu pemeriksaan/persetujuan (status Inspection/Approval). */
+	menungguQc: boolean;
 }
 
 export interface MaintenanceKpiSummary extends MttrResult {
@@ -38,10 +45,13 @@ export interface MaintenanceKpiSummary extends MttrResult {
 	/** WO berstatus selesai tapi tanggal_done kosong -> penyebab MTTR belum bisa dihitung; dipakai sebagai pengingat kelengkapan data. */
 	selesaiTanpaTanggal: number;
 	openList: MyWorkOrder[]; // WO belum selesai, untuk ditindaklanjuti
+	/** Kepatuhan PM & P2H pribadi pada periode aktif; null = gagal dibaca (bukan 0). */
+	pmP2h: PmP2hSaya | null;
 }
 
 const WO_STATUS_SELESAI = new Set(['done', 'closed (migrated)']);
 const WO_STATUS_BATAL = new Set(['cancelled']);
+const MENUNGGU_QC = new Set(['inspection', 'approval']);
 
 let woStatusMapCache: Map<string, string> | null = null;
 async function getWoStatusMap(): Promise<Map<string, string>> {
@@ -80,7 +90,7 @@ async function getOpenPeriod(): Promise<{ id: string; kode: string; tanggal_mula
 export async function getMyMaintenanceKpi(karyawanId: number): Promise<MaintenanceKpiSummary> {
 	const personnel = await resolvePersonnelId(karyawanId);
 	if (!personnel) {
-		return { linked: false, personnelName: null, periode: null, total: 0, selesai: 0, pct: null, selesaiTanpaTanggal: 0, mttrJam: null, mttrSample: 0, mttrCoveragePct: null, mttrReady: false, mttrMinSample: 5, mttrMinCoveragePct: 60, openList: [] };
+		return { linked: false, personnelName: null, periode: null, total: 0, selesai: 0, pct: null, selesaiTanpaTanggal: 0, mttrJam: null, mttrSample: 0, mttrCoveragePct: null, mttrReady: false, mttrMinSample: 5, mttrMinCoveragePct: 60, openList: [], pmP2h: null };
 	}
 
 	const period = await getOpenPeriod();
@@ -90,33 +100,45 @@ export async function getMyMaintenanceKpi(karyawanId: number): Promise<Maintenan
 		_or: [{ pic_mekanik_1_id: { _eq: personnel.id } }, { pic_mekanik_2_id: { _eq: personnel.id } }]
 	};
 	if (period) {
+		// Jangkar tanggal = COALESCE(created_at, tanggal_rusak): WO temuan P2H/PM punya created_at NULL dan sebelumnya hilang dari daftar ini.
 		(filter as any)._and = [
 			{ _or: filter._or },
-			{ created_at: { _between: [period.tanggal_mulai, `${period.tanggal_selesai}T23:59:59`] } }
+			{
+				_or: [
+					{ created_at: { _between: [period.tanggal_mulai, `${period.tanggal_selesai}T23:59:59`] } },
+					{ _and: [{ created_at: { _null: true } }, { tanggal_rusak: { _between: [period.tanggal_mulai, period.tanggal_selesai] } }] }
+				]
+			}
 		];
 		delete filter._or;
 	}
 
 	const qs = new URLSearchParams({
 		filter: JSON.stringify(filter),
-		fields: 'id,wo_number,order_status,keluhan,tanggal_rusak,tanggal_done,created_at',
-		sort: '-created_at',
+		fields: 'id,wo_number,order_status,keluhan,tanggal_rusak,tanggal_done,created_at,target_finish_date',
+		sort: '-tanggal_rusak,-created_at',
 		limit: '-1'
 	});
 	const res = await directusServerJson<{ data: any[] }>(`/items/work_order?${qs.toString()}`);
 	const rows = res?.data || [];
+	const todayWib = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 
 	const withStatus: MyWorkOrder[] = rows.map((r) => {
 		const statusName = statusMap.get(r.order_status) || '(status tak dikenal)';
+		const selesaiWo = WO_STATUS_SELESAI.has(statusName.toLowerCase());
+		const target = r.target_finish_date ? String(r.target_finish_date).slice(0, 10) : null;
 		return {
 			id: r.id,
-			wo_number: r.wo_number,
+			wo_number: r.wo_number || `WO-${String(r.id).slice(0, 8)}`, // WO lama tanpa nomor tetap bisa dikenali
 			statusName,
-			statusSelesai: WO_STATUS_SELESAI.has(statusName.toLowerCase()),
+			statusSelesai: selesaiWo,
 			keluhan: r.keluhan,
 			tanggal_rusak: r.tanggal_rusak,
 			tanggal_done: r.tanggal_done,
-			created_at: r.created_at
+			created_at: r.created_at,
+			target_finish_date: target,
+			terlambat: !selesaiWo && !!target && target < todayWib,
+			menungguQc: !selesaiWo && MENUNGGU_QC.has(statusName.toLowerCase())
 		};
 	});
 
@@ -133,6 +155,7 @@ export async function getMyMaintenanceKpi(karyawanId: number): Promise<Maintenan
 		pct,
 		selesaiTanpaTanggal: selesai.filter((w) => !w.tanggal_done).length,
 		...hitungMttr(selesai, await loadMttrSettings()),
-		openList: dinilai.filter((w) => !w.statusSelesai)
+		openList: dinilai.filter((w) => !w.statusSelesai),
+		pmP2h: await ringkasPmP2h(personnel, period)
 	};
 }

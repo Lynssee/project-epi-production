@@ -17,10 +17,39 @@
   import IconPlayerPlay from '@tabler/icons-svelte/icons/player-play';
   import IconBook2 from '@tabler/icons-svelte/icons/book-2';
 
+  let { placement = 'bottom' }: { placement?: 'top' | 'bottom' } = $props();
+
   let open = $state(false);
   let containerEl: HTMLDivElement | undefined = $state();
   let videosByModulSlug: Record<string, TutorialForMe['videos'][number]> = $state({});
   let videoAktif: TutorialForMe['videos'][number] | null = $state(null);
+
+  // Pemetaan modul ke alur bisnis lapangan
+  const MODUL_TO_FLOW: Record<string, string> = {
+    project: 'pelaksanaan_proyek_lapangan',
+    'manpower-borongan': 'pelaksanaan_proyek_lapangan',
+    qa: 'pelaksanaan_proyek_lapangan',
+    maintenance: 'maintenance_wo',
+    'maintenance-komponen': 'maintenance_wo',
+    fleet: 'maintenance_wo',
+    driver: 'maintenance_wo',
+    equipment: 'maintenance_wo',
+    preventive: 'maintenance_wo',
+    workshop: 'maintenance_wo',
+    sales: 'sales_to_inventory',
+    inventory: 'sales_to_inventory',
+    requisition: 'sales_to_inventory',
+    procurement: 'procurement_to_pay',
+    pengajuan: 'pengajuan_anggaran',
+    anggaran: 'pengajuan_anggaran',
+    'kasbon-terpusat': 'pengajuan_anggaran',
+    production: 'produksi_cat',
+    rnd: 'produksi_cat',
+    rmc: 'produksi_cat',
+    finance: 'penagihan_piutang_ar',
+    hse: 'pelaksanaan_proyek_lapangan',
+    laporan: 'pelaksanaan_proyek_lapangan'
+  };
 
   // §6 Fase 1 wiring baca (implementation_plan_panduan pertajam.md) — sama
   // pola fallback dgn panduan/+page.svelte: hardcoded dulu, ganti ke Directus
@@ -48,6 +77,7 @@
   }
 
   let modulKonteks = $derived(browser ? resolveModulByPathname(page.url.pathname, modulDokumentasi) : null);
+  let flowKonteks = $derived(modulKonteks ? MODUL_TO_FLOW[modulKonteks.id] || null : null);
   let videoKonteks = $derived(modulKonteks ? videosByModulSlug[modulKonteks.id] : undefined);
 
   function toggle() {
@@ -97,8 +127,8 @@
 <div class="relative shrink-0" bind:this={containerEl} onclick={(e) => e.stopPropagation()}>
   <button
     onclick={toggle}
-    title="Pusat Bantuan"
-    aria-label="Pusat Bantuan"
+    title="Pusat Bantuan Cepat"
+    aria-label="Pusat Bantuan Cepat"
     aria-expanded={open}
     class="relative w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all bg-[var(--sys-fill)] hover:bg-[var(--sys-fill2)] text-[var(--sys-label2)]"
   >
@@ -106,49 +136,112 @@
   </button>
 
   {#if open}
-    <div class="absolute bottom-full left-0 mb-2 w-64 max-w-[85vw] overflow-y-auto bg-white rounded-2xl shadow-xl border border-slate-100 z-50">
-      <div class="sticky top-0 bg-white/95 backdrop-blur px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-        <span class="text-base">❓</span>
-        <h3 class="text-sm font-extrabold text-slate-900">Pusat Bantuan</h3>
+    <div
+      class="absolute z-50 w-72 max-w-[85vw] overflow-hidden bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800
+        {placement === 'top' ? 'top-full right-0 mt-2' : 'bottom-full left-0 mb-2'}"
+    >
+      <div class="bg-white/95 dark:bg-slate-900/95 backdrop-blur px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-base">❓</span>
+          <h3 class="text-sm font-extrabold text-slate-900 dark:text-white">Pusat Bantuan Lapangan</h3>
+        </div>
+        <button
+          type="button"
+          onclick={() => (open = false)}
+          class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+          aria-label="Tutup"
+        >
+          ✕
+        </button>
       </div>
 
       {#if modulKonteks}
-        <div class="px-3 pt-3 pb-1">
-          <p class="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-400">Halaman ini</p>
+        <div class="p-3 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+              Modul: {modulKonteks.nama}
+            </span>
+            {#if flowKonteks}
+              <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                Ada Alur
+              </span>
+            {/if}
+          </div>
+
+          {#if flowKonteks}
+            <button
+              onclick={() => go(`/panduan/alur?alur=${flowKonteks}`)}
+              class="w-full text-left px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800 transition-colors flex items-center gap-2.5"
+            >
+              <span class="text-lg">🗺️</span>
+              <div class="min-w-0 flex-1">
+                <span class="block text-xs font-bold text-emerald-900 dark:text-emerald-200 truncate">Peta Alur & Buku Saku</span>
+                <span class="block text-[10px] text-emerald-600 dark:text-emerald-400 truncate">Alur kerja & tanggung jawab tim</span>
+              </div>
+            </button>
+          {/if}
+
           <button
             onclick={() => go(`/panduan?modul=${modulKonteks!.id}`)}
-            class="w-full text-left px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 transition-colors flex items-center gap-2"
+            class="w-full text-left px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 transition-colors flex items-center gap-2.5"
           >
-            <IconBook2 size={16} class="text-indigo-500 shrink-0" />
-            <span class="min-w-0">
-              <span class="block text-sm font-bold text-indigo-800 truncate">Panduan: {modulKonteks.nama}</span>
-              <span class="block text-[11px] text-indigo-500">Langkah-langkah &amp; FAQ modul ini</span>
-            </span>
+            <IconBook2 size={16} class="text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <div class="min-w-0 flex-1">
+              <span class="block text-xs font-bold text-indigo-900 dark:text-indigo-200 truncate">Panduan: {modulKonteks.nama}</span>
+              <span class="block text-[10px] text-indigo-600 dark:text-indigo-400 truncate">Instruksi form & checklist langkah</span>
+            </div>
           </button>
+
           {#if videoKonteks}
             <button
               onclick={bukaVideoKonteks}
-              class="w-full text-left px-3 py-2 mt-1 rounded-xl bg-teal-50 hover:bg-teal-100 transition-colors flex items-center gap-2"
+              class="w-full text-left px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-950/30 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800 transition-colors flex items-center gap-2.5"
             >
-              <IconPlayerPlay size={16} class="text-teal-600 shrink-0" />
-              <span class="min-w-0">
-                <span class="block text-sm font-bold text-teal-800 truncate">{videoKonteks.judul}</span>
-                <span class="block text-[11px] text-teal-500">Video panduan modul ini</span>
-              </span>
+              <IconPlayerPlay size={16} class="text-teal-600 dark:text-teal-400 shrink-0" />
+              <div class="min-w-0 flex-1">
+                <span class="block text-xs font-bold text-teal-900 dark:text-teal-200 truncate">{videoKonteks.judul}</span>
+                <span class="block text-[10px] text-teal-600 dark:text-teal-400 truncate">Putar video tutorial</span>
+              </div>
             </button>
           {/if}
         </div>
       {/if}
 
-      <ul class="py-1.5">
+      <ul class="py-1.5 text-xs text-slate-700 dark:text-slate-300">
         <li>
-          <button onclick={() => go('/bantuan')} class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
-            🏠 Untuk Anda (Onboarding)
+          <button
+            onclick={() => go('/panduan/alur')}
+            class="w-full text-left px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors"
+          >
+            <span>🗺️</span>
+            <span class="font-medium">Semua Peta Alur Kerja & Buku Saku</span>
           </button>
         </li>
         <li>
-          <button onclick={() => go('/panduan')} class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
-            📘 Semua Panduan
+          <button
+            onclick={() => go('/bantuan?tab=sop')}
+            class="w-full text-left px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors"
+          >
+            <span>📜</span>
+            <span class="font-medium">Direktori SOP Resmi & K3</span>
+          </button>
+        </li>
+        <li>
+          <button
+            onclick={() => go('/bantuan?tab=tugas')}
+            class="w-full text-left px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors"
+          >
+            <span>🎯</span>
+            <span class="font-medium">Checklist Tugas Saya</span>
+          </button>
+        </li>
+        <li>
+          <button
+            onclick={() => go('/panduan')}
+            class="w-full text-left px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors"
+          >
+            <span>📘</span>
+            <span class="font-medium">Pusat Bantuan & Panduan Lengkap</span>
           </button>
         </li>
       </ul>

@@ -43,7 +43,7 @@ vi.mock('qrcode', async (orig) => {
 	return { default: { ...real, toDataURL: vi.fn((text: string, o: unknown) => { qrCalls.push(text); return real.toDataURL(text, o); }) } };
 });
 
-const { computeTrainingCertHash, buildTrainingCertVerifyUrl, isQrCertificateTitle } = await import('./trainingCertVerify');
+const { computeTrainingCertHash, buildTrainingCertVerifyUrl, isQrCertificateTitle, DEFAULT_VERIFY_ORIGIN } = await import('./trainingCertVerify');
 const { nextCertificateSeq, certificatePrefix, reserveCertificateNumber, buildCertificatePdf, issueCertificate } = await import('./trainingCertificate');
 
 const base = { enrollmentId: 77, sertifikatNo: 'TRN/EPI/2026/10/0001', karyawanId: 12, programId: 5, sertifikatExpired: '2027-10-16' };
@@ -81,7 +81,7 @@ describe('computeTrainingCertHash', () => {
 	});
 	it('URL verifikasi memuat id enrollment (tanpa slash) + h', () => {
 		const url = buildTrainingCertVerifyUrl(base)!;
-		expect(url).toBe(`https://internal.eltamaprimaindo.com/verify/training/77?h=${computeTrainingCertHash(base)}`);
+		expect(url).toBe(`${DEFAULT_VERIFY_ORIGIN}/verify/training/77?h=${computeTrainingCertHash(base)}`);
 	});
 	it('penanda judul file berQR', () => {
 		expect(isQrCertificateTitle('Sertifikat-X-Budi-QR.pdf')).toBe(true);

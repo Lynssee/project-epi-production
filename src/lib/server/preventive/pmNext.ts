@@ -25,6 +25,15 @@ export function addDaysStr(dateStr: string, n: number): string | null {
 	return fmt(d);
 }
 
+export const JAM_PER_HARI_BAWAAN = 6;
+
+/** Perkiraan tanggal jatuh tempo PM berbasis jam: selesai + ceil(N jam ÷ jam per hari). Generator erp-epi menyegarkannya dengan laju riwayat. */
+export function tanggalPerkiraanJam(doneDate: string, jam: unknown, perHari: number = JAM_PER_HARI_BAWAAN): string | null {
+	const n = Number(jam);
+	if (!Number.isFinite(n) || n < 1 || !(perHari > 0)) return null;
+	return addDaysStr(doneDate, Math.ceil(n / perHari));
+}
+
 /** satuan = nama kategori interval_unit. Jam/KM → null (butuh hoursmeter, tidak dijadwalkan per kalender). */
 export function nextDueDate(doneDate: string, nilai: unknown, satuan: string | null | undefined): string | null {
 	const n = Number(nilai);

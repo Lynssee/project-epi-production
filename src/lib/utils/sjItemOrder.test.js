@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { sortSjItemsLikePl } from './sjItemOrder.js';
 
-const names = (rows) => rows.map((r) => r.n).join('');
+const names = (/** @type {any} */ rows) => rows.map((/** @type {any} */ r) => r.n).join('');
 
 describe('PDI-67 sortSjItemsLikePl', () => {
   it('PL 5 baris A–E (id PL 10..14), SJ dibuat memilih E, B, A → tampil A, B, E', () => {
@@ -50,11 +50,12 @@ describe('PDI-67 sortSjItemsLikePl', () => {
     const copy = [...sj];
     sortSjItemsLikePl(sj);
     expect(sj).toEqual(copy);
-    expect(sortSjItemsLikePl(null)).toEqual([]);
-    expect(sortSjItemsLikePl(undefined)).toEqual([]);
+    expect(sortSjItemsLikePl(/** @type {any} */ (null))).toEqual([]);
+    expect(sortSjItemsLikePl(/** @type {any} */ (undefined))).toEqual([]);
   });
 
   it('baris tanpa id tetap stabil (urutan array dipertahankan)', () => {
+    /** @type {any[]} */
     const sj = [{ n: 'p' }, { n: 'q' }, { n: 'r' }];
     expect(names(sortSjItemsLikePl(sj))).toBe('pqr');
   });

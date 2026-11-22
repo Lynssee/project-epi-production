@@ -120,6 +120,11 @@ const STATIC_ROUTE_MAP: Record<string, BreadcrumbResult> = {
 		title: 'Rating Manpower',
 		parentHref: '/manpower'
 	},
+	'/manpower/rekap-tim': {
+		breadcrumb: [{ label: 'Departemen' }, { label: 'Project', href: '/proyek/hub' }, { label: 'Manpower & Tim', href: '/manpower' }, { label: 'Rekap Tim' }],
+		title: 'Rekap Tim Bulanan',
+		parentHref: '/manpower'
+	},
 	'/manpower/payroll-terpusat': {
 		breadcrumb: [{ label: 'Departemen' }, { label: 'Project', href: '/proyek/hub' }, { label: 'Manpower & Tim', href: '/manpower' }, { label: 'Payroll Terpusat' }],
 		title: 'Payroll Terpusat',
@@ -735,6 +740,11 @@ const STATIC_ROUTE_MAP: Record<string, BreadcrumbResult> = {
 	'/ess/pengumuman': {
 		breadcrumb: [{ label: 'Portal Karyawan', href: '/ess' }, { label: 'Pengumuman' }],
 		title: 'Pengumuman Perusahaan',
+		parentHref: '/ess'
+	},
+	'/ess/referral': {
+		breadcrumb: [{ label: 'Portal Karyawan', href: '/ess' }, { label: 'Rekomendasi Relasi' }],
+		title: 'Rekomendasi Relasi (Internal Referral)',
 		parentHref: '/ess'
 	},
 	'/ess/kinerja': {

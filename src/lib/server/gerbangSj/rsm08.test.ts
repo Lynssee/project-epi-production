@@ -41,9 +41,9 @@ vi.mock('../sjGerbangGuard', async (orig) => ({
 	getGerbangBlockersDetailed: async () => ({ blockers: [], gate_check: 'ok' })
 }));
 const muat = vi.fn(async () => ({ ok: true }));
-vi.mock('../sjTracking', () => ({ recordKioskTrackingEvent: (i: any) => muat(i) }));
+vi.mock('../sjTracking', () => ({ recordKioskTrackingEvent: (i: any) => (muat as any)(i) }));
 const audit = vi.fn(async () => {});
-vi.mock('../gates/gateAudit', () => ({ writeGateAudit: (p: any) => audit(p) }));
+vi.mock('../gates/gateAudit', () => ({ writeGateAudit: (p: any) => (audit as any)(p) }));
 vi.mock('../gateEnforcement', () => ({ getFieldGateMode: vi.fn(async () => 'shadow') }));
 vi.mock('./effects', async (orig) => {
 	const real = await orig<typeof import('./effects')>();

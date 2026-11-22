@@ -111,13 +111,13 @@ export function evaluateLaporanHarianRules(
 ): { gates: LaporanHarianGate[]; score: number } {
 	const s = snapshot || {};
 	const isHold = s.activity_status === 'hold';
+	const isStandby = s.activity_status === 'standby';
 	const isFriday = s.date ? new Date(s.date).getDay() === 5 : false;
 	const gates: LaporanHarianGate[] = [];
 
 	// ---- Tingkat A ----
-	// Saat Hold, tab Jadwal/Progress/Material disembunyikan total dari UI lapangan
-	// (tidak ada aktivitas untuk dilaporkan) — gate-gate ini jadi not_applicable,
-	// BUKAN failed. Tenaga & Foto Absensi TETAP wajib (bukti standby).
+	// Saat Hold atau Standby, tab Jadwal/Progress/Material menjadi opsional/not_applicable
+	// jika tidak ada aktivitas fisik. Tenaga & Foto Absensi TETAP wajib (bukti kehadiran di lokasi).
 	const schedule = s.schedule || [];
 	const tomorrowPlan = s.tomorrow_plan || [];
 	const progress = s.progress || [];
@@ -130,6 +130,28 @@ export function evaluateLaporanHarianRules(
 		gates.push(gate('G_LH_PROGRESS', 'Progress pekerjaan terisi', 'A', 'not_applicable', 'N/A — status Hold', { tab: 'progress' }));
 		gates.push(gate('G_LH_FOTO_PROGRESS', 'Foto bukti progress terlampir', 'A', 'not_applicable', 'N/A — status Hold', { tab: 'progress' }));
 		gates.push(gate('G_LH_MATERIAL_TERPAKAI', 'Material terpakai terisi', 'A', 'not_applicable', 'N/A — status Hold', { tab: 'material' }));
+	} else if (isStandby) {
+		gates.push(schedule.length > 0
+			? gate('G_LH_JADWAL', 'Jadwal kegiatan terisi', 'A', 'passed', `${schedule.length} aktivitas terisi`, { tab: 'jadwal' })
+			: gate('G_LH_JADWAL', 'Jadwal kegiatan terisi', 'A', 'not_applicable', 'N/A — status Standby (Menunggu BAST / Klien)', { tab: 'jadwal' }));
+
+		gates.push(tomorrowPlan.length > 0
+			? gate('G_LH_RENCANA_BESOK', 'Rencana besok (detail) terisi', 'A', 'passed', `${tomorrowPlan.length} rencana terisi`, { tab: 'jadwal' })
+			: gate('G_LH_RENCANA_BESOK', 'Rencana besok (detail) terisi', 'A', 'not_applicable', 'N/A — status Standby (Menunggu BAST / Klien)', { tab: 'jadwal' }));
+
+		gates.push(progress.length > 0
+			? gate('G_LH_PROGRESS', 'Progress pekerjaan terisi', 'A', 'passed', `${progress.length} item progress`, { tab: 'progress' })
+			: gate('G_LH_PROGRESS', 'Progress pekerjaan terisi', 'A', 'not_applicable', 'N/A — status Standby (Menunggu BAST / Klien)', { tab: 'progress' }));
+
+		const subtaskPhotosCount = progress.reduce((sum: number, p: any) => sum + (Array.isArray(p?.foto_bukti) ? p.foto_bukti.length : (p?.foto_bukti ? 1 : 0)), 0);
+		const totalProgressPhotos = progressPhotoCount + subtaskPhotosCount;
+		gates.push(totalProgressPhotos > 0
+			? gate('G_LH_FOTO_PROGRESS', 'Foto bukti progress terlampir', 'A', 'passed', `${totalProgressPhotos} foto`, { tab: 'progress' })
+			: gate('G_LH_FOTO_PROGRESS', 'Foto bukti progress terlampir', 'A', 'not_applicable', 'N/A — status Standby (Menunggu BAST / Klien)', { tab: 'progress' }));
+
+		gates.push(materialUsed.length > 0
+			? gate('G_LH_MATERIAL_TERPAKAI', 'Material terpakai terisi', 'A', 'passed', `${materialUsed.length} item material`, { tab: 'material' })
+			: gate('G_LH_MATERIAL_TERPAKAI', 'Material terpakai terisi', 'A', 'not_applicable', 'N/A — status Standby (Menunggu BAST / Klien)', { tab: 'material' }));
 	} else {
 		gates.push(schedule.length > 0
 			? gate('G_LH_JADWAL', 'Jadwal kegiatan terisi', 'A', 'passed', `${schedule.length} aktivitas terisi`, { tab: 'jadwal' })
@@ -198,8 +220,8 @@ export function evaluateLaporanHarianRules(
 
 	// ---- Dokumentasi Foto Wajib (HARD GATES): Toolbox Meeting, Area Kerja, Foto Kendala ----
 	const toolboxPhotoCount = s.toolbox_photos_count ?? (s.toolbox_photos || []).length;
-	if (isHold) {
-		gates.push(gate('G_LH_FOTO_TOOLBOX', 'Foto toolbox meeting/safety briefing terlampir', 'A', 'not_applicable', 'N/A — status Hold', { tab: 'toolbox' }));
+	if (isHold || isStandby) {
+		gates.push(gate('G_LH_FOTO_TOOLBOX', 'Foto toolbox meeting/safety briefing terlampir', 'A', 'not_applicable', isStandby ? 'N/A — status Standby' : 'N/A — status Hold', { tab: 'toolbox' }));
 	} else {
 		gates.push(toolboxPhotoCount > 0
 			? gate('G_LH_FOTO_TOOLBOX', 'Foto toolbox meeting/safety briefing terlampir', 'A', 'passed', `${toolboxPhotoCount} foto`, { tab: 'toolbox' })
@@ -207,8 +229,8 @@ export function evaluateLaporanHarianRules(
 	}
 
 	const areaKerjaPhotoCount = s.area_kerja_photos_count ?? (s.area_kerja_photos || []).length;
-	if (isHold) {
-		gates.push(gate('G_LH_FOTO_AREA_KERJA', 'Foto kondisi area kerja terlampir', 'A', 'not_applicable', 'N/A — status Hold', { tab: 'area_kerja' }));
+	if (isHold || isStandby) {
+		gates.push(gate('G_LH_FOTO_AREA_KERJA', 'Foto kondisi area kerja terlampir', 'A', 'not_applicable', isStandby ? 'N/A — status Standby' : 'N/A — status Hold', { tab: 'area_kerja' }));
 	} else {
 		gates.push(areaKerjaPhotoCount > 0
 			? gate('G_LH_FOTO_AREA_KERJA', 'Foto kondisi area kerja terlampir', 'A', 'passed', `${areaKerjaPhotoCount} foto`, { tab: 'area_kerja' })
@@ -226,8 +248,8 @@ export function evaluateLaporanHarianRules(
 
 	// ---- Paritas HSE & K3 Harian, Jam Henti, QC Ambient, Rasio Material (HARD GATES) ----
 	const hseDaily = s.hse_daily || {};
-	if (isHold) {
-		gates.push(gate('G_LH_HSE_CHECKLIST', 'Checklist HSE & K3 harian terisi', 'A', 'not_applicable', 'N/A — status Hold', { tab: 'hse' }));
+	if (isHold || isStandby) {
+		gates.push(gate('G_LH_HSE_CHECKLIST', 'Checklist HSE & K3 harian terisi', 'A', 'not_applicable', isStandby ? 'N/A — status Standby' : 'N/A — status Hold', { tab: 'hse' }));
 	} else {
 		gates.push(!isEmpty(hseDaily.apd_compliance)
 			? gate('G_LH_HSE_CHECKLIST', 'Checklist HSE & K3 harian terisi', 'A', 'passed', 'Checklist HSE & K3 harian terisi', { tab: 'hse' })
@@ -235,9 +257,9 @@ export function evaluateLaporanHarianRules(
 	}
 
 	const downtimeLog = s.downtime_log || [];
-	const needsDowntimeReason = !isHold && !isEmpty(s.weather) && s.weather !== 'Cerah';
+	const needsDowntimeReason = !isHold && !isStandby && !isEmpty(s.weather) && s.weather !== 'Cerah';
 	if (!needsDowntimeReason) {
-		gates.push(gate('G_LH_DOWNTIME_REASON', 'Atribusi jam henti terisi (bila cuaca tidak cerah)', 'A', 'not_applicable', isHold ? 'N/A — status Hold' : 'N/A — cuaca Cerah', { tab: 'hse' }));
+		gates.push(gate('G_LH_DOWNTIME_REASON', 'Atribusi jam henti terisi (bila cuaca tidak cerah)', 'A', 'not_applicable', isHold ? 'N/A — status Hold' : isStandby ? 'N/A — status Standby' : 'N/A — cuaca Cerah', { tab: 'hse' }));
 	} else {
 		gates.push(downtimeLog.length > 0
 			? gate('G_LH_DOWNTIME_REASON', 'Atribusi jam henti terisi (bila cuaca tidak cerah)', 'A', 'passed', `${downtimeLog.length} entri jam henti terisi`, { tab: 'hse' })
@@ -245,8 +267,8 @@ export function evaluateLaporanHarianRules(
 	}
 
 	const qcAmbient = s.qc_ambient || {};
-	if (isHold || !qcAmbient.applicable || progress.length === 0) {
-		const reason = isHold ? 'N/A — status Hold' : (!qcAmbient.applicable ? 'N/A — bukan proyek kategori Coating/Blasting' : 'N/A — tidak ada progress hari ini');
+	if (isHold || isStandby || !qcAmbient.applicable || progress.length === 0) {
+		const reason = isHold ? 'N/A — status Hold' : isStandby ? 'N/A — status Standby' : (!qcAmbient.applicable ? 'N/A — bukan proyek kategori Coating/Blasting' : 'N/A — tidak ada progress hari ini');
 		gates.push(gate('G_LH_QC_AMBIENT', 'Kondisi Ambient & QC harian terisi', 'A', 'not_applicable', reason, { tab: 'progress' }));
 	} else {
 		gates.push(qcAmbient.filled_today
@@ -255,8 +277,8 @@ export function evaluateLaporanHarianRules(
 	}
 
 	const materialVariance = s.material_variance || {};
-	if (isHold || !materialVariance.flagged) {
-		gates.push(gate('G_LH_MATERIAL_VARIANCE', 'Alasan deviasi konsumsi material terisi', 'A', 'not_applicable', isHold ? 'N/A — status Hold' : 'N/A — rasio konsumsi material masih dalam toleransi', { tab: 'material' }));
+	if (isHold || isStandby || !materialVariance.flagged) {
+		gates.push(gate('G_LH_MATERIAL_VARIANCE', 'Alasan deviasi konsumsi material terisi', 'A', 'not_applicable', isHold ? 'N/A — status Hold' : isStandby ? 'N/A — status Standby' : 'N/A — rasio konsumsi material masih dalam toleransi', { tab: 'material' }));
 	} else {
 		gates.push(!isEmpty(materialVariance.note)
 			? gate('G_LH_MATERIAL_VARIANCE', 'Alasan deviasi konsumsi material terisi', 'A', 'passed', 'Alasan deviasi konsumsi material terisi', { tab: 'material' })
@@ -264,14 +286,32 @@ export function evaluateLaporanHarianRules(
 	}
 
 	// ---- Tingkat B — narasi umum (menutup C3) ----
-	// Sama seperti Tingkat A: field-field ini disembunyikan dari UI lapangan saat Hold
-	// (lihat blok {#if !isHold} di form), jadi not_applicable, bukan failed.
 	if (isHold) {
 		gates.push(gate('G_LH_CUACA', 'Cuaca terisi', 'B', 'not_applicable', 'N/A — status Hold', { tab: 'umum' }));
 		gates.push(gate('G_LH_JML_TENAGA', 'Jumlah tenaga terisi', 'B', 'not_applicable', 'N/A — status Hold', { tab: 'umum' }));
 		gates.push(gate('G_LH_CATATAN_UMUM', 'Catatan umum terisi', 'B', 'not_applicable', 'N/A — status Hold', { tab: 'umum' }));
 		gates.push(gate('G_LH_KENDALA_UMUM', 'Kendala umum terisi', 'B', 'not_applicable', 'N/A — status Hold', { tab: 'umum' }));
 		gates.push(gate('G_LH_RENCANA_BESOK_RINGKASAN', 'Ringkasan rencana besok terisi', 'B', 'not_applicable', 'N/A — status Hold', { tab: 'umum' }));
+	} else if (isStandby) {
+		gates.push(!isEmpty(s.weather)
+			? gate('G_LH_CUACA', 'Cuaca terisi', 'B', 'passed', 'Cuaca terisi', { tab: 'umum' })
+			: gate('G_LH_CUACA', 'Cuaca terisi', 'B', 'not_applicable', 'N/A — status Standby', { tab: 'umum' }));
+
+		gates.push(!isEmpty(s.manpower_count) || s.manpower_count === 0
+			? gate('G_LH_JML_TENAGA', 'Jumlah tenaga terisi', 'B', 'passed', 'Jumlah tenaga terisi', { tab: 'umum' })
+			: gate('G_LH_JML_TENAGA', 'Jumlah tenaga terisi', 'B', 'not_applicable', 'N/A — status Standby', { tab: 'umum' }));
+
+		gates.push(!isEmpty(s.general_notes)
+			? gate('G_LH_CATATAN_UMUM', 'Catatan umum terisi', 'B', 'passed', 'Catatan umum terisi', { tab: 'umum' })
+			: gate('G_LH_CATATAN_UMUM', 'Catatan umum terisi', 'B', 'failed', 'Catatan Umum wajib diisi keterangan standby (misal: Menunggu BAST).', { tab: 'umum' }));
+
+		gates.push(!isEmpty(s.issues_general)
+			? gate('G_LH_KENDALA_UMUM', 'Kendala umum terisi', 'B', 'passed', 'Kendala umum terisi', { tab: 'umum' })
+			: gate('G_LH_KENDALA_UMUM', 'Kendala umum terisi', 'B', 'not_applicable', 'N/A — status Standby', { tab: 'umum' }));
+
+		gates.push(!isEmpty(s.tomorrow_plan_summary)
+			? gate('G_LH_RENCANA_BESOK_RINGKASAN', 'Ringkasan rencana besok terisi', 'B', 'passed', 'Ringkasan rencana besok terisi', { tab: 'umum' })
+			: gate('G_LH_RENCANA_BESOK_RINGKASAN', 'Ringkasan rencana besok terisi', 'B', 'not_applicable', 'N/A — status Standby', { tab: 'umum' }));
 	} else {
 		gates.push(!isEmpty(s.weather)
 			? gate('G_LH_CUACA', 'Cuaca terisi', 'B', 'passed', 'Cuaca terisi', { tab: 'umum' })

@@ -153,7 +153,9 @@
 						<div class="flex items-start justify-between gap-2">
 							<div class="min-w-0">
 								<p class="text-[13px] font-semibold" style="color: var(--sys-label)">{t.template?.task_name || 'Tugas PM'}</p>
-								<p class="text-[11px] mt-0.5" style="color: var(--sys-label3)">Jatuh tempo: {t.due_date || '-'}</p>
+								<p class="text-[11px] mt-0.5" style="color: var(--sys-label3)">
+									{#if t.due_hoursmeter != null}Jatuh tempo pada HM {t.due_hoursmeter}{equipment?.last_hoursmeter != null ? ` (HM sekarang ${equipment.last_hoursmeter})` : ''} · perkiraan {t.due_date || '-'}{:else}Jatuh tempo: {t.due_date || '-'}{/if}
+								</p>
 							</div>
 							<span
 								class="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
@@ -193,7 +195,7 @@
 									type="number"
 									class="w-full rounded-lg border text-[12px] p-2"
 									style="border-color: var(--sys-sep)"
-									placeholder="Hoursmeter/odometer saat ini (opsional)"
+									placeholder={t.due_hoursmeter != null ? 'Hoursmeter saat ini (wajib untuk PM berbasis jam)' : 'Hoursmeter/odometer saat ini (opsional)'}
 									bind:value={hoursmeterInput}
 								/>
 								<div class="flex gap-2">

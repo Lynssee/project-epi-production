@@ -11,6 +11,10 @@
 	import { getKursusList } from '$lib/services/ess/training';
 	import { getNotifikasiList } from '$lib/services/notifikasiApi';
 	import GuidedTour from '$lib/components/shared/GuidedTour.svelte';
+	import QuizGateHost from '$lib/components/ess/QuizGateHost.svelte';
+	import CulturePopupHost from '$lib/components/ess/CulturePopupHost.svelte';
+	import PaktaGuard from '$lib/components/ess/PaktaGuard.svelte';
+	import PaktaSayaMenu from '$lib/components/ess/PaktaSayaMenu.svelte';
 	import { tourState, finishTour } from '$lib/stores/tourStore.svelte';
 	import {
 		IconBuildingFactory2,
@@ -76,7 +80,7 @@
 	import ActiveCheckinBar from '$lib/components/site-checkin/ActiveCheckinBar.svelte';
 	import BelumAbsenPulangBar from '$lib/components/attendance/BelumAbsenPulangBar.svelte';
 	import { resolveCheckpoint } from '$lib/services/gaChecklist';
-	import { routeCheckpointScan } from '$lib/utils/checkpointScanRoute';
+	import { routeCheckpointScan, cleanCheckpointCode } from '$lib/utils/checkpointScanRoute';
 	import { parseEpiQr } from '$lib/utils/qrParse';
 	import { resolveSjQr } from '$lib/services/scanResolve';
 	import { getBreadcrumbAndTitle } from '$lib/utils/breadcrumbs';
@@ -142,7 +146,7 @@
 	let routeInfo = $derived(getBreadcrumbAndTitle(page.url.pathname));
 	let breadcrumbTrail = $derived(routeInfo.breadcrumb);
 	let currentPageTitle = $derived(routeInfo.title);
-	let isNotRootPage = $derived(page.url.pathname !== '/' && page.url.pathname !== '');
+	let isNotRootPage = $derived(page.url.pathname !== '/');
 
 	function handleNavigateBack() {
 		if (typeof window !== 'undefined') {
@@ -201,7 +205,8 @@
 				return;
 			}
 
-			const result = await resolveCheckpoint(code);
+			const cpCode = cleanCheckpointCode(code);
+			const result = await resolveCheckpoint(cpCode);
 			// Tujuan dipusatkan di routeCheckpointScan (dipakai juga di /scan/[code]).
 			const { url } = routeCheckpointScan(result, { scanRouteMode: result.scan_route_mode });
 			goto(url);
@@ -385,6 +390,9 @@
 						{ title: 'Dokumen Karyawan', href: '/ess/dokumen-saya', permissions: ['access_ess'] },
 						{ title: 'Surat Jalan Internal', href: '/sji', permissions: ['access_ess', 'view_sji', 'input_sji'] },
 						{ title: 'Surat Jalan Manual', href: '/sj-manual', permissions: ['access_ess', 'view_sji', 'input_sji'] },
+						{ title: 'Budaya & Visi Misi', href: '/ess/budaya', permissions: ['access_ess'] },
+						{ title: 'Jobdesc Saya', href: '/ess/jobdesc', permissions: ['access_ess'] },
+						{ title: 'Kalender Saya', href: '/ess/kalender', permissions: ['access_ess'] },
 						{ title: 'Pengumuman Perusahaan', href: '/ess/pengumuman', permissions: ['access_ess'] }
 					]
 				}
@@ -422,6 +430,7 @@
 						{ title: 'Stok Kritis Terpusat', href: '/inventory-proyek/kritis-terpusat', permissions: ['view_all_projects', 'view_own_projects'] },
 						{ title: 'Barang Menganggur Lintas Proyek', href: '/inventory-proyek/barang-menganggur', permissions: ['view_all_projects', 'view_own_projects'] },
 						{ title: 'Saldo Stok Semua Proyek', href: '/inventory-proyek/saldo-semua', permissions: ['view_all_projects', 'view_own_projects'] },
+						{ title: 'Kalkulator Kebutuhan Cat', href: '/inventory-proyek/kalkulator-cat', permissions: ['view_all_projects', 'view_own_projects'] },
 						{ title: 'Kasbon Manpower Terpusat', href: '/kasbon-terpusat', permissions: ['view_manpower'] },
 						{ title: 'To-Do Terpusat', href: '/todo-terpusat', permissions: ['view_all_projects', 'view_own_projects'] },
 						{ title: 'Closing/Evaluasi Terpusat', href: '/closing-evaluasi-terpusat', permissions: ['view_all_projects', 'view_own_projects'] },
@@ -538,6 +547,7 @@
 					activePrefixes: ['/panduan', '/bantuan'],
 					children: [
 						{ title: 'Panduan Lengkap', href: '/panduan', exact: true },
+						{ title: 'Alur Kerja Sistem', href: '/panduan/alur' },
 						{ title: 'Bantuan Untuk Anda', href: '/bantuan' }
 					]
 				}
@@ -758,6 +768,7 @@
 				<P2HQueueSync />
 				<ScanSjQueueSync />
 				<HelpMenuButton />
+				{#if canAccessEss}<PaktaSayaMenu />{/if}
 				{#if canAccessEss}
 					<a
 						href="/notifikasi"
@@ -990,6 +1001,12 @@
 				<!-- Badge kesiapan belanja (laporan harian + MoM) — hanya tampil untuk leader proyek -->
 				<ReadinessBadge />
 
+				<!-- Tombol Pusat Bantuan Cepat Topbar (Fase B Floating Assist) -->
+				<HelpMenuButton placement="top" />
+
+				<!-- Pakta & Aturan Saya (hanya tampil bila fitur Pakta aktif) -->
+				{#if canAccessEss}<PaktaSayaMenu />{/if}
+
 				<!-- Notifications Bell (if authenticated) -->
 				{#if canAccessEss}
 					<a
@@ -1035,10 +1052,18 @@
 		/>
 	{/if}
 
+	<!-- Popup motivasi/tips/Reminder SOP berbasis momen (+ microquiz). Tak terlihat bila tak ada konten; tidak pernah memblokir halaman/absen. -->
+	<CulturePopupHost />
+
 	<!-- Main Page Slot -->
 	<main class="flex-1 w-full pb-[60px] lg:pb-0">
 		<svelte:boundary onerror={onErrorBoundary}>
-			{@render children()}
+			<QuizGateHost>
+				<!-- Pakta Pra-Kegiatan: kunci kontekstual per halaman kegiatan (mati bawaan; diatur system_settings project.pakta.* + gate G_FLD_PAKTA_PRAKEGIATAN) -->
+				<PaktaGuard>
+					{@render children()}
+				</PaktaGuard>
+			</QuizGateHost>
 			{#snippet failed(error)}
 				<CrashRecoveryCard {error} />
 			{/snippet}

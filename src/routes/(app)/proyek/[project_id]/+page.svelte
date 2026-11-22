@@ -6,6 +6,7 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { authStore, shouldFilterProjectsByLeader } from '$lib/stores/auth';
+	import { hasPermission } from '$lib/constants/permissions';
 	import { bolehAksesProyek, fetchDemisionerProjectIds, isDemisionerLeader } from '$lib/services/projectScope';
 	import {
 		getProjectById,
@@ -18,6 +19,8 @@
 	} from '$lib/services/projects';
 	import { sumNilaiPo } from '$lib/utils/projectSoIds';
 	import { getReports } from '$lib/services/reports';
+	import PanduanKerjaDropdown from '$lib/components/PanduanKerjaDropdown.svelte';
+	import ProjectSopNotesCard from '$lib/components/ProjectSopNotesCard.svelte';
 	import { getDokumenByProject, uploadDokumen, deleteDokumen, getDownloadUrl, formatFileSize, getFileTypeIcon } from '$lib/services/dokumenApi';
 	import {
 		getProjectDocuments,
@@ -87,6 +90,9 @@
 	import SiteDemobSignalCard from '$lib/components/project/SiteDemobSignalCard.svelte';
 	import PaStatusCard from '$lib/components/project/PaStatusCard.svelte';
 	import DossierReadinessCard from '$lib/components/project/DossierReadinessCard.svelte';
+	import CustomerKpiBadge from '$lib/components/project/CustomerKpiBadge.svelte';
+	import KendaliHarianCard from '$lib/components/project/KendaliHarianCard.svelte';
+	import ProyeksiPenyelesaianCard from '$lib/components/project/ProyeksiPenyelesaianCard.svelte';
 	import FieldSafeSpend from '$lib/components/project/FieldSafeSpend.svelte';
 	import { describeTransit } from '$lib/utils/grTransit';
 	import ProjectHandoverBriefingCard from '$lib/components/leader/ProjectHandoverBriefingCard.svelte';
@@ -185,6 +191,7 @@
 			{ id: 'instruksi-kendala', label: 'Instruksi & Kendala', emoji: '⚡' },
 			{ id: 'report', label: 'Report', emoji: '📋' },
 			{ id: 'laporan-harian', label: 'Laporan Harian', emoji: '📆' },
+			{ id: 'tutup-bulan', label: 'Tutup Bulan', emoji: '🗓️' },
 			{ id: 'dokumentasi-ba', label: 'Dokumentasi Before/After', emoji: '📸' },
 			{ id: 'galeri', label: 'Galeri Foto', emoji: '🖼️' }
 		],
@@ -222,6 +229,8 @@
 		kirim: []
 	});
 
+	let project = $state<any>(null);
+
 	// Default sub-tab for each main tab
 	let DEFAULT_SUB = $derived({
 		informasi: 'charter',
@@ -256,7 +265,7 @@
 	async function refreshOfflineQueueCount() {
 		if (!projectId) return;
 		const all = await getQueuedDocumentUploads();
-		offlineQueueCount = all.filter((e) => e.projectId === projectId).length;
+		offlineQueueCount = all.filter((e) => Number(e.projectId) === Number(projectId)).length;
 	}
 
 	async function sendQueuedDocument(entry: QueuedDocumentUpload) {
@@ -475,7 +484,7 @@
 			if (!res.success && res.isNetworkError) {
 				await enqueueDocumentUpload({
 					client_txn_id: crypto.randomUUID(),
-					projectId,
+					projectId: Number(projectId),
 					fileBlob: file,
 					fileName: file.name,
 					namaDokumen: file.name,
@@ -514,7 +523,7 @@
 		if (!res.success && res.isNetworkError) {
 			await enqueueDocumentUpload({
 				client_txn_id: crypto.randomUUID(),
-				projectId,
+				projectId: Number(projectId),
 				fileBlob: file,
 				fileName: file.name,
 				namaDokumen: file.name,
@@ -867,6 +876,10 @@
 			goto(`/proyek/${projectId}/closeout`);
 			return;
 		}
+		if (id === 'tutup-bulan') {
+			goto(`/proyek/${projectId}/tutup-bulan`);
+			return;
+		}
 		if (id === 'presentasi') {
 			goto(`/proyek/${projectId}/presentasi`);
 			return;
@@ -940,7 +953,6 @@
 		return s;
 	}
 
-	let project = $state<any>(null);
 
 	let projectRiskProfile = $derived.by(() => {
 		if (!project) return null;
@@ -1194,6 +1206,9 @@
 								{soCustomer.customer_name}
 							</p>
 						{/if}
+						{#if project?.id}
+							<div class="mb-1"><CustomerKpiBadge projectId={project.id} /></div>
+						{/if}
 						<h2 class="text-[18px] font-bold leading-tight" style="color: white; letter-spacing: -0.4px">
 							{project.name}
 						</h2>
@@ -1317,6 +1332,7 @@
 						<span class="breadcrumb-crumb breadcrumb-current truncate">{subLabel}</span>
 					{/if}
 				{/if}
+				<PanduanKerjaDropdown tab={activeTab} />
 				<button class="breadcrumb-copy flex items-center gap-1.5" onclick={copyProjectLink} title="Salin link halaman ini">
 					{#if linkCopied}
 						<IconCheck size={13} class="text-emerald-400" />
@@ -1360,6 +1376,13 @@
 				</div>
 			{/if}
 
+			<!-- Fase 4 (Penajaman KPI & Drilldown): Kendali Harian — kalender laporan bolong, kasbon belum LPJ, deviasi Kurva S minggu ini.
+			     Satu panggilan API (cache 2 mnt), tanpa nominal rupiah; pagu RAP tidak diulang (sudah di Safe-Spend di atas). -->
+			{#if !isPersiapanMode}
+				<KendaliHarianCard {projectId} />
+				<ProyeksiPenyelesaianCard {projectId} />
+			{/if}
+
 			<!-- Visibilitas Leader Fase 3: kesiapan dokumentasi (data nyata, tanpa nominal) — hanya saat proyek berjalan -->
 			{#if !isPersiapanMode}
 				<DossierReadinessCard
@@ -1396,7 +1419,7 @@
 								</span>
 							</div>
 							<p class="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 mt-1">
-								Barang telah dikirim dari gudang ({pendingGrShipments.map(s => s.nomorSJ || s.nomor_sj).join(', ')}). Mohon konfirmasi penerimaan fisik di site agar stok terdata resmi.
+								Barang telah dikirim dari gudang ({pendingGrShipments.map((s) => s.nomorSJ || (s as any).nomor_sj).join(', ')}). Mohon konfirmasi penerimaan fisik di site agar stok terdata resmi.
 							</p>
 							<!-- Fase 6: info truk/sopir/ETA per Surat Jalan (tanpa GPS real-time — hanya data SJ & armada) -->
 							<ul class="mt-1.5 flex flex-col gap-0.5" data-testid="gr-transit-list">
@@ -1518,6 +1541,7 @@
 			     TAB: INFORMASI
 			══════════════════════════════════════════════════ -->
 			{#if activeTab === 'informasi'}
+				<ProjectSopNotesCard {projectId} />
 
 				<!-- Sub: CHARTER -->
 				{#if activeSubTab === 'charter'}

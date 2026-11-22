@@ -49,3 +49,25 @@ describe('searchKendala', () => {
 		expect(() => searchKendala([{ id: 'x', title: 'X', nodes: [null, { id: 'y', label: 'foto' }] }] as any, 'foto')).not.toThrow();
 	});
 });
+
+describe('searchKendala — skenario negatif', () => {
+	const neg = [{
+		id: 'gudang', title: 'Pengeluaran Barang', lanes: [], edges: [], description: '',
+		nodes: [{ id: 'mulai', label: 'Mulai', desc: '', blockers: [], checklist: [] }, { id: 'alokasi', label: 'Alokasi', desc: '', blockers: [], checklist: [] }],
+		sop: { negative_scenarios: [
+			{ code: 'NEG-ERP-01', category: 'system_erp_error', severity: 'critical', step_id: 'alokasi', trigger: 'ERP Error saat submit', fallback_action: '1. Cek server\n2. Catat manual' },
+			{ code: 'NEG-OFF-01', category: 'network_offline', severity: 'high', trigger: 'Sinyal putus', fallback_action: '1. Simpan offline' }
+		] }
+	}] as any[];
+	it('"server down" menemukan skenario ERP lewat kata kunci awam, menunjuk langkahnya', () => {
+		const r = searchKendala(neg, 'server down');
+		expect(r[0]).toMatchObject({ kind: 'negatif', node_id: 'alokasi' });
+		expect(r[0].snippet).toContain('Cek server');
+	});
+	it('skenario tanpa step_id menempel ke langkah pertama', () => {
+		expect(searchKendala(neg, 'sinyal mati')[0]).toMatchObject({ kind: 'negatif', node_id: 'mulai' });
+	});
+	it('alur tanpa skenario / data rusak tidak menjatuhkan pencarian', () => {
+		expect(searchKendala([{ id: 'x', title: 'X', nodes: [{ id: 'a', label: 'A' }], sop: { negative_scenarios: [null, {}] } }] as any[], 'rekonsiliasi')).toEqual([]);
+	});
+});

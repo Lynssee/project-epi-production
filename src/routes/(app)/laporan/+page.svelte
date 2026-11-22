@@ -324,7 +324,7 @@
 				jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
 			};
 
-			const pdfBlob = await html2pdf().set(opt).from(tempDiv).output('blob');
+			const pdfBlob = await html2pdf().set(opt as any).from(tempDiv).output('blob');
 			document.body.removeChild(tempDiv);
 
 			const file = new File([pdfBlob], `Laporan_${project.name.replace(/\s+/g, '_')}.pdf`, { type: 'application/pdf' });
@@ -508,7 +508,7 @@
 				pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
 			};
 
-			const pdfBlob = await html2pdf().set(opt).from(tempDiv).output('blob');
+			const pdfBlob = await html2pdf().set(opt as any).from(tempDiv).output('blob');
 			document.body.removeChild(tempDiv);
 			previewSummaryBlob = pdfBlob;
 			previewSummaryTitle = `Summary_Laporan_${titlePeriod.replace(/\s+/g, '_')}.pdf`;
@@ -536,66 +536,70 @@
 		window.open(`https://wa.me/?text=${text}`, '_blank');
 	}
 
-	onMount(async () => {
-		try {
-			const result: any[] = await getProjectsForCurrentUser(false);
+	onMount(() => {
+		void (async () => {
+			try {
+				const result: any[] = await getProjectsForCurrentUser(false);
 
-			let rawProjects = result || [];
-			// F0 (25 Agu 2026): heuristik lama (keyword 'ciketing' di banyak field + 'alwan'
-			// sebagai nama leader) terbukti 2x salah — menyapu project customer biasa yang
-			// tidak terhubung workshop. Sekarang hanya percaya field `workshop` (diisi
-			// eksplisit user di Input PO Customer), sama seperti isCiketingProject() di
-			// erp-epi-1/src/lib/utils/projectUtils.js. Filter status aktif JUGA dihapus —
-			// sebelumnya project workshop yang SEDANG BERJALAN justru tidak ikut ter-group.
-			const isCiketing = (p: any) => p.workshop === 'ciketing';
-			let ciketingProjects = rawProjects.filter(p => isCiketing(p));
-			rawProjects = rawProjects.filter(p => !isCiketing(p));
+				let rawProjects = result || [];
+				// F0 (25 Agu 2026): heuristik lama (keyword 'ciketing' di banyak field + 'alwan'
+				// sebagai nama leader) terbukti 2x salah — menyapu project customer biasa yang
+				// tidak terhubung workshop. Sekarang hanya percaya field `workshop` (diisi
+				// eksplisit user di Input PO Customer), sama seperti isCiketingProject() di
+				// erp-epi-1/src/lib/utils/projectUtils.js. Filter status aktif JUGA dihapus —
+				// sebelumnya project workshop yang SEDANG BERJALAN justru tidak ikut ter-group.
+				const isCiketing = (p: any) => p.workshop === 'ciketing';
+				let ciketingProjects = rawProjects.filter(p => isCiketing(p));
+				rawProjects = rawProjects.filter(p => !isCiketing(p));
 
-			if (ciketingProjects.length > 0) {
-				let mergedP = JSON.parse(JSON.stringify(ciketingProjects[0]));
-				mergedP.name = "Proyek Ciketing";
-				mergedP.nomor_po = "Multiple PO";
-				mergedP._is_ciketing_group = true;
-				mergedP._ciketing_ids = ciketingProjects.map(p => p.id);
-				
-				if (ciketingProjects.some(c => (c.status || '').toLowerCase() === 'on progress')) {
-					mergedP.status = 'on progress';
-				} else if (ciketingProjects.some(c => (c.status || '').toLowerCase() === 'repair')) {
-					mergedP.status = 'repair';
-				} else if (ciketingProjects.some(c => (c.status || '').toLowerCase() === 'waiting')) {
-					mergedP.status = 'waiting';
-				} else if (ciketingProjects.some(c => (c.status || '').toLowerCase() === 'hold')) {
-					mergedP.status = 'hold';
+				if (ciketingProjects.length > 0) {
+					let mergedP = JSON.parse(JSON.stringify(ciketingProjects[0]));
+					mergedP.name = "Proyek Ciketing";
+					mergedP.nomor_po = "Multiple PO";
+					mergedP._is_ciketing_group = true;
+					mergedP._ciketing_ids = ciketingProjects.map(p => p.id);
+					
+					if (ciketingProjects.some(c => (c.status || '').toLowerCase() === 'on progress')) {
+						mergedP.status = 'on progress';
+					} else if (ciketingProjects.some(c => (c.status || '').toLowerCase() === 'repair')) {
+						mergedP.status = 'repair';
+					} else if (ciketingProjects.some(c => (c.status || '').toLowerCase() === 'waiting')) {
+						mergedP.status = 'waiting';
+					} else if (ciketingProjects.some(c => (c.status || '').toLowerCase() === 'hold')) {
+						mergedP.status = 'hold';
+					}
+
+					rawProjects.push(mergedP);
 				}
+				projects = rawProjects;
+				loading = false; // Langsung tampilkan proyek ke layar
 
-				rawProjects.push(mergedP);
-			}
-			projects = rawProjects;
-			loading = false; // Langsung tampilkan proyek ke layar
+				// Fire-and-forget: banner tunggakan revisi tidak boleh menunda render proyek.
+				getReportsNeedingFix(currentKaryawanId as any, rawProjects.map((p: any) => p.id))
+					.then((rows) => { needFixCount = (rows || []).length; })
+					.catch(() => {});
 
-			// Fire-and-forget: banner tunggakan revisi tidak boleh menunda render proyek.
-			getReportsNeedingFix(currentKaryawanId as any, rawProjects.map((p: any) => p.id))
-				.then((rows) => { needFixCount = (rows || []).length; })
-				.catch(() => {});
+				if (projects.length > 0) {
+					// Load score for leader INDEPENDENTLY
+					if (isLeaderRole(currentRoleId)) {
+						const activeProjects = projects.filter((p: any) => ['on progress', 'waiting', 'hold', 'repair'].includes((p.status || '').toLowerCase()));
+						loadScoreSafely(activeProjects);
+					}
 
-			if (projects.length > 0) {
-				// Load score for leader INDEPENDENTLY
-				if (isLeaderRole(currentRoleId)) {
-					const activeProjects = projects.filter((p: any) => ['on progress', 'waiting', 'hold', 'repair'].includes((p.status || '').toLowerCase()));
-					loadScoreSafely(activeProjects);
+					// Fetch batched reports sesuai periode
+					applyPeriodFilter().catch((reportError) => {
+						console.error('Gagal mengecek status laporan:', reportError);
+					});
 				}
-
-				// Fetch batched reports sesuai periode
-				applyPeriodFilter().catch((reportError) => {
-					console.error('Gagal mengecek status laporan:', reportError);
-				});
+			} catch (e) {
+				console.error('Gagal memuat proyek:', e);
+			} finally {
+				loading = false;
 			}
-		} catch (e) {
-			console.error('Gagal memuat proyek:', e);
-		} finally {
-			loading = false;
-		}
 
+		})();
+
+		// Cleanup harus dikembalikan SINKRON: onMount(async …) mengembalikan Promise sehingga unsubscribe tak pernah dipanggil (kebocoran langganan auth).
 		return () => unsubAuth();
 	});
 </script>
@@ -612,7 +616,7 @@
 				subLabel="Directus /items/reports & scoring KPI"
 				hint="Memuat riwayat laporan harian proyek lapangan & ringkasan kepatuhan"
 				timeoutSeconds={25}
-				onRetry={() => { loadProjects(); loadReports(); }}
+				onRetry={() => { location.reload(); }}
 			/>
 		</div>
 	{:else}

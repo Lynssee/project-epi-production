@@ -20,6 +20,7 @@ export interface SopDocument {
 	target_roles: string[];
 	effective_date: string | null;
 	retraining_policy: string;
+	sop_code?: string | null;
 	file: Array<{ id: number; directus_files_id: { id: string; filename_download: string } }>;
 }
 
@@ -56,7 +57,15 @@ export async function getSopList(): Promise<{ sopList: SopDocument[]; compliance
 	return res.json();
 }
 
-export async function getSopDetail(id: number | string): Promise<{ sop: SopDocument; sudahKonfirmasi: boolean }> {
+export interface SopTrainingStatus {
+	programId: number;
+	judul: string;
+	status: string;
+	progress: number;
+	tenggat: string | null;
+}
+
+export async function getSopDetail(id: number | string): Promise<{ sop: SopDocument; sudahKonfirmasi: boolean; training?: SopTrainingStatus | null }> {
 	const res = await authedFetch(`/api/ess/sop/${id}`);
 	if (!res.ok) throw new Error(await parseErrorMessage(res));
 	return res.json();
@@ -72,4 +81,37 @@ export async function submitSopUsulan(id: number | string, input: { jenis: strin
 	const res = await authedFetch(`/api/ess/sop/${id}/usulan`, { method: 'POST', body: JSON.stringify(input) });
 	if (!res.ok) throw new Error(await parseErrorMessage(res));
 	return res.json();
+}
+
+export interface SopSertifikat {
+	sopId: number;
+	sop_code: string | null;
+	title: string;
+	programId: number;
+	sertifikat_no: string | null;
+	sertifikat_expired: string | null;
+}
+
+/** Badge "Tersertifikasi SOP" — best-effort: gagal/offline → daftar kosong (tidak mengganggu halaman utama). */
+export async function getSopSertifikasi(): Promise<SopSertifikat[]> {
+	try {
+		const res = await authedFetch('/api/ess/sop/sertifikasi');
+		if (!res.ok) return [];
+		return (await res.json())?.sertifikasi || [];
+	} catch {
+		return [];
+	}
+}
+
+export interface SopSkor { sopId: number; score: number | null; status: string; read: string; has_quiz: boolean; program_id: number | null; passing: number }
+
+/** Skor Pengetahuan SOP Saya per dokumen — best-effort: gagal/offline → kosong (tidak mengganggu daftar). */
+export async function getSopSkor(): Promise<SopSkor[]> {
+	try {
+		const res = await authedFetch('/api/ess/sop/skor');
+		if (!res.ok) return [];
+		return (await res.json())?.skor || [];
+	} catch {
+		return [];
+	}
 }

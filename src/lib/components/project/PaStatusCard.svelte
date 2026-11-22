@@ -204,7 +204,7 @@
 							• {pa.summary.total_overdue_count} antrean sudah melewati SLA
 						</div>
 					{/if}
-					{#each pa.warnings as w}
+					{#each pa?.warnings ?? [] as w}
 						<div class="text-amber-700 dark:text-amber-400 text-[11px]">⚠ {w}</div>
 					{/each}
 

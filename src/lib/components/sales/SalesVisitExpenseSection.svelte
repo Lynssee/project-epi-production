@@ -9,8 +9,8 @@
 		addVisitExpense,
 		deleteVisitExpense,
 		type VisitExpenseItem
-	} from '$lib/services/sales.ts';
-	import { compressPhoto } from '$lib/utils/photoCompress.ts';
+	} from '$lib/services/sales';
+	import { compressPhoto } from '$lib/utils/photoCompress';
 	import CameraCaptureModal from '$lib/components/scanner/CameraCaptureModal.svelte';
 	import {
 		IconReceipt,

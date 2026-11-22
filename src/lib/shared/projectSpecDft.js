@@ -11,14 +11,14 @@
 export const DEFAULT_DFT_TOL_MIN_PCT = 80;
 export const DEFAULT_DFT_TOL_MAX_PCT = 120;
 
-const toNum = (v) => {
+const toNum = (/** @type {any} */ v) => {
   if (v === '' || v === null || v === undefined) return null;
   const n = typeof v === 'number' ? v : Number(String(v).replace(',', '.'));
   return Number.isFinite(n) ? n : null;
 };
 
 /** Terima JSON string / object / null dari Directus → object (atau null bila tak terbaca). */
-export function parseSpecJson(raw) {
+export function parseSpecJson(/** @type {any} */ raw) {
   if (raw === null || raw === undefined || raw === '') return null;
   if (typeof raw === 'string') {
     try { const p = JSON.parse(raw); return p && typeof p === 'object' && !Array.isArray(p) ? p : null; } catch { return null; }
@@ -30,10 +30,11 @@ export function parseSpecJson(raw) {
  * Lapisan bertarget > 0 dari spesifikasi, dinormalkan: { no, tahap, merk, target, min, max }.
  * Toleransi kosong/tak konsisten (min > target atau max < target) diganti default persen dari target.
  */
-export function specLayers(spec, { tolMinPct = DEFAULT_DFT_TOL_MIN_PCT, tolMaxPct = DEFAULT_DFT_TOL_MAX_PCT } = {}) {
+export function specLayers(/** @type {any} */ spec, { tolMinPct = DEFAULT_DFT_TOL_MIN_PCT, tolMaxPct = DEFAULT_DFT_TOL_MAX_PCT } = {}) {
   const raw = Array.isArray(spec?.sistem_lapisan) ? spec.sistem_lapisan : [];
+  /** @type {any[]} */
   const out = [];
-  raw.forEach((l, i) => {
+  raw.forEach((/** @type {any} */ l, /** @type {any} */ i) => {
     const target = toNum(l?.target_micron);
     if (target === null || target <= 0) return;
     let min = toNum(l?.toleransi_min);
@@ -46,7 +47,7 @@ export function specLayers(spec, { tolMinPct = DEFAULT_DFT_TOL_MIN_PCT, tolMaxPc
 }
 
 /** Total target DFT (µm) semua lapisan bertarget > 0. */
-export function specTotalMicron(spec) {
+export function specTotalMicron(/** @type {any} */ spec) {
   return specLayers(spec).reduce((s, l) => s + l.target, 0);
 }
 
@@ -56,8 +57,8 @@ export function specTotalMicron(spec) {
  *   'kosong' (belum ada pembacaan) | 'memenuhi' | 'kurang' (< min) | 'over' (> max).
  * Aturan 85/15 SSPC-PA 2 tetap dinilai terpisah oleh validateDft8515 di form inspeksi.
  */
-export function compareDftToLayer(readings, layer) {
-  const vals = (Array.isArray(readings) ? readings : []).map(toNum).filter((v) => v !== null && v > 0);
+export function compareDftToLayer(/** @type {any} */ readings, /** @type {any} */ layer) {
+  const vals = /** @type {number[]} */ ((Array.isArray(readings) ? readings : []).map(toNum).filter((v) => v !== null && v > 0));
   if (!layer || !(layer.target > 0)) return { status: 'kosong', avg: null, count: 0, belowMin: 0, aboveMax: 0, layer: layer || null, message: 'Lapisan acuan tidak tersedia.' };
   if (vals.length === 0) return { status: 'kosong', avg: null, count: 0, belowMin: 0, aboveMax: 0, layer, message: 'Belum ada pembacaan DFT.' };
   const avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
@@ -83,7 +84,7 @@ export function compareDftToLayer(readings, layer) {
  * Daftar tahap pengambilan foto untuk satu objek: persiapan → tiap lapisan bertarget → hasil akhir → lainnya.
  * Kunci: 'persiapan' | 'lapisan_<no>' | 'hasil_akhir' | 'lainnya' (no = nomor lapisan di spesifikasi).
  */
-export function specPhotoStages(spec, tipe) {
+export function specPhotoStages(/** @type {any} */ spec, /** @type {any} */ tipe) {
   const s = parseSpecJson(spec);
   const lantai = tipe === 'lantai' || s?.kategori_pekerjaan === 'floor_coating';
   const sa = String(s?.surface_preparation?.standar_sa || '').trim();
@@ -95,7 +96,7 @@ export function specPhotoStages(spec, tipe) {
 }
 
 /** Label tahap untuk tampilan; kunci tak dikenal tampil apa adanya, kosong → 'Umum'. */
-export function photoStageLabel(key, spec, tipe) {
+export function photoStageLabel(/** @type {any} */ key, /** @type {any} */ spec, /** @type {any} */ tipe) {
   const k = String(key || '').trim();
   if (!k) return 'Umum';
   return specPhotoStages(spec, tipe).find((x) => x.key === k)?.label || k;

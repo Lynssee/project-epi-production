@@ -4,7 +4,7 @@
 //   (G) menutup check-in yang SEDANG aktif dengan jam "sekarang" saat replay check-in offline
 //       yang lebih tua tersinkron belakangan (durasi salah/hilang).
 // Pola mock: sama seperti pettyCashRequest.test.ts — mock $lib/server/directus, route by URL.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockJson = vi.fn();
 const mockUpload = vi.fn();
@@ -32,6 +32,14 @@ const SETTINGS = {
 beforeEach(() => {
 	mockJson.mockReset();
 	mockUpload.mockReset();
+	// Tes memakai tanggal tetap (29 Sep 2026) dan validasi jendela ≤24 jam / durasi maks terhadap Date.now():
+	// tanpa membekukan jam, tes ini otomatis gagal begitu tanggalnya lewat. Hanya Date yang dipalsukan.
+	vi.useFakeTimers({ toFake: ['Date'] });
+	vi.setSystemTime(new Date('2026-09-29T12:00:00.000Z'));
+});
+
+afterEach(() => {
+	vi.useRealTimers();
 });
 
 describe('closeCheckin — idempotensi replay checkout (§3.9.3, worst case H)', () => {

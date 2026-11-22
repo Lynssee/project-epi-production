@@ -123,7 +123,7 @@ export const notifyProject = (a: { title: string; message: string }) =>
 
 export const lolosMessage = (actor: GateActor) => `Diloloskan ${actor.label} pukul ${hhmm()}. Barang boleh berangkat.`;
 
-export const logProcess = (sjId: number, stageKey: 'security_passed' | 'security_held', actor: GateActor, meta: Record<string, unknown> = {}) =>
+export const logProcess = (sjId: number, stageKey: 'security_passed' | 'security_held' | 'security_pre_print_passed' | 'security_pre_print_rejected', actor: GateActor, meta: Record<string, unknown> = {}) =>
 	directusServerJson('/items/process_event_log', {
 		method: 'POST',
 		body: JSON.stringify({

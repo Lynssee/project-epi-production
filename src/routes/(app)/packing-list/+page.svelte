@@ -1543,7 +1543,7 @@
 																{inv.material_name || '-'}
 															</p>
 															{#if cleanColor(inv.material_color)}
-																<p class="text-[10px] text-slate-400"><ColorChip color={cleanColor(inv.material_color)} size="xs" /></p>
+																<p class="text-[10px] text-slate-400"><ColorChip color={cleanColor(inv.material_color) ?? undefined} size="xs" /></p>
 															{:else if isPaintItem(inv.material_name)}
 																<p class="text-[10px] text-amber-600 font-semibold">⚠️ Butuh Warna</p>
 															{/if}
@@ -1751,7 +1751,7 @@
 															{item.material_name || '-'}
 														</p>
 														{#if cleanColor(item.material_color)}
-															<p class="text-[10px] text-slate-400"><ColorChip color={cleanColor(item.material_color)} size="xs" /></p>
+															<p class="text-[10px] text-slate-400"><ColorChip color={cleanColor(item.material_color) ?? undefined} size="xs" /></p>
 														{/if}
 														{#if item.leader_notes}
 															<p class="text-[11px] text-slate-500 italic mt-1">"{item.leader_notes}"</p>

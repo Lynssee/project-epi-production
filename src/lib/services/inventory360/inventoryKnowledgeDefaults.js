@@ -62,7 +62,10 @@ export const DEFAULT_TEMPLATES = Object.freeze([
       f('material', 'Material / media'),
       f('dimensi', 'Dimensi', { hint: 'Contoh: OD × ID × T, atau ukuran ulir.' }),
       f('kapasitas_kerja', 'Kapasitas / rating kerja', { kritis: true, hint: 'Tekanan, flow, atau beban maksimum yang harus dipenuhi.' }),
-      f('kompatibel_model', 'Kompatibel dengan model', { hint: 'Cukup ringkas; tautan model lengkap di section "Dipakai pada".' })
+      f('kompatibel_model', 'Kompatibel dengan model', { hint: 'Cukup ringkas; tautan model lengkap di section "Dipakai pada".' }),
+      f('part_number_alternatif', 'Part number alternatif', { hint: 'Cross-reference cepat bila OEM kosong (mis. DFBLAST, aftermarket).' }),
+      f('posisi_assembly', 'Posisi assembly', { tipe: 'pilihan', opsi: ['Air End', 'Nozzle', 'Seal Kit', 'Filter', 'Lainnya'] }),
+      f('tipe_ulir_koneksi', 'Tipe ulir / koneksi', { tipe: 'pilihan', opsi: ['NPT', 'BSP', 'Flange', 'Quick coupling', 'Lainnya'], hint: 'Salah ulir = tidak terpasang / bocor.' })
     ]
   },
   {
@@ -76,7 +79,14 @@ export const DEFAULT_TEMPLATES = Object.freeze([
       f('sumber_tenaga', 'Sumber tenaga', { tipe: 'pilihan', opsi: ['Listrik', 'Bensin', 'Solar', 'Pneumatik', 'Manual'] }),
       f('dimensi', 'Dimensi'),
       f('berat', 'Berat', { tipe: 'angka', unit: 'kg' }),
-      f('interval_servis', 'Interval servis berkala', { tipe: 'angka', unit: 'jam', hint: 'Dipakai pengingat PM otomatis (Fase rekomendasi).' })
+      f('interval_servis', 'Interval servis berkala', { tipe: 'angka', unit: 'jam', hint: 'Dipakai pengingat PM otomatis (Fase rekomendasi).' }),
+      f('tekanan_kerja_bar', 'Tekanan kerja', { unit: 'bar / psi', hint: 'Penting untuk compressor & airless pump.' }),
+      f('debit_aliran', 'Debit aliran', { unit: 'CFM / L/menit' }),
+      f('spesifikasi_oli_fluida', 'Spesifikasi oli / fluida', { kritis: true, hint: 'Jenis oli, grease, filter bawaan pabrikan — mencegah salah isi.' }),
+      f('kapasitas_oli_l', 'Kapasitas oli', { tipe: 'angka', unit: 'L' }),
+      f('konsumsi_bbm_l_jam', 'Konsumsi BBM', { tipe: 'angka', unit: 'L/jam', hint: 'Acuan audit BBM pada P2H.' }),
+      f('wajib_sertifikat_disnaker', 'Wajib sertifikat Disnaker', { tipe: 'ya_tidak', kritis: true, hint: 'Mis. compressor / bejana tekan (riksa uji).' }),
+      f('interval_riksa_uji_bulan', 'Interval riksa uji', { tipe: 'angka', unit: 'bulan', hint: 'Masa berlaku SLO / suket Disnaker.' })
     ]
   },
   {
@@ -88,7 +98,10 @@ export const DEFAULT_TEMPLATES = Object.freeze([
       f('ukuran_grade', 'Ukuran / grade', { wajib: true, hint: 'Mis. grit, mesh, ketebalan.' }),
       f('kemasan', 'Kemasan'),
       f('standar', 'Standar / sertifikasi'),
-      f('umur_simpan', 'Umur simpan', { tipe: 'angka', unit: 'hari' })
+      f('umur_simpan', 'Umur simpan', { tipe: 'angka', unit: 'hari' }),
+      f('consumption_rate', 'Laju konsumsi', { hint: 'Mis. kg/m² (abrasive) atau m²/pcs.' }),
+      f('reusable_cycles', 'Siklus pakai ulang', { tipe: 'angka', unit: 'kali' }),
+      f('material_dasar', 'Material dasar')
     ]
   },
   {
@@ -101,7 +114,10 @@ export const DEFAULT_TEMPLATES = Object.freeze([
       f('rentang_ukur', 'Rentang ukur', { wajib: true, kritis: true }),
       f('akurasi', 'Akurasi / resolusi', { wajib: true, kritis: true }),
       f('interval_kalibrasi', 'Interval kalibrasi', { tipe: 'angka', unit: 'bulan', wajib: true }),
-      f('sertifikat_kalibrasi', 'Wajib sertifikat kalibrasi', { tipe: 'ya_tidak' })
+      f('sertifikat_kalibrasi', 'Wajib sertifikat kalibrasi', { tipe: 'ya_tidak' }),
+      f('standar_acuan', 'Standar acuan', { hint: 'ISO / ASTM / SSPC yang dirujuk alat.' }),
+      f('tipe_probe_sensor', 'Tipe probe / sensor', { tipe: 'pilihan', opsi: ['Ferrous', 'Non-Ferrous', 'Dual (F/NF)', 'Lainnya'] }),
+      f('toleransi_kalibrasi', 'Toleransi kalibrasi')
     ]
   },
   {
@@ -146,7 +162,14 @@ export const DEFAULT_TEMPLATES = Object.freeze([
       f('waktu_kering', 'Waktu kering sentuh / keras', { kritis: true }),
       f('recoat_window', 'Jendela overcoat (min–maks)', { kritis: true, hint: 'Isi dari TDS resmi, bukan perkiraan.' }),
       f('thinner', 'Thinner & rasio maksimum', { kritis: true }),
-      f('metode_aplikasi', 'Metode Aplikasi', { hint: 'Airless spray, conventional spray, roll, kuas.' })
+      f('metode_aplikasi', 'Metode Aplikasi', { hint: 'Airless spray, conventional spray, roll, kuas.' }),
+      f('sistem_komponen', 'Sistem komponen', { tipe: 'pilihan', opsi: ['1K', '2K', '3K'] }),
+      f('surface_preparation', 'Persiapan permukaan', { kritis: true, hint: 'Mis. Sa 2.5, St 3, atau CSP 3 (beton).' }),
+      f('wft_micron', 'WFT target', { unit: 'µm', hint: 'Tebal basah acuan untuk tukang spray.' }),
+      f('voc_g_per_l', 'VOC', { tipe: 'angka', unit: 'g/L', hint: 'Syarat proyek migas / TKDN / green building.' }),
+      f('ketahanan_suhu_c', 'Ketahanan suhu', { unit: '°C' }),
+      f('ketahanan_kimia', 'Ketahanan kimia', { hint: 'Asam / alkali / solvent / air laut.' }),
+      f('padanan_kompetitor', 'Padanan kompetitor', { hint: 'Dari tabel padanan Jotun / Hempel / IP — untuk sales & tender.' })
     ]
   },
   {
@@ -166,9 +189,34 @@ export const DEFAULT_TEMPLATES = Object.freeze([
       f('acid_amine_value', 'Acid / Amine / EEW Value', { unit: 'mg KOH/g / g/eq', hint: 'Nilai bilangan asam, amina, atau EEW resin.' }),
       f('kondisi_simpan', 'Kondisi simpan', { hint: 'Suhu penyimpanan maksimum, kelembaban, ventilasi ruangan.' }),
       f('umur_simpan', 'Umur simpan', { tipe: 'angka', unit: 'hari', kritis: true, hint: 'Masa simpan sebelum kedaluwarsa atau menggumpal.' }),
-      f('rekomendasi_apd', 'Rekomendasi APD Handling', { kritis: true, hint: 'Respirator, kacamata goggle, sarung tangan nitril/butyl.' })
+      f('rekomendasi_apd', 'Rekomendasi APD Handling', { kritis: true, hint: 'Respirator, kacamata goggle, sarung tangan nitril/butyl.' }),
+      f('pelarut_pembawa', 'Pelarut pembawa', { hint: 'Xylene / MPA / air — mencegah salah campur solvent.' }),
+      f('incompatibilities', 'Incompatibilities', { kritis: true, hint: 'Bahan yang memicu reaksi eksotermik/gel bila tercampur (MSDS Sec. 10).' }),
+      f('klasifikasi_ghs_un', 'Klasifikasi GHS / UN', { hint: 'UN number, packing group, hazard class (MSDS Sec. 14).' })
     ]
-  }
+  },
+  {
+    cocok: 'HARDENER',
+    nama: 'Hardener (pengeras)',
+    is_kritis_default: true,
+    sections_aktif: SECTION_KEYS.filter((s) => s !== 'dipakai_pada'),
+    min_score_verified: 70,
+    spec_fields: [
+      f('grade', 'Grade / tipe', { wajib: true }),
+      f('acid_amine_value', 'Amine / EEW value', { unit: 'mg KOH/g / g/eq', kritis: true, hint: 'Dasar hitung stoikiometri resin vs hardener.' }),
+      f('solid_content', 'Kadar padatan', { tipe: 'angka', unit: '%' }),
+      f('flash_point', 'Flash point', { tipe: 'angka', unit: '°C', kritis: true }),
+      f('viskositas', 'Viskositas (@25°C)', { unit: 'mPa.s' }),
+      f('umur_simpan', 'Umur simpan', { tipe: 'angka', unit: 'hari', kritis: true }),
+      f('incompatibilities', 'Incompatibilities', { kritis: true }),
+      f('rekomendasi_apd', 'Rekomendasi APD', { kritis: true })
+    ]
+  },
+  { cocok: 'PRODUKSI', nama: 'Bahan / alat produksi', is_kritis_default: false, min_score_verified: 60, spec_fields: [f('ukuran_grade', 'Ukuran / grade', { wajib: true }), f('standar', 'Standar'), f('kemasan', 'Kemasan')] },
+  { cocok: 'KENDARAAN', nama: 'Kendaraan & part kendaraan', is_kritis_default: false, min_score_verified: 60, spec_fields: [f('tipe_kendaraan', 'Tipe / model kendaraan', { wajib: true }), f('nomor_part', 'Nomor part', { kritis: true }), f('spesifikasi_oli_fluida', 'Spesifikasi oli / fluida', { kritis: true })] },
+  { cocok: 'ATK', alias: ['ATK & RTK'], nama: 'ATK & RTK', is_kritis_default: false, min_score_verified: 50, spec_fields: [f('ukuran_grade', 'Ukuran / tipe', { wajib: true }), f('kemasan', 'Kemasan')] },
+  { cocok: 'BANGUNAN', nama: 'Material bangunan', is_kritis_default: false, min_score_verified: 60, spec_fields: [f('ukuran_grade', 'Ukuran / grade', { wajib: true }), f('standar', 'Standar (SNI)'), f('material_dasar', 'Material dasar')] },
+  { cocok: 'TECHNOLOGY', nama: 'Technology / IT', is_kritis_default: false, min_score_verified: 60, spec_fields: [f('merk_tipe', 'Merk & tipe', { wajib: true }), f('spesifikasi_teknis', 'Spesifikasi teknis'), f('garansi', 'Garansi')] }
 ]);
 
 /**
@@ -242,4 +290,14 @@ export function buildDefaultTemplatePayload(def, parentCategoryId) {
     is_kritis_default: def.is_kritis_default,
     status: 'active'
   };
+}
+
+/**
+ * Field spek bawaan yang BELUM ada di template yang sudah tersimpan (dicocokkan lewat `key`).
+ * Hanya menambah — tidak pernah mengubah/menghapus field yang sudah disunting superadmin.
+ * @returns {any[]} field baru (salinan), kosong bila template sudah lengkap
+ */
+export function missingDefaultSpecFields(existingTemplate, def) {
+  const ada = new Set((existingTemplate?.spec_fields || []).map((x) => x?.key));
+  return (def?.spec_fields || []).filter((x) => !ada.has(x.key)).map((x) => ({ ...x }));
 }

@@ -110,6 +110,18 @@
 			if (blob) photoFile = new File([blob], 'bukti.jpg', { type: blob.type || 'image/jpeg' });
 			draftSavedAt = new Date();
 		}
+		// Prefill dari scan QR barang (EPI:ITEM:<id> → ?item_id=<id>): barang langsung terpilih, pengguna tidak perlu mengetik kode.
+		// Draf yang dipulihkan menang atas prefill (tidak menimpa input yang sedang dikerjakan).
+		{
+			const preId = Number(new URLSearchParams(location.search).get('item_id'));
+			if (Number.isInteger(preId) && preId > 0 && !selectedItemId) {
+				const preFound = items.find((i) => i.id === preId);
+				if (preFound) {
+					selectedItemId = preFound.id;
+					scanMethod = 'qr_item';
+				}
+			}
+		}
 		draftArmed = true;
 
 		const sendFn = async (entry: any) => {
@@ -167,7 +179,7 @@
 			errorMsg = 'QR tidak dikenali sebagai batch/lot.';
 			return;
 		}
-		itemBatchId = parsed.id;
+		itemBatchId = Number(parsed.id);
 		errorMsg = '';
 	}
 

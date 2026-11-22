@@ -31,10 +31,20 @@
 	const prefillDepartemen = page.url.searchParams.get('departemen');
 	const prefillLokasi = page.url.searchParams.get('lokasi');
 	const prefillJudul = page.url.searchParams.get('judul');
+	// Konteks dari panduan kendala SOP (?sop=&step=&gate=) atau ?deskripsi= langsung; dipotong supaya URL liar tidak membanjiri formulir.
+	const prefillDeskripsi = (() => {
+		const q = page.url.searchParams;
+		const direct = (q.get('deskripsi') || '').trim().slice(0, 1500);
+		const sop = (q.get('sop') || '').trim().slice(0, 100);
+		if (direct || !sop) return direct;
+		const step = (q.get('step') || '').trim().slice(0, 100);
+		const gate = (q.get('gate') || '').trim().slice(0, 100);
+		return [`SOP: ${sop}`, step ? `Langkah: ${step}` : null, gate ? `Gate: ${gate}` : null, '', 'Kronologi / kendala yang terjadi:'].filter((x) => x !== null).join('\n');
+	})();
 
 	let tipe = $state(prefillTipe && TIPE_OPTIONS.includes(prefillTipe) ? prefillTipe : 'Komplain');
 	let judul = $state(prefillJudul || '');
-	let deskripsi = $state('');
+	let deskripsi = $state(prefillDeskripsi);
 	let prioritas = $state('Sedang');
 	let departemenTujuan = $state(prefillDepartemen && DEPARTEMEN_OPTIONS.includes(prefillDepartemen) ? prefillDepartemen : '');
 	let projectId = $state<string>('');
@@ -95,7 +105,7 @@
 						? prefillDepartemen
 						: draft.departemenTujuan;
 				judul = prefillJudul || draft.judul;
-				deskripsi = draft.deskripsi;
+				deskripsi = prefillDeskripsi || draft.deskripsi;
 				prioritas = draft.prioritas;
 				projectId = draft.projectId;
 				lokasi = prefillLokasi || draft.lokasi;

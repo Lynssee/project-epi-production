@@ -16,17 +16,21 @@
 import { pathToFileURL } from 'node:url';
 
 const IGNORE_CHECKLIST = new Set(['sumber', 'oleh_id', 'oleh_nama', 'waktu', 'client_event_id', 'foto', 'gps', 'riwayat', 'catatan']);
+/** @type {Record<string, string>} */
 const NAMA = { kiosk: 'Kiosk', app: 'App', erp: 'ERP' };
+/** @type {Record<string, string>} */
 const SOURCE_EXPECT = { kiosk: 'kiosk', app: 'lapangan', erp: 'admin' };
+/** @type {Record<string, string>} */
 const PREFIX_EXPECT = { kiosk: 'KIOSK/', app: 'APP/', erp: 'ERP/' };
 
-const ada = (v) => (v == null || v === '' ? 'tidak' : 'ada');
-const awalan = (v, n = 12) => String(v ?? '').replace(/\[SJ [^\]]*\]\s*/, '').slice(0, n);
+const ada = (/** @type {any} */ v) => (v == null || v === '' ? 'tidak' : 'ada');
+const awalan = (/** @type {any} */ v, n = 12) => String(v ?? '').replace(/\[SJ [^\]]*\]\s*/, '').slice(0, n);
 
 /** security_checklist → kunci/nilai yang boleh dibandingkan (objek v2; teks/null diringkas). */
-export function normChecklist(cl) {
+export function normChecklist(/** @type {any} */ cl) {
   if (cl == null) return { _tipe: 'null' };
   if (typeof cl !== 'object') return { _tipe: typeof cl };
+  /** @type {Record<string, any>} */
   const out = {};
   for (const k of Object.keys(cl).sort()) {
     if (IGNORE_CHECKLIST.has(k)) continue;
@@ -38,7 +42,7 @@ export function normChecklist(cl) {
   return out;
 }
 
-export function normSj(sj) {
+export function normSj(/** @type {any} */ sj) {
   return {
     status: sj.status ?? null,
     draft_status: sj.draft_status ?? null,
@@ -52,21 +56,22 @@ export function normSj(sj) {
   };
 }
 
-export const normScan = (rows) => ({
+export const normScan = (/** @type {any} */ rows) => ({
   jumlah: rows.length,
-  baris: rows.map((r) => ({ stage_to: r.stage_to ?? null, actor_role: r.actor_role ?? null, notes: awalan(r.notes, 10) })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-  source: rows.map((r) => r.source).sort()
+  baris: rows.map((/** @type {any} */ r) => ({ stage_to: r.stage_to ?? null, actor_role: r.actor_role ?? null, notes: awalan(r.notes, 10) })).sort((/** @type {any} */ a, /** @type {any} */ b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+  source: rows.map((/** @type {any} */ r) => r.source).sort()
 });
-export const normGateLog = (rows) => ({
+export const normGateLog = (/** @type {any} */ rows) => ({
   jumlah: rows.length,
-  baris: rows.map((r) => ({ arah: r.arah, jenis: r.jenis, deskripsi: awalan(r.deskripsi, 10), satpam_pencatat_id: ada(r.satpam_pencatat_id) }))
+  baris: rows.map((/** @type {any} */ r) => ({ arah: r.arah, jenis: r.jenis, deskripsi: awalan(r.deskripsi, 10), satpam_pencatat_id: ada(r.satpam_pencatat_id) }))
 });
-export const normNotif = (rows) => ({ jumlah: rows.length, baris: rows.map((r) => ({ priority: r.priority, department: r.department })) });
-export const normProc = (rows) => ({ jumlah: rows.length, stage_key: rows.map((r) => r.stage_key).sort() });
+export const normNotif = (/** @type {any} */ rows) => ({ jumlah: rows.length, baris: rows.map((/** @type {any} */ r) => ({ priority: r.priority, department: r.department })) });
+export const normProc = (/** @type {any} */ rows) => ({ jumlah: rows.length, stage_key: rows.map((/** @type {any} */ r) => r.stage_key).sort() });
 
 /** Bandingkan tiga objek hasil normalisasi → daftar baris {bagian, kunci, nilai:{kiosk,app,erp}, sama}. */
-export function bandingkan(hasil) {
+export function bandingkan(/** @type {any} */ hasil) {
   const rows = [];
+  /** @type {(o: any, p?: string) => [string, string][]} */
   const flat = (o, p = '') =>
     Object.entries(o || {}).flatMap(([k, v]) => (v && typeof v === 'object' && !Array.isArray(v) ? flat(v, `${p}${k}.`) : [[`${p}${k}`, JSON.stringify(v)]]));
   const layar = Object.keys(hasil);
@@ -86,7 +91,7 @@ export function bandingkan(hasil) {
     const okPre = hasil[l].aksi === 'lolos' ? pre === PREFIX_EXPECT[l] : true;
     rows.push({ bagian: 'pengecualian', kunci: `verified_by prefix (${l})`, nilai: { [l]: `${pre} (harap ${PREFIX_EXPECT[l]})` }, sama: okPre });
     const srcs = hasil[l].scan_log.source;
-    rows.push({ bagian: 'pengecualian', kunci: `scan_log.source (${l})`, nilai: { [l]: srcs.join(',') || '—' }, sama: srcs.every((s) => s === SOURCE_EXPECT[l]) });
+    rows.push({ bagian: 'pengecualian', kunci: `scan_log.source (${l})`, nilai: { [l]: srcs.join(',') || '—' }, sama: srcs.every((/** @type {any} */ s) => s === SOURCE_EXPECT[l]) });
   }
   for (const l of layar) rows.push({ bagian: 'pengecualian', kunci: `gr_gps_lat harus null (${l})`, nilai: { [l]: hasil[l].surat_jalan.gr_gps_lat }, sama: hasil[l].surat_jalan.gr_gps_lat === 'null' });
   return rows;
@@ -95,7 +100,7 @@ export function bandingkan(hasil) {
 // ───────────────────────── I/O (hanya GET) ─────────────────────────
 async function main() {
   try { process.loadEnvFile('.env'); } catch { /* env bisa dari shell */ }
-  const args = Object.fromEntries(process.argv.slice(2).reduce((a, x, i, arr) => (x.startsWith('--') ? [...a, [x.slice(2), arr[i + 1]]] : a), []));
+  const args = Object.fromEntries(process.argv.slice(2).reduce((a, x, i, arr) => (x.startsWith('--') ? [...a, [x.slice(2), arr[i + 1]]] : a), /** @type {any[]} */ ([])));
   const URL_ = (process.env.DIRECTUS_API_URL || process.env.VITE_DIRECTUS_API_URL || '').replace(/\/$/, '');
   const TOKEN = process.env.DIRECTUS_TOKEN || process.env.VITE_DIRECTUS_TOKEN;
   const aksi = args.aksi;
@@ -107,12 +112,13 @@ async function main() {
   }
   const sejak = args.sejak || new Date(Date.now() - 24 * 3600 * 1000).toISOString();
 
-  const get = async (p) => {
+  const get = async (/** @type {any} */ p) => {
     const r = await fetch(`${URL_}${p}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
     if (!r.ok) throw new Error(`GET ${p} → ${r.status} ${(await r.text()).slice(0, 200)}`);
     return (await r.json()).data;
   };
 
+  /** @type {Record<string, any>} */
   const hasil = {};
   for (const [layar, id] of Object.entries(ids)) {
     const sj = await get(`/items/surat_jalan/${id}?fields=id,nomor_sj,status,draft_status,approval_status,security_verified_at,security_verified_by,security_checklist,foto_kirim,gr_gps_lat,track_stage`);

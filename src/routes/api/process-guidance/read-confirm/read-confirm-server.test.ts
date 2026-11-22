@@ -9,6 +9,10 @@ vi.mock('$lib/server/directus', () => ({
 	directusServerJson: (...args: any[]) => mockDirectusJson(...args)
 }));
 
+const mockSign = vi.fn((_i: any) => 'KODE-TTD-24-KARAKTER-AB' as string | null);
+const mockPersist = vi.fn(async (..._a: any[]) => true);
+vi.mock('$lib/server/paktaSign', () => ({ signKonfirmasi: (i: any) => mockSign(i), persistSignatureHash: (...a: any[]) => mockPersist(...a) }));
+
 const mockGateMode = vi.fn();
 vi.mock('$lib/server/gateDefinitionsMode', () => ({
 	resolveGateMode: (...args: any[]) => mockGateMode(...args)
@@ -167,7 +171,11 @@ describe('API: /api/process-guidance/read-confirm', () => {
 		it('alur: versi diambil dari SERVER (bukan kiriman klien) dan disimpan di flow_version', async () => {
 			wirePost({ flow: { id: 1, version: 4 } });
 			const json = await (await POST(post({ flow_key: 'flow_prj_blasting', version_seq: 1 }))).json();
-			expect(json).toMatchObject({ success: true, id: 888 });
+			expect(json).toMatchObject({ success: true, id: 888, signature: 'KODE-TTD-24-KARAKTER-AB' });
+			// tanda tangan mengikat karyawan + jenis + dokumen + versi SERVER + IP
+			// kode disimpan ke signature_hash baris yang baru dibuat (bukti anti-ubah)
+			expect(mockPersist).toHaveBeenCalledWith('sop_read_confirmations', 888, 'KODE-TTD-24-KARAKTER-AB');
+			expect(mockSign).toHaveBeenCalledWith(expect.objectContaining({ karyawanId: 42, docType: 'flow', docKey: 'flow_prj_blasting', version: 4, ip: '10.0.0.1' }));
 			expect(posted()[0]).toMatchObject({ karyawan_id: 42, flow_key: 'flow_prj_blasting', flow_version: 4, sop_version_seq: 4 });
 		});
 
@@ -176,6 +184,7 @@ describe('API: /api/process-guidance/read-confirm', () => {
 			await POST(post({ sop_id: 7, version_seq: 1 }));
 			expect(posted()[0]).toMatchObject({ sop_id: 7, sop_version_seq: 11, karyawan_id: 42 });
 			expect(posted()[0].flow_key).toBeUndefined();
+			expect(mockSign).toHaveBeenCalledWith(expect.objectContaining({ docType: 'sop', docKey: 7, version: 11 }));
 		});
 
 		it('alur / SOP fiktif → 404, tidak menulis', async () => {

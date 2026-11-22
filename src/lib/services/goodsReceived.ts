@@ -107,7 +107,7 @@ export async function confirmGoodsReceived(
 	items: ConfirmGRItem[],
 	fotoTerimaFileId: string,
 	evidence: GREvidence = {}
-): Promise<{ success: boolean; hasVariance: boolean; claimsCreated: number[]; totalReklas: number }> {
+): Promise<{ success: boolean; hasVariance: boolean; claimsCreated: number[]; totalReklas: number; jurnalWarning?: string }> {
 	const res = await authedFetch('/api/goods-received/confirm', {
 		method: 'POST',
 		body: JSON.stringify({ suratJalanId, items, fotoTerimaFileId, ...evidence })

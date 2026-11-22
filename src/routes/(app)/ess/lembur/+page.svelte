@@ -106,7 +106,7 @@
 			</div>
 			<h3 class="text-lg font-bold text-red-600 mb-2">Terjadi Kesalahan</h3>
 			<p class="text-sm text-red-500 mb-6">{errorMsg}</p>
-			<button class="px-6 py-2.5 rounded-xl text-sm font-bold text-white gradient-bg hover:opacity-90 transition-opacity shadow-lg" onclick={load}>
+			<button class="px-6 py-2.5 rounded-xl text-sm font-bold text-white gradient-bg hover:opacity-90 transition-opacity shadow-lg" onclick={() => load()}>
 				Coba Lagi
 			</button>
 		</div>

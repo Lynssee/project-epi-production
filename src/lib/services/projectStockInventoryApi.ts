@@ -351,15 +351,11 @@ export async function recordProjectStockMovement(payload: ProjectStockMovementPa
 
 	try {
 		if (conditionStatus === 'dikembalikan') {
-			// Retur barang ke gudang
-			const { reportReturn } = await import('$lib/services/projectTransferApi');
-			await reportReturn({
-				projectId: pIdNum,
-				identitasBarangId: itemId,
-				quantity,
-				notes: notes || 'Retur dari lokasi proyek',
-				batchId
-			});
+			// Retur barang ke gudang. CATATAN: `reportReturn` TIDAK PERNAH ada di projectTransferApi (hanya transferProjectStock) —
+			// import dinamis lama menghasilkan TypeError "reportReturn is not a function" setiap kali jalur ini dipakai.
+			// Jalur retur resmi (kondisi + bukti + gate) ada di Packing List → Retur (createReturnDocument); sambungan jalur cepat ini
+			// ke sana butuh keputusan produk, jadi untuk sementara gagal dengan pesan yang jelas.
+			throw new Error('Retur ke gudang lewat panel cepat belum tersedia. Gunakan menu Retur Barang (Packing List → Retur).');
 		} else if (conditionStatus === 'rusak' || conditionStatus === 'hilang') {
 			// Kerugian / barang rusak di site
 			const { reportLossClaim } = await import('$lib/services/projectLossClaimApi');

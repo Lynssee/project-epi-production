@@ -9,6 +9,7 @@
 	import { readItem } from '@directus/sdk';
 	import {
 		resolveChecklistTemplate,
+		fetchEquipmentSetItems,
 		fetchPeminjamanInternalDetail,
 		submitLoanChecklist,
 		uploadChecklistPhoto,
@@ -130,6 +131,9 @@
 
 			const template = await resolveChecklistTemplate(equipmentId);
 			items = template.items.map((i) => ({ ...i }));
+			// Kelengkapan Set Equipment (Product Pairing Fase 3): butir aksesoris wajib ikut/kembali ditambahkan di akhir daftar.
+			const setItems = await fetchEquipmentSetItems((loan as any)?.equipment?.name ?? (loan as any)?.equipment?.nama_barang_lengkap, jenis);
+			if (setItems.length) items = [...items, ...setItems.filter((s) => !items.some((x) => x.label === s.label))];
 
 			// §7 rekomendasi L3 — best-effort, jangan sampai gagalnya ini menghalangi
 			// pengisian checklist kembali.

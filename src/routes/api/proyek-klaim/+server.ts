@@ -189,7 +189,7 @@ export const POST: RequestHandler = async (event) => {
 			total_nominal: totalNominal,
 			catatan,
 			nama_mandor_penyetuju: namaMandor,
-			created_by: karyawan.nama || karyawan.id
+			created_by: karyawan.nama_karyawan || karyawan.id
 		}).catch((err) => console.warn('[api/proyek-klaim] n8n trigger warning:', err));
 
 		return json({

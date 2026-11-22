@@ -3,6 +3,7 @@
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
+	import SopSayaWidget from '$lib/components/ess/SopSayaWidget.svelte';
 	import { onMount } from 'svelte';
 	import { authStore } from '$lib/stores/auth';
 	import { rolesStore } from '$lib/stores/roles';
@@ -242,6 +243,8 @@
 			{/if}
 		</div>
 	</div>
+
+	<SopSayaWidget />
 
 	<!-- Metric Cards Grid -->
 	<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

@@ -30,6 +30,8 @@ export interface KasbonRecord {
 	total_paid: number;
 	payment_status: string;
 	catatan_penolakan: string | null;
+	/** Tanggal pembayaran/persetujuan terakhir (opsional; diisi server pada riwayat, dan oleh klien saat riwayat lokal diperbarui). */
+	last_payment_date?: string | null;
 	/** Fase 4 (T10): proyeksi jadwal angsuran, hanya terisi untuk kasbon berstatus approved. */
 	jadwalAngsuran?: JadwalAngsuranBaris[];
 	/** Fase 4 (R5): riwayat potongan aktual per periode. */

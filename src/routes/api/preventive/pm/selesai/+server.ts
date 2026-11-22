@@ -8,7 +8,8 @@ import type { RequestHandler } from './$types';
 import { authenticatePreventiveOperator } from '$lib/server/preventive/preventiveGuard';
 import { directusServerJson } from '$lib/server/directus';
 import { getMleSettingServer } from '$lib/server/mleSettings';
-import { nextDueDate } from '$lib/server/preventive/pmNext';
+import { nextDueDate, tanggalPerkiraanJam } from '$lib/server/preventive/pmNext';
+import { autoWoIdentity } from '$lib/server/preventive/woNumber';
 
 // Sama dengan P2H_WO_IDS di p2h/submit/+server.ts — jangan diubah sepihak.
 const WO = {
@@ -60,12 +61,25 @@ export const POST: RequestHandler = async (event) => {
 		: null;
 	const doneDate = wibToday();
 
+	// PM berbasis JAM: butuh hoursmeter saat selesai (dari mekanik, atau HM unit terakhir). Divalidasi SEBELUM menulis apa pun.
+	const namaSatuan = template ? satuan.get(String(asId(template.interval_unit_primary))) : undefined;
+	const jamMode = namaSatuan === 'Jam (HM)';
+	let hmEfektif: number | null = hm;
+	if (jamMode && hmEfektif == null) {
+		const eq = (await directusServerJson<{ data: any }>(`/items/equipment/${equipmentId}?fields=id,last_hoursmeter`).catch((e) => {
+			console.error('[pm/selesai] gagal membaca HM unit', equipmentId, e);
+			return null;
+		}))?.data;
+		hmEfektif = eq?.last_hoursmeter != null && Number.isFinite(Number(eq.last_hoursmeter)) ? Number(eq.last_hoursmeter) : null;
+	}
+	if (jamMode && hmEfektif == null) throw error(400, 'PM berbasis jam butuh hoursmeter saat ini. Isi kolom hoursmeter lalu coba lagi.');
+
 	await directusServerJson(`/items/pm_due_tracker/${trackerId}`, {
 		method: 'PATCH',
 		body: JSON.stringify({
 			status_id: status.Completed,
 			last_done_date: doneDate,
-			...(hm != null ? { last_done_hoursmeter: hm } : {}),
+			...(hmEfektif != null ? { last_done_hoursmeter: hmEfektif } : {}),
 			catatan_selesai: catatan,
 			foto_selesai: foto,
 			ada_temuan: adaTemuan,
@@ -73,10 +87,20 @@ export const POST: RequestHandler = async (event) => {
 		})
 	});
 
-	// Siklus berikutnya (hanya interval kalender). Idempoten: jangan buat bila sudah ada tracker terbuka untuk pasangan yang sama.
+	// HM yang diisi mekanik memperbarui HM unit (hanya bila lebih besar — HM tidak boleh mundur).
+	if (hm != null) {
+		await directusServerJson(`/items/equipment/${equipmentId}?fields=id,last_hoursmeter`)
+			.then(async (r: any) => {
+				const cur = Number(r?.data?.last_hoursmeter);
+				if (!Number.isFinite(cur) || hm > cur) await directusServerJson(`/items/equipment/${equipmentId}`, { method: 'PATCH', body: JSON.stringify({ last_hoursmeter: hm }) });
+			})
+			.catch((e: any) => console.error('[pm/selesai] gagal memperbarui HM unit (penutupan PM tetap tersimpan)', equipmentId, e));
+	}
+
+	// Siklus berikutnya (hanya interval kalender dan jam). Idempoten: jangan buat bila sudah ada tracker terbuka untuk pasangan yang sama.
 	let berikutnya: string | null = null;
 	if (template && templateId) {
-		const due = nextDueDate(doneDate, template.interval_value_primary, satuan.get(String(asId(template.interval_unit_primary))));
+		const due = jamMode ? tanggalPerkiraanJam(doneDate, template.interval_value_primary) : nextDueDate(doneDate, template.interval_value_primary, namaSatuan);
 		if (due) {
 			const terbuka = (
 				await directusServerJson<{ data: any[] }>(
@@ -86,7 +110,14 @@ export const POST: RequestHandler = async (event) => {
 			if (terbuka.length === 0) {
 				await directusServerJson('/items/pm_due_tracker', {
 					method: 'POST',
-					body: JSON.stringify({ equipment_id: equipmentId, pm_task_template_id: templateId, due_date: due, status_id: status.Active })
+					body: JSON.stringify({
+						equipment_id: equipmentId,
+						pm_task_template_id: templateId,
+						due_date: due,
+						status_id: status.Active,
+						// PM jam: patokan = HM; due_date hanyalah perkiraan (disegarkan generator erp-epi).
+						...(jamMode && hmEfektif != null ? { due_hoursmeter: Math.round((hmEfektif + Number(template.interval_value_primary)) * 10) / 10, last_done_hoursmeter: hmEfektif } : {})
+					})
 				});
 				berikutnya = due;
 			}
@@ -101,6 +132,7 @@ export const POST: RequestHandler = async (event) => {
 				const wo = await directusServerJson<{ data: any }>('/items/work_order', {
 					method: 'POST',
 					body: JSON.stringify({
+						...(await autoWoIdentity(doneDate)), // wo_number + created_at wajib (KPI & Laporan Bulanan membaca keduanya)
 						equipment_id: equipmentId,
 						keluhan: `[Temuan PM ${template?.task_name || ''}] ${catatan}`,
 						kategori_perbaikan_id: WO.MINOR,

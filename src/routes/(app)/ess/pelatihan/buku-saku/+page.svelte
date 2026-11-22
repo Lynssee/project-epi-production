@@ -1,11 +1,62 @@
 <script lang="ts">
 	// Buku Saku Cat (EPI Academy, Fase 3): alat hitung & kartu referensi cepat untuk lapangan.
-	// 100% sisi klien — tanpa API/Directus, jadi hemat data seluler dan tetap jalan setelah halaman termuat.
-	import { IconCalculator, IconCloudRain, IconCards, IconInfoCircle, IconCircleCheck, IconAlertTriangle } from '@tabler/icons-svelte';
+	// Kalkulator & kartu 100% sisi klien. Tab "Barang & Bahan" memuat referensi 360°/R&D sekali (salinan lokal 24 jam) — hemat kuota.
+	import { getReferensiSaku, getKartuTroubleshoot, type ReferensiSakuData, type KartuTroubleshoot } from '$lib/services/ess/training';
+	import { IconCalculator, IconCloudRain, IconCards, IconInfoCircle, IconTool, IconCircleCheck, IconAlertTriangle } from '@tabler/icons-svelte';
 	import { cekAplikasi, wftDariDft, dftDariWft, tsr, kebutuhanCat, kehilanganTekanan, DEW_MARGIN_C, RH_MAX_PERSEN } from '$lib/utils/coatingCalc';
 
-	type Tab = 'kalkulator' | 'cuaca' | 'kartu';
+	type Tab = 'kalkulator' | 'cuaca' | 'kartu' | 'referensi' | 'troubleshoot';
 	let tab = $state<Tab>('cuaca');
+
+	// --- Referensi Barang & Bahan (profil 360° terverifikasi + bahaya R&D). Dimuat malas saat tab dibuka; salinan lokal 24 jam. ---
+	let ref = $state<ReferensiSakuData | null>(null);
+	let refLoading = $state(false);
+	let refError = $state('');
+	let refDariCache = $state(false);
+	let refCari = $state('');
+	async function muatReferensi() {
+		if (ref || refLoading) return;
+		refLoading = true;
+		refError = '';
+		try {
+			const r = await getReferensiSaku();
+			ref = r.data;
+			refDariCache = r.dariCache;
+		} catch (e: any) {
+			refError = e?.message || 'Gagal memuat referensi.';
+		} finally {
+			refLoading = false;
+		}
+	}
+	$effect(() => { if (tab === 'referensi') muatReferensi(); });
+
+	// --- Troubleshoot Quick Reference: dimuat malas, salinan lokal agar tetap terbaca tanpa sinyal. ---
+	let tsCards = $state<KartuTroubleshoot[]>([]);
+	let tsLoaded = $state(false);
+	let tsLoading = $state(false);
+	let tsError = $state('');
+	let tsDariCache = $state(false);
+	let tsCari = $state('');
+	let tsBuka = $state<string | null>(null);
+	async function muatTroubleshoot() {
+		if (tsLoaded || tsLoading) return;
+		tsLoading = true;
+		tsError = '';
+		try {
+			const r = await getKartuTroubleshoot();
+			tsCards = r.cards;
+			tsDariCache = r.dariCache;
+			tsLoaded = true;
+		} catch (e: any) {
+			tsError = e?.message || 'Gagal memuat kartu troubleshoot.';
+		} finally {
+			tsLoading = false;
+		}
+	}
+	$effect(() => { if (tab === 'troubleshoot') muatTroubleshoot(); });
+	const tsTampil = $derived(tsCards.filter((c) => !tsCari.trim() || `${c.judul} ${c.alat} ${c.gejala}`.toLowerCase().includes(tsCari.trim().toLowerCase())));
+	let refBarang = $derived((ref?.barang ?? []).filter((b) => !refCari.trim() || b.nama.toLowerCase().includes(refCari.trim().toLowerCase())));
+	let refMaterial = $derived((ref?.material ?? []).filter((m) => !refCari.trim() || m.nama.toLowerCase().includes(refCari.trim().toLowerCase())));
 
 	// --- Kalkulator cat ---
 	let vs = $state('');
@@ -57,8 +108,8 @@
 		<p class="text-sm mt-1 font-medium" style="color: var(--sys-label3)">Alat hitung & kartu cepat untuk lapangan. Tanpa kuota data setelah halaman terbuka.</p>
 	</div>
 
-	<div class="grid grid-cols-3 gap-2 mb-5" role="tablist" aria-label="Menu Buku Saku">
-		{#each [{ id: 'cuaca', label: 'Cek Cuaca', icon: IconCloudRain }, { id: 'kalkulator', label: 'Kalkulator', icon: IconCalculator }, { id: 'kartu', label: 'Kartu Cepat', icon: IconCards }] as t (t.id)}
+	<div class="grid grid-cols-5 gap-2 mb-5" role="tablist" aria-label="Menu Buku Saku">
+		{#each [{ id: 'cuaca', label: 'Cek Cuaca', icon: IconCloudRain }, { id: 'kalkulator', label: 'Kalkulator', icon: IconCalculator }, { id: 'referensi', label: 'Barang & Bahan', icon: IconInfoCircle }, { id: 'kartu', label: 'Kartu Cepat', icon: IconCards }, { id: 'troubleshoot', label: 'Troubleshoot', icon: IconTool }] as t (t.id)}
 			<button
 				role="tab"
 				aria-selected={tab === t.id}
@@ -179,6 +230,83 @@
 					{#if tekanan && tekanan.kehilanganPersen >= 10}<div class="text-xs font-semibold mt-1" style="color: #DC2626">Cek panjang/diameter selang, kopling bocor, dan nozzle aus.</div>{/if}
 				</div>
 			</div>
+		</div>
+	{:else if tab === 'troubleshoot'}
+		<div class="flex flex-col gap-3">
+			<p class="text-[11px]" style="color: var(--sys-label4)">Gejala → langkah periksa, urut dari yang paling mudah. Selalu utamakan keselamatan dan ikuti manual OEM. Salinan disimpan di HP{tsDariCache ? ' (dari salinan lokal)' : ''} sehingga tetap bisa dibaca tanpa sinyal.</p>
+			{#if tsLoading}
+				<p class="text-xs" style="color: var(--sys-label3)">Memuat kartu…</p>
+			{:else if tsError}
+				<p class="text-xs text-red-500">{tsError}</p>
+			{:else if tsCards.length === 0}
+				<div class="glass-panel rounded-2xl p-6 text-center text-xs" style="color: var(--sys-label3)">Belum ada kartu troubleshoot yang aktif. HRD/trainer mengaktifkannya di ERP setelah isinya ditinjau.</div>
+			{:else}
+				<input type="search" bind:value={tsCari} placeholder="Cari gejala / alat…" class="w-full px-3 py-2 text-sm rounded-xl border" style="border-color: var(--sys-sep, rgba(0,0,0,0.12))" />
+				{#each tsTampil as c (c.id)}
+					<div class="glass-panel rounded-2xl overflow-hidden">
+						<button class="w-full text-left p-4 flex items-start justify-between gap-2" onclick={() => (tsBuka = tsBuka === c.id ? null : c.id)} aria-expanded={tsBuka === c.id}>
+							<span class="min-w-0">
+								<span class="block text-sm font-extrabold" style="color: var(--sys-label)">{c.judul}</span>
+								<span class="block text-[11px]" style="color: var(--sys-label3)">{c.alat}{c.gejala ? ' · ' + c.gejala : ''}</span>
+							</span>
+							<span class="text-xs" style="color: var(--sys-label4)">{tsBuka === c.id ? '▲' : '▼'}</span>
+						</button>
+						{#if tsBuka === c.id}
+							<div class="px-4 pb-4 flex flex-col gap-3">
+								{#if c.keselamatan}
+									<div class="rounded-xl px-3 py-2 text-xs font-semibold" style="background:#FEF3C7;color:#92400E">⚠️ {c.keselamatan}</div>
+								{/if}
+								<ol class="flex flex-col gap-1.5 list-decimal pl-5">
+									{#each c.langkah as l}<li class="text-xs" style="color: var(--sys-label2)">{l}</li>{/each}
+								</ol>
+								{#if c.programId}
+									<a href="/ess/pelatihan/{c.programId}" class="text-xs font-bold" style="color: var(--p, var(--g))">🎓 Pelajari lengkap di modul pelatihan →</a>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{/each}
+			{/if}
+		</div>
+
+	{:else if tab === 'referensi'}
+		<div class="flex flex-col gap-3">
+			<input class="px-3 py-2.5 rounded-xl border border-slate-200 bg-white/70 text-base font-semibold" placeholder="Cari barang / bahan…" bind:value={refCari} />
+			{#if refLoading}<p class="text-xs" style="color: var(--sys-label3)">Memuat…</p>{/if}
+			{#if refError}<p class="text-xs font-semibold" style="color: #DC2626">{refError}</p>{/if}
+			{#if ref}
+				<p class="text-[11px]" style="color: var(--sys-label4)">Dari profil Inventory 360° terverifikasi & profil bahan R&D. Salinan disimpan di HP{refDariCache ? ' (dari salinan lokal)' : ''} — diperbarui otomatis tiap 24 jam.</p>
+				{#each refBarang as b (b.itemId)}
+					<div class="glass-panel rounded-2xl p-4">
+						<div class="flex items-start justify-between gap-2"><h3 class="text-sm font-extrabold" style="color: var(--sys-label)">{b.nama}</h3>{#if b.kritis}<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">KRITIS</span>{/if}</div>
+						{#if b.ringkasan}<p class="text-xs mt-1" style="color: var(--sys-label3)">{b.ringkasan}</p>{/if}
+						{#if b.spesifikasi?.length}
+							<dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs rounded-xl p-2.5" style="background: var(--sys-fill2)">
+								{#each b.spesifikasi as sp}
+									<dt class="font-bold" style="color: var(--sys-label3)">{sp.label}</dt>
+									<dd class="font-semibold" style="color: var(--sys-label)">{sp.nilai}</dd>
+								{/each}
+							</dl>
+							<p class="text-[10px] mt-1 font-medium" style="color: var(--sys-label4)">Angka dari profil 360° yang sudah diverifikasi TDS. Tetap cek TDS/label kemasan terbaru di lapangan.</p>
+						{/if}
+						<ul class="mt-2 flex flex-col gap-1 text-xs" style="color: var(--sys-label3)">
+							{#if b.interval}<li>⏱ Ganti tiap {b.interval}</li>{/if}
+							{#if b.tandaGanti}<li>🔧 Tanda harus ganti: {b.tandaGanti}</li>{/if}
+							{#if b.tandaPalsu}<li>⚠️ Tanda palsu: {b.tandaPalsu}</li>{/if}
+							{#if b.apd.length}<li>🦺 APD: {b.apd.join(', ')}</li>{/if}
+							{#if b.bahaya}<li>☣️ {b.bahaya}</li>{/if}
+						</ul>
+					</div>
+				{/each}
+				{#each refMaterial as m (m.materialId)}
+					<div class="glass-panel rounded-2xl p-4">
+						<h3 class="text-sm font-extrabold" style="color: var(--sys-label)">🧪 {m.nama}</h3>
+						{#if m.fungsi}<p class="text-xs mt-1" style="color: var(--sys-label3)">{m.fungsi}</p>{/if}
+						<p class="text-xs mt-1" style="color: var(--sys-label3)">☣️ Bahaya: {m.bahaya}</p>
+					</div>
+				{/each}
+				{#if !refBarang.length && !refMaterial.length}<p class="text-xs" style="color: var(--sys-label3)">Belum ada referensi{refCari ? ' yang cocok' : ''}.</p>{/if}
+			{/if}
 		</div>
 	{:else}
 		<div class="flex flex-col gap-4">

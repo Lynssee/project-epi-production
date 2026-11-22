@@ -24,6 +24,21 @@
 	// (sumbernya field yang sama dengan yang dipakai laporan harian/timeline).
 	let progressByProject = $state<Record<number, { total: number; target: number }>>({});
 
+	// Batas hari menganggur diatur admin (inventory.idle.proyek_hari); default 30 bila gagal dibaca.
+	let idleHari = $state(30);
+	async function loadIdleHari(): Promise<number> {
+		try {
+			const res = await fetch('/api/inventory-proyek/idle-config');
+			if (res.ok) {
+				const d = await res.json();
+				if (Number(d?.hari) > 0) idleHari = Number(d.hari);
+			}
+		} catch (e) {
+			console.error('[barang-menganggur] gagal baca batas hari, pakai 30:', e);
+		}
+		return idleHari;
+	}
+
 	onMount(load);
 
 	async function load() {
@@ -31,7 +46,7 @@
 		try {
 			projects = (await getProjectsForCurrentUser(false, { limit: -1 })) || [];
 			const projectIds = projects.map((p) => p.id);
-			rows = await getIdleBalancesForProjects(projectIds, 30);
+			rows = await getIdleBalancesForProjects(projectIds, await loadIdleHari());
 
 			// Query terpisah (Aturan Directus #2): progres fisik hanya untuk proyek yang
 			// benar-benar punya barang menganggur, bukan seluruh proyek yang dipegang user.
@@ -105,7 +120,7 @@
 		</a>
 		<h1 class="text-xl font-bold text-gray-900">Barang Menganggur Lintas Proyek</h1>
 		<p class="text-sm text-gray-500">
-			Barang di proyek Anda yang masih tercatat ada (qty &gt; 0) tapi tidak bergerak &gt;30 hari — pertimbangkan tawarkan ke proyek lain sebelum mereka membeli baru.
+			Barang di proyek Anda yang masih tercatat ada (qty &gt; 0) tapi tidak bergerak &gt;{idleHari} hari — pertimbangkan tawarkan ke proyek lain sebelum mereka membeli baru.
 		</p>
 	</div>
 

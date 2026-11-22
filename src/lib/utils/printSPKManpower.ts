@@ -20,21 +20,21 @@ async function fetchAssetAsDataUrl(fileId: string): Promise<string | null> {
   }
 }
 
-function formatDatePrint(dateString) {
+function formatDatePrint(dateString: any) {
   if (!dateString) return '-';
   return new Date(dateString).toLocaleDateString('id-ID', {
     day: '2-digit', month: 'long', year: 'numeric',
   });
 }
 
-function terbilang(date) {
+function terbilang(date: any) {
   const HARI  = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
   const BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
   const d = new Date(date);
   return `${HARI[d.getDay()]}, ${d.getDate()} ${BULAN[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-function formatRupiah(value) {
+function formatRupiah(value: any) {
   if (!value) return '-';
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
 }
@@ -127,7 +127,7 @@ function companyHeader() {
   </div>`;
 }
 
-export function printSPKManpower(spk, project) {
+export function printSPKManpower(spk: any, project: any) {
   const win = window.open('', '_blank');
   if (!win) { alert('Popup diblokir browser. Izinkan popup untuk halaman ini.'); return; }
 
@@ -255,7 +255,7 @@ export function printSPKManpower(spk, project) {
  * @param {object} manpower objek manpower (opsional, untuk identitas)
  * @param {{ tanpaHarga?: boolean }} opts tanpaHarga=true → versi Syarat Manpower tanpa nominal (watermark)
  */
-export async function printSpkAssignment(a, project = null, manpower = null, opts = {}) {
+export async function printSpkAssignment(a: any, project = null, manpower = null, opts: { tanpaHarga?: boolean } = {}) {
   const win = window.open('', '_blank');
   if (!win) { alert('Popup diblokir browser. Izinkan popup untuk halaman ini.'); return; }
 

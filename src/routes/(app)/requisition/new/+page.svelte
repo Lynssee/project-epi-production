@@ -60,7 +60,7 @@
 		loadingProjects = true;
 		try {
 			const res = await getProjects(null, true, null, { limit: 200 });
-			projects = res?.data || res || [];
+			projects = (res as any)?.data || res || [];
 		} catch {
 			projects = [];
 		} finally {

@@ -471,9 +471,9 @@ export async function createPengajuanLapangan({
 			sourceCollection: 'pengajuan',
 			sourceId: pengajuanId,
 			title: `Pengajuan Pembelian #${pengajuanId}`,
-			summary: tujuanPengajuan || null,
-			amount: totalAmount || null,
-			departmentKey: department || null,
+			summary: tujuanPengajuan || undefined,
+			amount: totalAmount || undefined,
+			departmentKey: department || undefined,
 			requesterId
 		});
 		approvalRequestId = approvalResult?.id || null;

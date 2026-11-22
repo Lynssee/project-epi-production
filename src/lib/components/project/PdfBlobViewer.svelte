@@ -36,9 +36,9 @@
 				cleanupUrl();
 				loading = true;
 				error = false;
-				if (src instanceof Blob || src instanceof File) {
+				if ((src as any) instanceof Blob || (src as any) instanceof File) {
 					try {
-						objectUrl = URL.createObjectURL(src);
+						objectUrl = URL.createObjectURL(src as Blob);
 					} catch (e) {
 						console.error('Failed to create Object URL:', e);
 						error = true;

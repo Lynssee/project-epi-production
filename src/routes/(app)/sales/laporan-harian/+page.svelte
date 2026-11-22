@@ -17,14 +17,14 @@
 		type VisitSalesRow,
 		type SurveyRow,
 		type VisitExpenseItem
-	} from '$lib/services/sales.ts';
-	import { listMyPenawaran, type QuotationHeader } from '$lib/services/kalkulatorPenawaran.ts';
-	import { getUpcomingFollowUps, getSalesVisitKpis } from '$lib/services/sales.ts';
-	import { getMyPoStatusSummary } from '$lib/services/salesPo.ts';
+	} from '$lib/services/sales';
+	import { listMyPenawaran, type QuotationHeader } from '$lib/services/kalkulatorPenawaran';
+	import { getUpcomingFollowUps, getSalesVisitKpis } from '$lib/services/sales';
+	import { getMyPoStatusSummary, getMySOsOnDate, type SOAwaitingPO } from '$lib/services/salesPo';
 	import SalesNavTabs from '$lib/components/sales/SalesNavTabs.svelte';
 	import FieldExportButton from '$lib/components/sales/FieldExportButton.svelte';
 	import CameraCaptureModal from '$lib/components/scanner/CameraCaptureModal.svelte';
-	import { compressPhoto } from '$lib/utils/photoCompress.ts';
+	import { compressPhoto } from '$lib/utils/photoCompress';
 	import {
 		IconArrowLeft,
 		IconLoader2,
@@ -45,9 +45,10 @@
 		IconChevronUp,
 		IconBuildingStore,
 		IconReceipt,
-		IconPlus
+		IconPlus,
+		IconCamera
 	} from '@tabler/icons-svelte';
-	import { dailyReportSchema } from '$lib/schemas/dailyReport.ts';
+	import { dailyReportSchema } from '$lib/schemas/dailyReport';
 
 	const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
@@ -63,6 +64,8 @@
 	let todayVisits = $state<VisitSalesRow[]>([]);
 	let todaySurveys = $state<SurveyRow[]>([]);
 	let todayPenawaran = $state<QuotationHeader[]>([]);
+	let todaySOs = $state<SOAwaitingPO[]>([]);
+	let autoFilled = $state(false);
 
 	// Fase 2 Ops Sales Expenses & Bon Hari Ini
 	let todayExpenses = $state<VisitExpenseItem[]>([]);
@@ -138,6 +141,15 @@
 			remindersCount = reminderList.length;
 			pendingVisits = kpiData.menungguVerifikasi;
 
+			// Auto-isi 1x: sales cukup cek lalu kirim. Hanya bila belum ada laporan hari ini & kolom masih kosong (tidak menimpa ketikan).
+			if ($authStore.karyawanId) {
+				try { todaySOs = await getMySOsOnDate($authStore.karyawanId, today); } catch (e) { console.warn('[laporan-harian] SO hari ini gagal dimuat (auto-isi tanpa SO):', e); }
+			}
+			if (!todayRep && !ringkasan.trim() && !autoFilled) {
+				generateAutoSummary();
+				autoFilled = true;
+			}
+
 			if ($authStore.karyawanId) {
 				try {
 					const poSummary = await getMyPoStatusSummary($authStore.karyawanId);
@@ -177,6 +189,10 @@
 			const totalPnw = todayPenawaran.reduce((s, p) => s + (Number(p.grand_total) || 0), 0);
 			parts.push(`• Penawaran: ${todayPenawaran.length} penawaran dibuat (Total estimasi: ${formatRupiah(totalPnw)})`);
 		}
+		if (todaySOs.length > 0) {
+			const totalSo = todaySOs.reduce((s, r) => s + (Number(r.grand_total) || 0), 0);
+			parts.push(`• Sales Order/PO terbit: ${todaySOs.length} SO (Total: ${formatRupiah(totalSo)})`);
+		}
 		if (todayExpenses.length > 0) {
 			parts.push(`• Biaya Operasional: ${formatRupiah(totalExpensesToday)} (${todayExpenses.length} bon/struk tercatat)`);
 		}
@@ -187,7 +203,10 @@
 			ringkasan = parts.join('\n');
 		}
 
-		// Auto-suggest omzet jika ada penawaran accepted hari ini
+		// Auto-suggest omzet: SO yang benar-benar terbit hari ini diutamakan; bila tidak ada, penawaran accepted.
+		if (todaySOs.length > 0 && (!totalOrder || totalOrder === '0')) {
+			totalOrder = String(Math.round(todaySOs.reduce((s, r) => s + (Number(r.grand_total) || 0), 0)));
+		}
 		const wonToday = todayPenawaran.filter((p) => p.status === 'accepted');
 		if (wonToday.length > 0 && (!totalOrder || totalOrder === '0')) {
 			const sumWon = wonToday.reduce((s, p) => s + (Number(p.grand_total) || 0), 0);

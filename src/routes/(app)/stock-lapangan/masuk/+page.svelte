@@ -151,7 +151,7 @@
 	let grPhotoFile = $state<File | null>(null);
 	let grSubmitting = $state(false);
 	let grError = $state('');
-	let grSuccess = $state<{ hasVariance: boolean; claimsCreated: number[]; queuedOffline?: boolean } | null>(null);
+	let grSuccess = $state<{ hasVariance: boolean; claimsCreated: number[]; queuedOffline?: boolean; jurnalWarning?: string } | null>(null);
 	let showGrScanner = $state(false);
 	let grScanNotFound = $state('');
 
@@ -402,7 +402,7 @@
 			}
 			grCekCat = {};
 
-			grSuccess = { hasVariance: result.hasVariance, claimsCreated: result.claimsCreated };
+			grSuccess = { hasVariance: result.hasVariance, claimsCreated: result.claimsCreated, jurnalWarning: result.jurnalWarning };
 			grShipments = grShipments.filter((s) => s.suratJalanId !== grSelected!.suratJalanId);
 			grSelected = null;
 		} catch (err: any) {
@@ -481,6 +481,18 @@
 			const blob = await masukPersist.restorePhoto(MASUK_PHOTO_KEY);
 			if (blob) photoFile = new File([blob], 'bukti.jpg', { type: blob.type || 'image/jpeg' });
 			draftSavedAt = new Date();
+		}
+		// Prefill dari scan QR barang (EPI:ITEM:<id> → ?item_id=<id>): barang langsung terpilih, pengguna tidak perlu mengetik kode.
+		// Draf yang dipulihkan menang atas prefill (tidak menimpa input yang sedang dikerjakan).
+		{
+			const preId = Number(new URLSearchParams(location.search).get('item_id'));
+			if (Number.isInteger(preId) && preId > 0 && !selectedItemId) {
+				const preFound = items.find((i) => i.id === preId);
+				if (preFound) {
+					selectedItemId = preFound.id;
+					scanMethod = 'qr_item';
+				}
+			}
 		}
 		draftArmed = true;
 
@@ -745,6 +757,9 @@
 					<p class="text-[12px] mt-1" style="color: var(--sys-label3)">Tidak ada sinyal — konfirmasi akan otomatis terkirim begitu koneksi kembali.</p>
 				{:else}
 					<p class="text-[14px] font-semibold mt-3" style="color: var(--sys-label)">Penerimaan barang dikonfirmasi</p>
+					{#if grSuccess.jurnalWarning}
+						<p class="text-[12px] mt-1" style="color: #B45309">⚠ {grSuccess.jurnalWarning}</p>
+					{/if}
 					{#if grSuccess.hasVariance}
 						<p class="text-[12px] mt-1" style="color: #DC2626">⚠ Ada selisih — {grSuccess.claimsCreated.length} klaim otomatis dibuat untuk ditindaklanjuti Finance/Logistik.</p>
 					{:else}
@@ -791,27 +806,27 @@
 								step="any"
 								class="flex-1 rounded-lg border text-[13px] p-2"
 								style="border-color: var(--sys-sep)"
-								bind:value={grQty[item.projectExpenseId]}
+								bind:value={grQty[item.projectExpenseId!]}
 							/>
-							<select class="rounded-lg border text-[12px] p-2" style="border-color: var(--sys-sep)" bind:value={grCondition[item.projectExpenseId]}>
+							<select class="rounded-lg border text-[12px] p-2" style="border-color: var(--sys-sep)" bind:value={grCondition[item.projectExpenseId!]}>
 								{#each GR_CONDITION_OPTIONS as opt}
 									<option value={opt.value}>{opt.label}</option>
 								{/each}
 							</select>
 						</div>
-						{#if isCatItem(item.materialName) && grCekCat[item.projectExpenseId]}
-							<CekKondisiCat bind:value={grCekCat[item.projectExpenseId]} />
+						{#if isCatItem(item.materialName) && grCekCat[item.projectExpenseId!]}
+							<CekKondisiCat bind:value={grCekCat[item.projectExpenseId!]} />
 						{/if}
-						{#if (grQty[item.projectExpenseId] ?? 0) < item.qtySent}
+						{#if (grQty[item.projectExpenseId!] ?? 0) < item.qtySent}
 							<p class="text-[10.5px] mt-1.5 flex items-center gap-1" style="color: #DC2626">
-								<IconAlertTriangle size={12} /> Selisih {item.qtySent - (grQty[item.projectExpenseId] ?? 0)} {item.unit} — otomatis dibuatkan klaim
+								<IconAlertTriangle size={12} /> Selisih {item.qtySent - (grQty[item.projectExpenseId!] ?? 0)} {item.unit} — otomatis dibuatkan klaim
 							</p>
 						{/if}
-						{#if grCondition[item.projectExpenseId] === 'salah_spek'}
+						{#if grCondition[item.projectExpenseId!] === 'salah_spek'}
 							<div class="mt-2 rounded-lg p-2.5 text-[10.5px]" style="background: var(--sys-fill); color: var(--sys-label3)">
 								<p>Isi kolom jumlah dengan barang yang <b>diterima baik</b> (0 bila semua ditolak). Selisihnya dicatat sebagai klaim <b>Salah Spek</b> dan masuk antrean Admin Gudang.</p>
 								<label class="flex items-center gap-2 mt-2 text-[11.5px] font-medium" style="color: var(--sys-label)">
-									<input type="checkbox" bind:checked={grBackhaul[item.projectExpenseId]} />
+									<input type="checkbox" bind:checked={grBackhaul[item.projectExpenseId!]} />
 									Titip balik ke supir yang sama
 								</label>
 								<p class="mt-1">Bila dicentang, Admin tahu barang ikut dibawa pulang dan menyiapkan dokumen retur — supaya supir tidak tertahan di Pos Satpam.</p>

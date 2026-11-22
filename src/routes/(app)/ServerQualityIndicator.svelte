@@ -256,7 +256,7 @@
 		try {
 			const user = auth.currentUser;
 			const idToken = user ? await user.getIdToken() : null;
-			const authHeader = idToken ? { Authorization: `Bearer ${idToken}` } : {};
+			const authHeader: Record<string, string> = idToken ? { Authorization: `Bearer ${idToken}` } : {};
 
 			// 1. Download Test (128 KB)
 			const tDown0 = performance.now();

@@ -3,11 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('$lib/server/ess/attendanceGuard', () => ({ authenticateEss: vi.fn().mockResolvedValue({}) }));
 vi.mock('$lib/server/processGuidanceFlows', () => ({ loadPublishedFlowsForField: vi.fn() }));
 vi.mock('$lib/server/processHandoffConfig', () => ({ loadHandoffConfig: vi.fn() }));
+vi.mock('$lib/server/directus', () => ({ directusServerJson: vi.fn() }));
 
 import { GET } from './+server';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { loadPublishedFlowsForField } from '$lib/server/processGuidanceFlows';
 import { loadHandoffConfig } from '$lib/server/processHandoffConfig';
+import { directusServerJson } from '$lib/server/directus';
+import { clearFieldHierarchyConfigCache } from './fieldHierarchyConfig';
 
 const call = () => (GET as any)({});
 const auth = authenticateEss as unknown as ReturnType<typeof vi.fn>;
@@ -15,7 +18,9 @@ const load = loadPublishedFlowsForField as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	clearFieldHierarchyConfigCache();
 	auth.mockResolvedValue({});
+	(directusServerJson as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] });
 });
 
 describe('GET /api/process-guidance/flows (lapangan)', () => {
@@ -107,6 +112,44 @@ describe('GET /api/process-guidance/flows?chain= — Rantai Serah-Terima', () =>
 		load.mockRejectedValue(new Error('boom'));
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		expect(await (await callWith('?chain=a')).json()).toMatchObject({ source: 'fallback' });
+		warn.mockRestore();
+	});
+});
+
+describe('GET /api/process-guidance/flows?hierarchy_config=1', () => {
+	const callWith = (qs: string) => (GET as any)({ url: new URL('http://x/api/process-guidance/flows' + qs) });
+
+	it('membaca label hirarki app_settings dengan cache 5 menit tanpa memanggil loadPublishedFlowsForField', async () => {
+		const dJson = directusServerJson as unknown as ReturnType<typeof vi.fn>;
+		dJson.mockResolvedValueOnce({
+			data: [{ setting_value: JSON.stringify({ labelMaster: 'SOP PAYUNG', defaultIncludeDraftApproval: false }) }]
+		});
+
+		const r1 = await (await callWith('?hierarchy_config=1')).json();
+		expect(r1).toEqual({
+			success: true,
+			source: 'directus',
+			config: {
+				labelMaster: 'SOP PAYUNG',
+				labelInduk: 'SOP INDUK',
+				labelTurunan: 'ANAK KERJA / IK',
+				defaultIncludeDraftApproval: false
+			}
+		});
+		expect(load).not.toHaveBeenCalled();
+
+		// Panggilan kedua memakai cache
+		await callWith('?hierarchy_config=1');
+		expect(dJson).toHaveBeenCalledTimes(1);
+	});
+
+	it('fail-soft ke nilai bawaan bila app_settings gagal dibaca', async () => {
+		const dJson = directusServerJson as unknown as ReturnType<typeof vi.fn>;
+		dJson.mockRejectedValueOnce(new Error('timeout'));
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const r = await (await callWith('?hierarchy_config=1')).json();
+		expect(r.success).toBe(true);
+		expect(r.config.labelMaster).toBe('MASTER SOP');
 		warn.mockRestore();
 	});
 });

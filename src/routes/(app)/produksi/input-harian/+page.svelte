@@ -29,7 +29,9 @@
 		type QcSpecRow,
 		type ProductionStage
 	} from '$lib/services/qcInProcessApi';
-	import { IconLoader2, IconClipboardText, IconFlask2 } from '@tabler/icons-svelte';
+	import { getIdToken } from '$lib/services/secureDirectus';
+	import { computeRejectWasteBanner } from '$lib/utils/rejectWasteBanner';
+	import { IconLoader2, IconClipboardText, IconFlask2, IconAlertTriangle } from '@tabler/icons-svelte';
 
 	let loading = $state(true);
 	let saving = $state(false);
@@ -122,7 +124,37 @@
 		}
 	}
 
+	// Fase 3 SOP Manufaktur — ambang banner reject/waste dari setelan admin. Satu panggilan; hasil disimpan di perangkat
+	// agar banner tetap jalan saat offline. Gagal baca = pakai nilai terakhir/default (banner tidak boleh menghalangi input).
+	const AMBANG_KEY = 'produksi.ambang_reject_waste';
+	let ambang = $state<{ rejectMaxPct: number | null; wasteMaxPct: number | null }>({ rejectMaxPct: null, wasteMaxPct: null });
+	async function loadAmbang() {
+		try {
+			const cached = localStorage.getItem(AMBANG_KEY);
+			if (cached) ambang = JSON.parse(cached);
+		} catch { /* localStorage tak tersedia */ }
+		try {
+			const token = await getIdToken();
+			const res = await fetch('/api/produksi/ambang-reject-waste', { headers: { Authorization: `Bearer ${token}` } });
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			ambang = await res.json();
+			try { localStorage.setItem(AMBANG_KEY, JSON.stringify(ambang)); } catch { /* abaikan */ }
+		} catch (e) {
+			console.warn('[input-harian] ambang reject/waste tak terbaca, memakai nilai terakhir/default:', (e as Error)?.message);
+		}
+	}
+	const banner = $derived(
+		computeRejectWasteBanner({
+			outputKg: form.outputKg,
+			rejectKg: form.rejectKg,
+			wasteKg: form.wasteKg,
+			rejectMaxPct: ambang.rejectMaxPct,
+			wasteMaxPct: ambang.wasteMaxPct
+		})
+	);
+
 	onMount(() => {
+		loadAmbang();
 		load();
 		registerSpkDailyAutoFlush(sendEntry);
 		flushSpkDailyQueue(sendEntry).then((r) => {
@@ -249,7 +281,21 @@
 					<input id="waste-kg" type="number" step="0.01" class="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-sm" bind:value={form.wasteKg} />
 				</div>
 			</div>
-			<textarea class="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-sm" rows="2" placeholder="Catatan (opsional)" bind:value={form.catatan}></textarea>
+			{#if banner.level === 'warn'}
+				<div class="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800" role="alert">
+					<IconAlertTriangle size={16} class="mt-0.5 shrink-0" />
+					<div class="space-y-0.5">
+						{#each banner.messages as m}<p>{m}</p>{/each}
+						<p class="text-[10px] text-amber-700">Ini peringatan — input tetap bisa disimpan (juga saat offline). Ambang diatur admin di Setelan Produksi.</p>
+					</div>
+				</div>
+			{/if}
+			<textarea
+				class="w-full rounded-lg border px-2 py-1.5 text-sm {banner.level === 'warn' && !form.catatan.trim() ? 'border-amber-400' : 'border-gray-200'}"
+				rows="2"
+				placeholder={banner.level === 'warn' ? 'Alasan reject/waste (disarankan)' : 'Catatan (opsional)'}
+				bind:value={form.catatan}
+			></textarea>
 			<button
 				class="w-full rounded-lg bg-blue-600 py-1.5 text-xs font-bold text-white disabled:opacity-60"
 				disabled={saving}

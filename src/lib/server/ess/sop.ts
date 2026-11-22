@@ -24,13 +24,14 @@ export interface SopDocumentRecord {
 	retraining_policy: string;
 	approval_status?: string | null;
 	sop_code?: string | null;
+	training_program_id?: number | null;
 	file: Array<{ id: number; directus_files_id: { id: string; filename_download: string } }>;
 }
 
 const SOP_FIELDS = [
 	'id', 'title', 'department', 'version', 'version_seq', 'last_updated', 'status',
 	'keterangan', 'content', 'content_source', 'requires_training', 'target_departments',
-	'target_roles', 'effective_date', 'retraining_policy', 'approval_status', 'sop_code',
+	'target_roles', 'effective_date', 'retraining_policy', 'approval_status', 'sop_code', 'training_program_id',
 	'file.id', 'file.directus_files_id.id', 'file.directus_files_id.filename_download'
 ].join(',');
 
@@ -122,4 +123,74 @@ export async function confirmRead(sopId: number, karyawanId: number, versionSeq:
 		method: 'POST',
 		body: JSON.stringify({ sop_id: sopId, karyawan_id: karyawanId, sop_version_seq: versionSeq, ip_address: ip })
 	});
+}
+
+export interface SopTrainingStatus {
+	programId: number;
+	judul: string;
+	status: string; // status enrollment: Enrolled | Ongoing | Lulus | Gagal | Remedial …
+	progress: number;
+	tenggat: string | null;
+}
+
+/**
+ * Status training SOP milik karyawan (Integrasi SOP ↔ Training). Hanya bila SOP mewajibkan training, programnya sudah DITERBITKAN
+ * HRD (draf AI tidak tampil di lapangan) dan karyawan terdaftar. Relasi diambil terpisah; gagal baca → null (SOP tetap terbaca).
+ */
+export async function getSopTrainingStatus(sop: Pick<SopDocumentRecord, 'requires_training'> & { training_program_id?: number | null }, karyawanId: number): Promise<SopTrainingStatus | null> {
+	const programId = Number(sop.training_program_id);
+	if (!sop.requires_training || !Number.isInteger(programId) || programId <= 0) return null;
+	try {
+		const prog = await directusServerJson<{ data: { id: number; judul: string; status: string } }>(`/items/training_program/${programId}?fields=id,judul,status`);
+		if (!prog?.data || prog.data.status !== 'published') return null;
+		const enr = await directusServerJson<{ data: Array<{ status: string; progress_persen: number | null; tenggat: string | null }> }>(
+			`/items/training_enrollment?filter[program_id][_eq]=${programId}&filter[karyawan_id][_eq]=${karyawanId}&fields=status,progress_persen,tenggat&limit=1`
+		);
+		const e = enr?.data?.[0];
+		if (!e) return null;
+		return { programId, judul: prog.data.judul, status: e.status, progress: Number(e.progress_persen ?? 0), tenggat: e.tenggat ?? null };
+	} catch {
+		return null;
+	}
+}
+
+export interface SopSertifikat {
+	sopId: number;
+	sop_code: string | null;
+	title: string;
+	programId: number;
+	sertifikat_no: string | null;
+	sertifikat_expired: string | null;
+}
+
+/**
+ * Badge "Tersertifikasi SOP": SOP terbit ber-"Training Wajib" yang program training-nya sudah LULUS oleh karyawan ini.
+ * Dua query ringan (enrollment Lulus, lalu SOP yang tertaut ke program itu — relasi tidak di-nest). Sertifikat kedaluwarsa tidak dihitung
+ * (sama dengan gate onboarding). wajib_ulang saat SOP naik versi mereset Lulus → badge otomatis hilang sampai lulus lagi. Gagal baca → [].
+ */
+export async function listSopSertifikasi(karyawanId: number, today: string = new Date().toISOString().slice(0, 10)): Promise<SopSertifikat[]> {
+	try {
+		const enr = await directusServerJson<{ data: Array<{ program_id: number | { id: number }; sertifikat_no: string | null; sertifikat_expired: string | null }> }>(
+			`/items/training_enrollment?filter[karyawan_id][_eq]=${karyawanId}&filter[status][_eq]=Lulus&fields=program_id,sertifikat_no,sertifikat_expired&limit=-1`
+		);
+		const lulus = new Map<number, { sertifikat_no: string | null; sertifikat_expired: string | null }>();
+		for (const e of enr?.data || []) {
+			const pid = Number(typeof e.program_id === 'object' ? e.program_id?.id : e.program_id);
+			if (!Number.isInteger(pid) || pid <= 0) continue;
+			const exp = String(e.sertifikat_expired ?? '').slice(0, 10);
+			if (exp && exp < today) continue;
+			lulus.set(pid, { sertifikat_no: e.sertifikat_no ?? null, sertifikat_expired: exp || null });
+		}
+		if (lulus.size === 0) return [];
+		const sops = await directusServerJson<{ data: Array<{ id: number; sop_code: string | null; title: string; training_program_id: number | { id: number } }> }>(
+			`/items/sop_documents?filter[training_program_id][_in]=${[...lulus.keys()].join(',')}&filter[requires_training][_eq]=true&filter[status][_eq]=published&fields=id,sop_code,title,training_program_id&limit=-1`
+		);
+		return (sops?.data || []).map((s) => {
+			const programId = Number(typeof s.training_program_id === 'object' ? s.training_program_id?.id : s.training_program_id);
+			const c = lulus.get(programId);
+			return { sopId: s.id, sop_code: s.sop_code ?? null, title: s.title, programId, sertifikat_no: c?.sertifikat_no ?? null, sertifikat_expired: c?.sertifikat_expired ?? null };
+		}).filter((x) => lulus.has(x.programId));
+	} catch {
+		return [];
+	}
 }

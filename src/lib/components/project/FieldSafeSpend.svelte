@@ -3,7 +3,7 @@
 	// Indikator = PERSEN saja. Daftar NAMA item tertahan (Fase 3b, keputusan Lead 22 Okt 2026) boleh dilihat Leader, TANPA rupiah, dan dimuat
 	// hanya saat dibuka. Sumber: /api/project-finance-pct
 	// (cache 60 dtk, dipakai bersama halaman ringkasan & form pengajuan → tidak menambah panggilan sendiri). Informasi, BUKAN pemblokir.
-	import { fetchFieldBudgetPct, fetchFieldPendingItems, pingApprover, type FieldBudgetPct, type FieldPendingItems } from '$lib/services/projectFinancePct';
+	import { fetchFieldBudgetPct, fetchFieldPendingItems, pingApprover, type FieldBudgetPct, type FieldPendingItem, type FieldPendingItems } from '$lib/services/projectFinancePct';
 	import { buildSafeSpendView, formatPendingAge, groupPendingItems, describePingResult, type PingFeedback } from '$lib/utils/fieldSafeSpend';
 	import { loadProjectSettings, getProjectSetting } from '$lib/services/projectSettings';
 	import { IconShieldCheck, IconClockPause, IconAlertTriangle, IconLock, IconHelpCircle, IconInfoCircle, IconChevronDown, IconLoader2, IconBellRinging } from '@tabler/icons-svelte';
@@ -13,6 +13,8 @@
 	let pagu = $state<FieldBudgetPct | null>(null);
 	let showHint = $state(false);
 	let enabled = $state(true);
+	let helpFlow = $state('project_financial_rap_vs_actual_monitoring_and_freeze');
+	let emergencyFlow = $state('app_project_finance_emergency_site_cash_advance_and_disbursement_flow');
 
 	// Daftar nama item tertahan (Fase 3b) — dimuat HANYA saat dibuka; tanpa rupiah.
 	let showItems = $state(false);
@@ -49,6 +51,10 @@
 
 	loadProjectSettings().then(() => {
 		enabled = getProjectSetting('project.field_finance.show_unrealized') !== false;
+		const hf = getProjectSetting('project.field_finance.help_flow');
+		const ef = getProjectSetting('project.field_finance.emergency_flow');
+		if (typeof hf === 'string' && hf.trim()) helpFlow = hf.trim();
+		if (typeof ef === 'string' && ef.trim()) emergencyFlow = ef.trim();
 	});
 
 	$effect(() => {
@@ -67,6 +73,11 @@
 	let view = $derived(enabled ? buildSafeSpendView(pagu) : null);
 	let canShowNames = $derived(!!pagu?.unrealized?.names_enabled && (pagu?.unrealized?.item_count ?? 0) > 0);
 	let groups = $derived(groupPendingItems(pending?.items));
+	// Daftar dua kelompok dengan tipe tuple eksplisit (literal array di template jadi union string | FieldPendingItem[]).
+	let sections = $derived<[string, string, FieldPendingItem[]][]>([
+		['birokrasi', 'Sedang diproses di pusat', groups.birokrasi],
+		['pipeline', 'Belum diajukan / belum dibukukan', groups.pipeline]
+	]);
 
 	const TONE: Record<string, { box: string; badge: string; text: string }> = {
 		ok: { box: 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/30', badge: 'bg-emerald-600 text-white', text: 'text-emerald-800 dark:text-emerald-200' },
@@ -127,7 +138,7 @@
 						{:else if pending && !pending.enabled}
 							<p class="text-[11px] text-gray-500">Daftar nama item dinonaktifkan oleh Admin. Hubungi Admin/PM untuk rinciannya.</p>
 						{:else if pending}
-							{#each [['birokrasi', 'Sedang diproses di pusat', groups.birokrasi], ['pipeline', 'Belum diajukan / belum dibukukan', groups.pipeline]] as [key, title, list] (key)}
+							{#each sections as [key, title, list] (key)}
 								{#if list.length > 0}
 									<p class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-1.5 mb-1">{title} ({list.length})</p>
 									<ul class="flex flex-col gap-1.5">
@@ -183,6 +194,21 @@
 						{/if}
 					</div>
 				{/if}
+			{/if}
+			{#if view.state === 'tight' || view.state === 'held' || view.state === 'locked'}
+				<!-- Fase 4 SOP Finance: jalan keluar 1-klik saat belanja terancam tertahan (skenario negatif Finance + jalur darurat). -->
+				<div class="mt-2 flex flex-wrap gap-x-3 gap-y-1" data-testid="field-gate-help">
+					<a
+						href={'/panduan/alur?alur=' + encodeURIComponent(helpFlow)}
+						class="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+						title="Buka panduan: kenapa dana tertahan, langkah solusi, dan siapa yang dihubungi"
+					>Kenapa tertahan &amp; cara solusinya →</a>
+					<a
+						href={'/panduan/alur?alur=' + encodeURIComponent(emergencyFlow)}
+						class="text-[11px] font-semibold text-amber-700 dark:text-amber-300 hover:underline"
+						title="Hanya untuk kebutuhan mendesak (K3 / mesin rusak / di luar jam kerja); ada plafon darurat dan wajib dicatat ulang maksimal 24 jam kerja"
+					>Butuh dana darurat? →</a>
+				</div>
 			{/if}
 			{#if showHint}
 				<p class="text-[11px] mt-1.5 text-gray-600 dark:text-gray-300 border-t border-black/5 dark:border-white/10 pt-1.5">{view.hint}</p>

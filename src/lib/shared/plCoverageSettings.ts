@@ -1,5 +1,5 @@
 // @ts-nocheck
-// SALINAN KONTRAK dari erp-epi/src/lib/finance/plCoverageSettings.js (Rencana Gate Rasionalitas Packing List, Fase 4, 4 Nov 2026).
+// SALINAN KONTRAK dari erp-epi/src/lib/finance/plCoverageSettings.js (Rencana Keyakinan Permintaan PL, sinkron 12 Nov 2026).
 // JANGAN diedit di sini: ubah di erp-epi lalu salin ulang. Paritas isi dijaga tes kontrak lintas repo
 // erp-epi/src/lib/server/gates/plCoverage.crossRepoContract.test.js (gagal bila kedua salinan menyimpang).
 // '@ts-nocheck' disengaja: file ini JS murni yang identik dengan sisi admin; tipe tidak boleh membuatnya berbeda.
@@ -29,6 +29,15 @@ export const PKL_COVERAGE_SETTING_DEFS = Object.freeze({
   'pkl_coverage.extreme_alert_pct': { type: 'number', label: 'Kirim Alert n8n Bila Permintaan Melebihi Plafon (%) — 0 = nonaktif', def: 150, min: 0, max: 100000 },
   'pkl_coverage.efficiency_min_progress_pct': { type: 'number', label: 'Radar Efisiensi: Bandingkan dengan Progres Hanya Bila Progres Pelapisan ≥ (%)', def: 10, min: 0, max: 100 },
   'pkl_coverage.efficiency_warn_pct': { type: 'number', label: 'Radar Efisiensi: Peringatan Bila Pemakaian Aktual ≥ (% dari plafon teoritis proyek)', def: 80, min: 1, max: 100 },
+  // Skor Keyakinan Permintaan PL (Fase 1) — alasan terstruktur untuk PL berstatus Kuning/Merah (G_PKL_ALASAN_TERSTRUKTUR).
+  'pkl_coverage.confidence_reason_min_len': { type: 'number', label: 'Alasan PL Kuning/Merah: Panjang Catatan Minimal (karakter)', def: 20, min: 5, max: 500 },
+  'pkl_coverage.confidence_reason_options': {
+    type: 'text',
+    label: 'Alasan PL Kuning/Merah: Pilihan Kategori (pisahkan koma)',
+    def: 'Mobilisasi awal proyek, Luasan bertambah / revisi area, Pekerjaan perbaikan atau ulang lapis, Hanya tersedia kemasan lebih besar, Stok site habis tak terduga, Lainnya (jelaskan)'
+  },
+  'pkl_coverage.confidence_print_sheet': { type: 'boolean', label: 'Cetak PL: Sertakan Lembar Dasar Permintaan sebagai Halaman Tambahan', def: false },
+  // Penerima WhatsApp alert & rekap anomali permintaan barang (Fase 4 & Rasionalitas PL).
   'pkl_coverage.alert_recipients': { type: 'json', label: 'Penerima WhatsApp Alert & Rekap Anomali (daftar nomor HP, mis. ["0812...", "0813..."])', def: [] },
   'pkl_coverage.pack_default_kg': {
     type: 'json',
@@ -59,6 +68,9 @@ export function resolvePklCoverageSettings(rows) {
       } else if (d.type === 'boolean') {
         if (raw === true || raw === 'true' || raw === 1 || raw === '1') v = true;
         else if (raw === false || raw === 'false' || raw === 0 || raw === '0') v = false;
+      } else if (d.type === 'text') {
+        const s = String(raw).trim();
+        if (s) v = s.slice(0, 1000);
       } else if (d.type === 'json') {
         try {
           const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;

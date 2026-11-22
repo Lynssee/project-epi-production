@@ -8,6 +8,9 @@ export interface SesiRingkas {
 	id: number;
 	kode: string;
 	status: string;
+	scope_type?: 'gudang' | 'project' | string;
+	project_id?: number | null;
+	project_nama?: string | null;
 	gudang_id: number | null;
 	gudang_nama: string | null;
 	total_lines: number;
@@ -74,7 +77,20 @@ export async function fetchSesiAktif(): Promise<{ sesi: SesiRingkas[]; toleransi
 	return call('/api/opname-sesi');
 }
 
-export async function fetchDetailSesi(id: number): Promise<{ session: { id: number; kode: string; status: string; blind_count: boolean; total_lines: number; counted_lines: number }; lines: BarisHitung[] }> {
+export async function fetchDetailSesi(id: number): Promise<{
+	session: {
+		id: number;
+		kode: string;
+		status: string;
+		scope_type?: 'gudang' | 'project' | string;
+		project_id?: number | null;
+		project_nama?: string | null;
+		blind_count: boolean;
+		total_lines: number;
+		counted_lines: number;
+	};
+	lines: BarisHitung[];
+}> {
 	return call(`/api/opname-sesi?id=${id}`);
 }
 

@@ -22,8 +22,8 @@
   let uploadingFile = $state(false);
 
   const toast = {
-    success: (m) => window.__showToast && window.__showToast(m, "success"),
-    error: (m) => window.__showToast && window.__showToast(m, "error")
+    success: (/** @type {any} */ m) => window.__showToast && window.__showToast(m, "success"),
+    error: (/** @type {any} */ m) => window.__showToast && window.__showToast(m, "error")
   };
 
   const CATEGORIES = [
@@ -88,7 +88,7 @@
 
   $effect(() => registerFormPersistSaveTriggers(violationPersist, violationSnapshot));
 
-  function handleFileChange(e) {
+  function handleFileChange(/** @type {any} */ e) {
     const file = e.target.files && e.target.files[0];
     if (file) {
       selectedFile = file;
@@ -155,7 +155,7 @@
       }
     } catch (e) {
       console.error(e);
-      toast.error("Terjadi kesalahan: " + e.message);
+      toast.error("Terjadi kesalahan: " + /** @type {any} */ (e).message);
     } finally {
       loading = false;
     }

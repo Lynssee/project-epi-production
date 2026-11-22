@@ -6,6 +6,7 @@
 // (listCatalogForKaryawan sudah menyaring published + divisi), sehingga pintasan tak pernah menaut ke kursus yang tak bisa dibuka.
 import { directusServerJson } from '$lib/server/directus';
 import { getPillarConfig, pillarOfProgram, type PillarConfig } from '$lib/server/ess/trainingPillars';
+import { resolveMicroCount } from '$lib/server/ess/trainingMicroQuiz';
 import type { TrainingEnrollmentRecord, TrainingProgramRecord } from '$lib/services/ess/training';
 
 export interface ShortcutRule {
@@ -13,6 +14,8 @@ export interface ShortcutRule {
 	kode?: string[];
 	/** Pilar pengganti bila tak ada kursus berkode di atas yang tersedia. */
 	pilar?: string;
+	/** Jumlah soal micro-quiz latihan (0 = nonaktif, kosong = 3, maks 5). Diatur admin di JSON pintasan_konteks. */
+	micro_quiz?: number;
 }
 export type ShortcutMap = Record<string, ShortcutRule>;
 
@@ -35,6 +38,8 @@ export interface ShortcutItem {
 	progress: number;
 	wajib: boolean;
 	status: 'baru' | 'berjalan';
+	/** Jumlah soal micro-quiz yang ditawarkan di kartu (0 = tombol disembunyikan). */
+	microQuiz: number;
 }
 
 /** Normalisasi nilai setelan (string JSON / objek); rusak → default. Tidak pernah melempar. */
@@ -51,7 +56,8 @@ export function normalizeShortcutMap(raw: unknown): ShortcutMap {
 		const kode = Array.isArray(v.kode) ? v.kode.map((x: unknown) => String(x).trim()).filter(Boolean) : undefined;
 		const pilar = typeof v.pilar === 'string' && v.pilar.trim() ? v.pilar.trim().toLowerCase() : undefined;
 		if (!kode?.length && !pilar) continue;
-		out[key] = { ...(kode?.length ? { kode } : {}), ...(pilar ? { pilar } : {}) };
+		const mq = Number(v.micro_quiz);
+		out[key] = { ...(kode?.length ? { kode } : {}), ...(pilar ? { pilar } : {}), ...(v.micro_quiz !== undefined && Number.isFinite(mq) && mq >= 0 ? { micro_quiz: Math.min(Math.floor(mq), 5) } : {}) };
 	}
 	return Object.keys(out).length ? out : structuredClone(DEFAULT_SHORTCUT_MAP);
 }
@@ -97,7 +103,8 @@ export function pickShortcuts(
 			durasiMenit: p.durasi_menit ?? null,
 			progress,
 			wajib: !!p.wajib,
-			status: progress > 0 ? 'berjalan' : 'baru'
+			status: progress > 0 ? 'berjalan' : 'baru',
+				microQuiz: resolveMicroCount(rule.micro_quiz)
 		};
 	});
 }

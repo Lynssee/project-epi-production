@@ -104,7 +104,7 @@ describe('rebuildProjectStockBalance — scope proyek', () => {
     const base = directus.getMockImplementation();
     directus.mockImplementation(async (url: string, opt: any = {}) => {
       if (opt.method === 'DELETE') throw new Error('boom');
-      return base(url, opt);
+      return base!(url, opt);
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await rebuildProjectStockBalance({ projectId: 972 });
@@ -118,7 +118,7 @@ describe('rebuildProjectStockBalance — scope proyek', () => {
     let fail = true;
     directus.mockImplementation(async (url: string, opt: any = {}) => {
       if (fail && url.startsWith('/items/project_stock_ledger?')) throw new Error('timeout');
-      return base(url, opt);
+      return base!(url, opt);
     });
     await expect(rebuildProjectStockBalance({ projectId: 972 })).rejects.toThrow('timeout');
     fail = false;

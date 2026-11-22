@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
+	import SopSayaWidget from '$lib/components/ess/SopSayaWidget.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
@@ -22,7 +23,10 @@
 
 	const params = page.url.searchParams;
 	let form = $state({
-		tipe: params.get('prefill_kategori') === 'tumpahan' ? 'insiden' : 'near_miss',
+		tipe:
+			params.get('prefill_tipe') === 'insiden' || params.get('prefill_kategori') === 'tumpahan'
+				? 'insiden'
+				: 'near_miss',
 		kategori_bahaya: params.get('prefill_kategori') || 'lainnya',
 		lokasi: params.get('prefill_lokasi') || '',
 		kronologi: params.get('prefill_kronologi') || '',
@@ -170,6 +174,8 @@
 				Cek MSDS
 			</button>
 		</div>
+
+		<SopSayaWidget />
 
 		<div class="grid grid-cols-2 gap-2 mb-2">
 			<button class="rounded-lg py-2 text-[11px] font-semibold" style="background: var(--sys-fill); color: var(--sys-label)" onclick={() => goto('/hse/apd')}>

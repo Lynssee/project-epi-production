@@ -49,6 +49,19 @@ export async function getAllMySOs(karyawanId: number): Promise<SOAwaitingPO[]> {
 	return res.data || [];
 }
 
+/** SO (bukan cancelled) milik sales ini pada satu tanggal SO — dasar auto-isi Laporan Harian Sales (1 query). */
+export async function getMySOsOnDate(karyawanId: number, date: string): Promise<SOAwaitingPO[]> {
+	const fields = 'id,nomor_so,customer_name,kode_customer,grand_total,status,po_status,tanggal_so,so_type';
+	const filter =
+		`filter[karyawan_id][_eq]=${karyawanId}` +
+		`&filter[tanggal_so][_eq]=${encodeURIComponent(date)}` +
+		`&filter[status][_neq]=cancelled`;
+	const res = await secureDirectusJson<{ data: SOAwaitingPO[] }>(
+		`/items/so_customer?fields=${fields}&${filter}&sort=-date_created&limit=50`
+	);
+	return res.data || [];
+}
+
 /** Ringkasan hitung SO per po_status milik sales ini — dipakai badge di Hub. */
 export async function getMyPoStatusSummary(karyawanId: number): Promise<Record<string, number>> {
 	const res = await secureDirectusJson<{ data: { po_status: string }[] }>(

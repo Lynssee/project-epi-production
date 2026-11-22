@@ -1,4 +1,5 @@
 <script lang="ts">
+	import RadarChip from '$lib/components/strategy/RadarChip.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -559,6 +560,9 @@
 							/>
 						{/if}
 					</div>
+
+					<!-- Strategic Suite v2 Fase 6: chip radar opsional (berdiri sendiri, tidak ikut submit) -->
+					<RadarChip sourceForm="kunjungan_sales" sourceRef={visit?.id ?? null} />
 
 					{#if errorMsg}
 						<p class="text-[12px] font-semibold" style="color: #DC2626">{errorMsg}</p>

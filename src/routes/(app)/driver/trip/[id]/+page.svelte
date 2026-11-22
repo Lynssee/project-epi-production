@@ -323,7 +323,7 @@
 							</div>
 							<div>
 								<label class="text-[11px] font-semibold mb-1 block" style="color: var(--sys-label)">Tanda Tangan</label>
-								<SignaturePad onSign={(f) => { podTtd = f; tripPersist.savePhoto(POD_TTD_KEY, f); }} />
+								<SignaturePad onSign={(f) => { podTtd = f; if (f) tripPersist.savePhoto(POD_TTD_KEY, f); }} />
 							</div>
 							<div>
 								<label class="text-[11px] font-semibold mb-1 block" style="color: var(--sys-label)">Catatan (opsional, isi bila gagal/parsial)</label>

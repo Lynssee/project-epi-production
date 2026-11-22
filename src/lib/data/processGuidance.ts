@@ -35,7 +35,27 @@ export interface ProcessFlowApprovalItem {
 	date?: string;
 }
 
+/** Skenario negatif & fallback kontingensi (dikelola di erp-epi: SOP → Negative Case & Fallback). Dibaca read-only di lapangan. */
+export interface ProcessNegativeScenario {
+	code: string;
+	category: string;
+	severity: 'critical' | 'high' | 'medium' | 'low';
+	trigger: string;
+	fallback_action: string;
+	step_id?: string;
+	step_label?: string;
+	impact?: string;
+	reconciliation_action?: string;
+	recovery_sla_hours?: number;
+	reconciliation_sla_hours?: number;
+	escalation_pic?: string;
+	related_gate_key?: string;
+	fallback_flow_key?: string;
+	action_href_field?: string;
+}
+
 export interface ProcessFlowSop {
+	negative_scenarios?: ProcessNegativeScenario[];
 	doc_number?: string;
 	effective_date?: string;
 	revision_status?: string;
@@ -72,6 +92,10 @@ export interface ProcessNode {
 	checklist?: string[];
 	blockers?: string[];
 	actions?: ProcessAction[];
+	/** Aksi khusus aplikasi lapangan (opsional; dibaca navigator AI lapangan — bila kosong dipakai `actions`). */
+	actions_field?: ProcessAction[];
+	/** Ikon langkah (opsional; nama/emoji, dipakai model visual alur). */
+	icon?: string;
 	gates?: ProcessGateRef[];
 	/** Ke alur lain hasil langkah ini diserahkan (opsional). */
 	handoffs?: ProcessHandoff[];
@@ -92,6 +116,10 @@ export interface ProcessTrainingLink {
 
 export interface ProcessFlow {
 	id: string;
+	/** Kunci alur di Directus (flow_key); biasanya sama dengan `id` pada alur terbit. */
+	flow_key?: string;
+	/** Aplikasi tujuan alur: erp-epi | project-epi | both. */
+	target_app?: string;
 	title: string;
 	description: string;
 	lanes: { key: string; label: string }[];
@@ -103,6 +131,10 @@ export interface ProcessFlow {
 	sop_code?: string;
 	kategori_sop?: 'master' | 'induk' | 'turunan';
 	sub_kategori?: string;
+	/** Nomor versi alur terbit (version_seq/versi; dipakai konfirmasi baca). */
+	version?: number;
+	/** Nomor dokumen SOP (opsional; ditampilkan di panduan lapangan bila ada). */
+	doc_number?: string;
 	/** Kunci tahap proyek tempat alur ini relevan (kolom tahap_proyek; kosong = tidak terikat tahap). */
 	tahap_proyek?: string[];
 	approval_status?: string;

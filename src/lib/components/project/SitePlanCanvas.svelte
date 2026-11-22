@@ -224,7 +224,7 @@
 		onaddpin?.({ x_pct, y_pct, denah_id: denah?.id });
 	}
 
-	function handlePinClick(pin: SitePlanPin, e: MouseEvent) {
+	function handlePinClick(pin: SitePlanPin, e: MouseEvent | KeyboardEvent) {
 		e.stopPropagation();
 		if (dragMoved) return;
 		selectedPin = pin;

@@ -52,6 +52,7 @@
 	let successInfo = $state<{ noChange: boolean; referenceNo?: string; menungguApproval?: boolean } | null>(null);
 	let scanMethod = $state<'qr_item' | 'manual_search'>('manual_search');
 	let showScanner = $state(false);
+	let showSopGuide = $state(false);
 
 	// Fase 3 — Gudang Pusat Bojongkulur v2: mode "gudang_pusat" pakai gerbang toleransi
 	// (submitOpnameGudangHq) alih-alih langsung ubah stok seperti mode umum.
@@ -124,6 +125,18 @@
 				const blob = await opnamePersist.restorePhoto(OPNAME_PHOTO_KEY);
 				if (blob) photoFile = new File([blob], 'bukti.jpg', { type: blob.type || 'image/jpeg' });
 				draftSavedAt = new Date();
+			}
+		}
+		// Prefill dari scan QR barang (EPI:ITEM:<id> → ?item_id=<id>): barang langsung terpilih, pengguna tidak perlu mengetik kode.
+		// Draf yang dipulihkan menang atas prefill (tidak menimpa input yang sedang dikerjakan).
+		{
+			const preId = Number(new URLSearchParams(location.search).get('item_id'));
+			if (Number.isInteger(preId) && preId > 0 && !selectedItem) {
+				const preFound = items.find((i) => i.id === preId);
+				if (preFound) {
+					selectedItem = preFound;
+					scanMethod = 'qr_item';
+				}
 			}
 		}
 		draftArmed = true;
@@ -360,6 +373,33 @@
 			title={h('opname.page').sectionGuide?.title}
 			steps={h('opname.page').sectionGuide?.steps ?? []}
 		/>
+
+		<!-- Panduan Ringkas Pemisahan Kanal SOP-LOG-002 (Collapsible) -->
+		<div class="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/70 text-indigo-950 text-[11px] overflow-hidden">
+			<button
+				type="button"
+				class="w-full px-3 py-2 flex items-center justify-between gap-2 font-bold text-left cursor-pointer"
+				onclick={() => (showSopGuide = !showSopGuide)}
+			>
+				<span>📋 Kapan Pakai Opname Harian vs Sesi vs Kiosk? (SOP-LOG-002)</span>
+				<span class="text-[10.5px] font-semibold text-indigo-700">{showSopGuide ? 'Tutup ▲' : 'Lihat ▼'}</span>
+			</button>
+			{#if showSopGuide}
+				<div class="px-3 pb-3 pt-1.5 border-t border-indigo-200/80 space-y-1 text-[10.5px] leading-relaxed text-slate-700">
+					<p><b>• Opname Harian / Ad-Hoc (Layar ini):</b> Untuk pengecekan cepat di <b>site proyek</b> atau <b>Gudang Pusat</b> yang mewajibkan <b>GPS + Foto Bukti</b> (mendukung antrean offline bila sinyal lemah, sinkron maks 1&times;24 jam).</p>
+					<p><b>• Sesi Bulanan Cut-Off:</b> Wajib pakai menu <b>Tugas Opname Saya</b> (<code>/stock-lapangan/opname-sesi</code>) tiap tgl <b>25 s/d H-1 Akhir Bulan</b> (<i>Blind Count</i>).</p>
+					<p><b>• Terminal Kiosk Gudang:</b> Untuk kru Gudang Pusat/Workshop dengan scanner &amp; Touch Numpad, pakai Kiosk (<code>/kiosk/gudang/opname</code>).</p>
+					<p><b>• Stiker &amp; Toleransi:</b> Tempel stiker <b>AUDITED-SO</b> pada barang terhitung; toleransi selisih <b>&le; 2%</b> (susut solvent &le; 0,5%).</p>
+					<div class="pt-1.5 border-t border-indigo-200/60 flex items-center justify-between">
+						<span class="text-[10px] text-indigo-800">Gate Integritas: G_TRN_SOP_COMPLIANCE (Mode Warning)</span>
+						<a href="/ess/pelatihan/sop" class="font-bold text-indigo-600 hover:underline flex items-center gap-1">
+							<span>🎓 Cek Status Kualifikasi &amp; Kuis SOP</span>
+							<span>&rarr;</span>
+						</a>
+					</div>
+				</div>
+			{/if}
+		</div>
 
 		{#if gudangHqEnabled}
 			<div class="flex rounded-xl border p-1 mb-4" style="border-color: var(--sys-sep)">

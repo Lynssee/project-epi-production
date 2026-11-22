@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { directusServerJson } from '$lib/server/directus';
 import { notifyN8n } from '$lib/server/n8nNotify';
+import { evaluateTbmCultureGate } from '$lib/server/gates/cultureTbmGate';
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
@@ -12,7 +13,9 @@ export const POST: RequestHandler = async ({ request }) => {
 			tanggal = new Date().toISOString().split('T')[0],
 			topic_tbm = '',
 			pencatat_nama = 'Project Leader',
-			records = []
+			records = [],
+			budaya_dibacakan = false,
+			alasan_lewati_budaya = ''
 		} = body;
 
 		if (!project_id || !Array.isArray(records) || records.length === 0) {
@@ -21,6 +24,22 @@ export const POST: RequestHandler = async ({ request }) => {
 				{ status: 400 }
 			);
 		}
+
+		// Gate G_TBM_CULTURE_BRIEF (Budaya & Propaganda Fase 4): mode diatur Superadmin di /settings/gates. Definisi belum terdaftar / gagal baca
+		// = shadow (tidak pernah menahan presensi). soft → butuh alasan (min. 10 karakter); hard → ditolak; warn → lanjut + peringatan.
+		const gate = await evaluateTbmCultureGate({
+			projectId: project_id,
+			topic: String(topic_tbm ?? ''),
+			dibacakan: budaya_dibacakan === true,
+			alasan: String(alasan_lewati_budaya ?? '')
+		});
+		if (gate.aksi === 'blokir') {
+			return json({ success: false, gate_blocked: true, error: gate.pesan }, { status: 422 });
+		}
+		if (gate.aksi === 'butuh_alasan') {
+			return json({ success: false, gate_blocked: true, needs_reason: true, error: gate.pesan }, { status: 409 });
+		}
+		const gateWarning = gate.aksi === 'peringatan' ? gate.pesan : null;
 
 		let hadirCount = 0;
 		let alphaCount = 0;
@@ -142,6 +161,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				izin_sakit: izinSakitCount,
 				compliance_rate: complianceRate
 			},
+			gate_warning: gateWarning,
 			message: `TBM Roll-Call berhasil disimpan: ${hadirCount}/${totalRencana} hadir (${complianceRate}%).`
 		});
 	} catch (error: any) {

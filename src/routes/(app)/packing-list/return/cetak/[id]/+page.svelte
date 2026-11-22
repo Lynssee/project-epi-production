@@ -18,7 +18,7 @@
 	let doc = $state<any>(null);
 	let qrDataUrl = $state('');
 
-	const id = $derived($page.params.id);
+	const id = $derived($page.params.id as string);
 
 	function fmtDate(d: string | null) {
 		return d ? new Date(d).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';

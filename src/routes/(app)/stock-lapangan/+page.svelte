@@ -42,7 +42,7 @@
 			goto(`/scan/${encodeURIComponent(raw)}`);
 			return;
 		}
-		const lajur = await resolveItemLajur(parsed.id);
+		const lajur = await resolveItemLajur(Number(parsed.id));
 		if (lajur === 'bahan_baku_spk') goto(`/stock-lapangan/persiapan/bahan-baku?itemId=${parsed.id}`);
 		else if (lajur === 'finish_good') goto(`/stock-lapangan/persiapan/finish-good?itemId=${parsed.id}`);
 		else scanNotFound = 'Barang ini tidak ada di antrian persiapan manapun saat ini.';

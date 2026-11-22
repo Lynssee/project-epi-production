@@ -6,6 +6,9 @@ import { mount, unmount, flushSync } from 'svelte';
 const task = (i: number, over: any = {}) => ({ flow_id: `f${i % 2}`, flow_title: `Alur ${i % 2}`, node_id: `n${i}`, label: `Langkah ${i}`, lane_label: 'A', type: 'task', sla_hours: null, kpi_code: '', gate_keys: [], has_actions: false, ...over });
 const loadMyTasks = vi.fn();
 vi.mock('$lib/services/processGuidanceMineApi', () => ({ loadMyTasks: () => loadMyTasks() }));
+vi.mock('@tabler/icons-svelte', () => ({ IconRoute: () => {} }));
+vi.mock('$lib/services/ess/gateKpiSaya', () => ({ getGateKpiSaya: async () => ({ available: false }) }));
+vi.mock('$lib/components/shared/PdfFetchSheet.svelte', () => ({ default: () => {} })); // barrel ikon sangat besar → transform lambat tanpa mock
 const { default: Card } = await import('./TugasSayaAlurCard.svelte');
 
 let box: HTMLElement | null, inst: any;

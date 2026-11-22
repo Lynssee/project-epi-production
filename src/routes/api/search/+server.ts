@@ -10,6 +10,8 @@ import { requireUser } from '$lib/server/firebaseAuth';
 import { getUserPermissions } from '$lib/server/rbacServer';
 import { runSearch } from '$lib/server/searchService';
 import { logSearchAnalytics, logSearchAuditIfSensitive } from '$lib/server/searchLogging';
+import { searchExtraFieldNav } from './fieldNavExtras';
+import { runFieldKnowledgeSearch } from './knowledgeSearch';
 
 // Rate-limit ringan in-memory: maks 30 pencarian/menit/user.
 const RATE_LIMIT = 30;
@@ -41,7 +43,37 @@ export async function GET(event: RequestEvent) {
 	const idToken = authHeader.replace(/^Bearer\s+/i, '');
 
 	const { roleId, permissions } = await getUserPermissions(idToken, user.localId);
-	const groups = await runSearch({ q, permissions, roleId, userEmail: user.email });
+	const isSuperAdmin = roleId === 'super_admin' || permissions.includes('*');
+	const extraNavResults = searchExtraFieldNav(q, permissions, isSuperAdmin);
+	const [knowledgeGroups, dataGroups] = await Promise.all([
+		runFieldKnowledgeSearch(q),
+		runSearch({ q, permissions, roleId, userEmail: user.email })
+	]);
+	const TIER2_FIELD_META: Record<string, { entity: string; url: string }> = {
+		training_program: { entity: 'Program Pelatihan', url: '/ess/pelatihan' },
+		ai_knowledge_base: { entity: 'Basis Pengetahuan', url: '/bantuan' },
+		kebijakan: { entity: 'Kebijakan Perusahaan', url: '/ess/pelatihan/sop' },
+		client_compliance_profile: { entity: 'Profil Kepatuhan Klien', url: '/proyek' }
+	};
+	const enrichedDataGroups = dataGroups.map((g: any) => {
+		const sampleSrc = g.results?.[0]?.source;
+		const meta = TIER2_FIELD_META[sampleSrc];
+		if (!meta) return g;
+		return {
+			...g,
+			entity: meta.entity,
+			results: g.results.map((r: any) => ({
+				...r,
+				entity: TIER2_FIELD_META[r.source]?.entity || r.entity,
+				url: r.url || TIER2_FIELD_META[r.source]?.url
+			}))
+		};
+	});
+	const groups = [
+		...(extraNavResults.length ? [{ entity: 'Menu & Halaman Lainnya', results: extraNavResults }] : []),
+		...knowledgeGroups,
+		...enrichedDataGroups
+	];
 
 	const resultCount = groups.reduce((sum, g) => sum + g.results.length, 0);
 	logSearchAnalytics({ query: q, userEmail: user.email, resultCount, moduleScope: 'project-epi' });

@@ -192,7 +192,7 @@ describe('syncPcrStatusToPusat (PC3-10)', async () => {
 		});
 		expect(await syncPcrStatusToPusat({ id: 7, status: 'cancelled' })).toBe(true);
 		const patch = mockJson.mock.calls.find(([u]: any) => u === '/items/master_pengajuan/mp-1');
-		expect(JSON.parse(patch[1].body)).toEqual({ status: 'ditolak' });
+		expect(JSON.parse(patch![1].body)).toEqual({ status: 'ditolak' });
 	});
 	it('draf / tanpa id → tidak memanggil Directus', async () => {
 		expect(await syncPcrStatusToPusat({ id: 7, status: 'draft' })).toBe(false);

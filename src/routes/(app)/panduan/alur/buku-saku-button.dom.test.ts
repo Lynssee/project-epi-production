@@ -63,7 +63,7 @@ describe('/panduan/alur — Buku Saku PDF', () => {
 		btn()!.click();
 		await settle();
 		expect(box!.textContent).toContain('sedang offline');
-		expect(f.mock.calls.some((c) => String(c[0]).includes('buku-saku-pdf'))).toBe(false);
+		expect((f.mock.calls as any[][]).some((c) => String(c[0]).includes('buku-saku-pdf'))).toBe(false);
 		Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
 	});
 });

@@ -17,6 +17,9 @@ import type { RequestHandler } from './$types';
 import { authenticateGRActor, isProjectAllowed } from '$lib/server/goodsReceived/guard';
 import { assertEquipmentChecklistGate } from '$lib/server/goodsReceived/equipmentGate';
 import { directusServerJson } from '$lib/server/directus';
+import { writeJournalSafe, type JournalLine } from '$lib/server/journalWriter';
+import { muatKebijakanWipServer } from '$lib/server/wipSettings';
+import { debitBiayaProyek } from '$lib/shared/wipPolicy';
 import { appendLedgerEntry, rebuildProjectStockBalance, TRANSACTION_TYPES } from '$lib/server/projectLedger';
 import { listRangkapForSj, advanceRangkapStatus } from '$lib/server/rangkap';
 import { resolvePilotProjectIds, isPilotProject } from '$lib/server/inventorySettings';
@@ -351,61 +354,55 @@ export const POST: RequestHandler = async (event) => {
 		}
 	}
 
+	// FIN-20: jurnal GR_COMMIT lewat penulis aman — idempoten per SJ (konfirmasi ganda tidak menggandakan),
+	// tiap baris diverifikasi, tidak ada header yatim bila gagal di tengah. Dulu: `.catch(() => {})` per baris
+	// (header tersimpan dengan total, baris hilang diam-diam) dan nomor `Date.now()` tanpa idempotency_key.
+	// Kegagalan TIDAK membatalkan penerimaan barang (transaksi utama), tetapi DILAPORKAN ke pemanggil dan
+	// dicatat di finance_audit_log supaya Finance melihatnya.
+	let jurnalWarning: string | null = null;
 	if (totalReklas > 0) {
-		try {
-			// Nomor jurnal sederhana (bukan nomor urut resmi seperti generateJournalNumber() di ERP) —
-			// cukup unik & tertelusuri ke SJ sumbernya untuk keperluan review Finance.
-			const journalNumber = `JE-GR-${suratJalanId}-${Date.now()}`;
-
-			const je = await directusServerJson<{ data: any }>('/items/journal_entries', {
-				method: 'POST',
-				body: JSON.stringify({
-					journal_number: journalNumber,
-					transaction_date: new Date().toISOString().split('T')[0],
-					reference_type: 'GR_COMMIT',
-					reference_id: suratJalanId,
-					reference_number: sj.nomor_sj,
-					description: `Reklas Transit -> HPP (Goods Received): SJ ${sj.nomor_sj}`,
-					total_debit: totalReklas,
-					total_credit: totalReklas,
-					created_by: karyawan.nama_karyawan,
-					is_posted: false
-				})
+		const lines: JournalLine[] = [];
+		// FIN-15 (K10): GR di site mengakui biaya proyek ke 1132-001 WIP (bukan HPP) sampai BAST. Mati bawaan
+		// (finance.proyek.wip_sejak kosong), tidak retroaktif; jenis biaya asal tersimpan di deskripsi baris + dimensi proyek di header.
+		const grProjectId = Number(sj.project_id?.id ?? sj.project_id) || null;
+		const wipKeb = await muatKebijakanWipServer(new Date().toISOString().split('T')[0]);
+		let adaWip = false;
+		for (const line of journalLines) {
+			const mapping = RAB_COA_MAPPING[line.budgetCategory] || RAB_COA_MAPPING.supplier;
+			const d = debitBiayaProyek({ mappingDebit: mapping.debit, mappingDebitName: mapping.debitName, jenisLabel: line.budgetCategory, projectId: grProjectId, wip: wipKeb });
+			if (d.dialihkan) adaWip = true;
+			lines.push({
+				account_code: d.account_code,
+				account_name: d.account_name,
+				debit_amount: line.amount,
+				credit_amount: 0,
+				description: `${d.prefix}${wipKeb.aktif && d.dialihkan ? 'Biaya proyek (GR)' : 'HPP aktual (GR)'} [${line.budgetCategory}] - ${line.materialName}`
 			});
-			const journalId = je?.data?.id;
-
-			if (journalId) {
-				let lineNumber = 1;
-				for (const line of journalLines) {
-					const mapping = RAB_COA_MAPPING[line.budgetCategory] || RAB_COA_MAPPING.supplier;
-					await directusServerJson('/items/journal_entry_details', {
-						method: 'POST',
-						body: JSON.stringify({
-							journal_entry_id: journalId,
-							account_code: mapping.debit,
-							account_name: mapping.debitName,
-							debit_amount: line.amount,
-							credit_amount: 0,
-							description: `HPP aktual (GR) [${line.budgetCategory}] - ${line.materialName}`,
-							line_number: lineNumber++
-						})
-					}).catch(() => {});
-					await directusServerJson('/items/journal_entry_details', {
-						method: 'POST',
-						body: JSON.stringify({
-							journal_entry_id: journalId,
-							account_code: GR_TRANSIT_ACCOUNT.code,
-							account_name: GR_TRANSIT_ACCOUNT.name,
-							debit_amount: 0,
-							credit_amount: line.amount,
-							description: `Reklas transit [${line.budgetCategory}] - ${line.materialName}`,
-							line_number: lineNumber++
-						})
-					}).catch(() => {});
-				}
-			}
-		} catch (journalErr) {
-			console.error('[goods-received/confirm] Gagal membuat jurnal GR_COMMIT:', journalErr);
+			lines.push({
+				account_code: GR_TRANSIT_ACCOUNT.code,
+				account_name: GR_TRANSIT_ACCOUNT.name,
+				debit_amount: 0,
+				credit_amount: line.amount,
+				description: `Reklas transit [${line.budgetCategory}] - ${line.materialName}`
+			});
+		}
+		const jr = await writeJournalSafe({
+			idempotencyKey: `GR:${suratJalanId}`,
+			header: {
+				// Nomor sederhana (bukan nomor urut resmi ERP) — unik & tertelusuri ke SJ sumbernya.
+				journal_number: `JE-GR-${suratJalanId}-${Date.now()}`,
+				transaction_date: new Date().toISOString().split('T')[0],
+				reference_type: 'GR_COMMIT',
+				reference_id: suratJalanId,
+				reference_number: sj.nomor_sj,
+				description: `${adaWip ? 'Reklas Transit -> WIP' : 'Reklas Transit -> HPP'} (Goods Received): SJ ${sj.nomor_sj}`,
+				created_by: karyawan.nama_karyawan,
+				...(adaWip && grProjectId ? { cost_center_project_id: grProjectId } : {})
+			},
+			lines
+		});
+		if (!jr.ok) {
+			jurnalWarning = `Jurnal reklas GR untuk SJ ${sj.nomor_sj} gagal dibuat (${jr.error}). Penerimaan barang tetap tersimpan; Finance akan membuat jurnal secara manual.`;
 		}
 	}
 
@@ -503,5 +500,5 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	return json({ success: true, hasVariance, claimsCreated, totalReklas });
+	return json({ success: true, hasVariance, claimsCreated, totalReklas, ...(jurnalWarning ? { jurnalWarning } : {}) });
 };

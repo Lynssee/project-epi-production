@@ -10,14 +10,56 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 let cachedSops: any[] | null = null;
 let lastCacheTime = 0;
 
-const LIST_FIELDS = 'id,title,sop_code,department,approval_status,status,version,version_seq,effective_date,review_due_date,sosialisasi_end_date,target_departments,target_roles,flow_id,kebijakan_id,requires_training';
-const DETAIL_FIELDS = `${LIST_FIELDS},content,ai_summary,keterangan,kategori_sop,sub_kategori,external_flowchart_url,external_doc_url`;
+const LIST_FIELDS = 'id,title,sop_code,department,approval_status,status,version,version_seq,effective_date,review_due_date,sosialisasi_end_date,target_departments,target_roles,flow_id,kebijakan_id,requires_training,kategori_sop,sub_kategori,tags';
+const DETAIL_FIELDS = `${LIST_FIELDS},content,ai_summary,keterangan,external_flowchart_url,external_doc_url`;
+
+// Fase 5 SOP Proyek — SOP Proyek & K3 yang TERBIT di process_guidance_flows (SSOT) ikut tampil di katalog, read-only.
+// sop_documents tetap sumber SOP umum (dengan konfirmasi baca); alur ditandai source:'flow' dan dibuka di /panduan/alur
+// (konfirmasi baca alur memakai /api/process-guidance/read-confirm yang sudah ada). Cache 5 menit, 1 query Directus.
+const FLOW_FILTER =
+	'filter[status][_eq]=published&filter[_or][0][sop_code][_starts_with]=SOP-PRJ&filter[_or][1][sop_code][_starts_with]=SOP-OPS-PRJ&filter[_or][2][sop_code][_starts_with]=SOP-HSE';
+let cachedFlowSops: any[] | null = null;
+let lastFlowCacheTime = 0;
+
+async function loadFlowSops(): Promise<any[]> {
+	const now = Date.now();
+	if (cachedFlowSops && now - lastFlowCacheTime < CACHE_TTL_MS) return cachedFlowSops;
+	try {
+		const res = await directusServerJson<{ data: any[] }>(
+			`/items/process_guidance_flows?${FLOW_FILTER}&fields=id,flow_key,title,sop_code,version,kategori_sop,sub_kategori&sort=sop_code&limit=-1`
+		);
+		cachedFlowSops = (Array.isArray(res?.data) ? res.data : []).map((f) => ({
+			id: -Number(f.id), // negatif: tak bentrok dengan id sop_documents
+			title: f.title,
+			sop_code: f.sop_code,
+			department: String(f.sop_code || '').startsWith('SOP-HSE') ? 'HSE' : 'Operasional Proyek',
+			approval_status: 'published',
+			status: 'published',
+			version: String(f.version ?? ''),
+			version_seq: Number(f.version || 1),
+			kategori_sop: f.kategori_sop || null,
+			sub_kategori: f.sub_kategori || null,
+			tags: [],
+			source: 'flow',
+			flow_key: f.flow_key
+		}));
+		lastFlowCacheTime = now;
+	} catch (e: any) {
+		// Gagal baca alur tidak boleh mematikan katalog SOP umum — dicatat, katalog tetap tampil tanpa alur.
+		console.error('[/api/sop project-epi] gagal membaca alur terbit:', e?.message || e);
+		return cachedFlowSops || [];
+	}
+	return cachedFlowSops;
+}
 
 export const GET: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
 	const url = event.url;
 	const idParam = url.searchParams.get('id');
 	const searchParam = url.searchParams.get('search');
+	const tagParam = url.searchParams.get('tag');
+	const kategoriParam = url.searchParams.get('kategori');
+	const subKategoriParam = url.searchParams.get('sub_kategori');
 	const includeContent = url.searchParams.get('include_content') === 'true';
 
 	try {
@@ -59,15 +101,41 @@ export const GET: RequestHandler = async (event) => {
 			lastCacheTime = now;
 		}
 
+		// Gabungkan alur terbit (hindari ganda bila sop_documents sudah menautkan alur yang sama lewat flow_id / kode).
+		const flowSops = await loadFlowSops();
+		const haveCodes = new Set(sops.map((s) => String(s.sop_code || '').toUpperCase()).filter(Boolean));
+		const haveFlowIds = new Set(sops.map((s) => Number(s.flow_id)).filter((n) => Number.isFinite(n) && n > 0));
+		sops = [...sops, ...flowSops.filter((f) => !haveCodes.has(String(f.sop_code || '').toUpperCase()) && !haveFlowIds.has(-f.id))];
+
 		let filtered = sops;
+		if (kategoriParam) {
+			const targetKat = kategoriParam.toLowerCase().trim();
+			filtered = filtered.filter((s) => (s.kategori_sop || '').toLowerCase() === targetKat);
+		}
+
+		if (subKategoriParam) {
+			const targetSub = subKategoriParam.toLowerCase().trim();
+			filtered = filtered.filter((s) => (s.sub_kategori || '').toLowerCase() === targetSub);
+		}
+
+		if (tagParam) {
+			const targetTag = tagParam.toLowerCase().trim();
+			filtered = filtered.filter((s) => {
+				if (!Array.isArray(s.tags)) return false;
+				return s.tags.some((t: any) => String(t).toLowerCase() === targetTag);
+			});
+		}
+
 		if (searchParam) {
 			const q = searchParam.toLowerCase().trim();
-			filtered = filtered.filter(
-				(s) =>
-					(s.title || '').toLowerCase().includes(q) ||
-					(s.sop_code || '').toLowerCase().includes(q) ||
-					(s.department || '').toLowerCase().includes(q)
-			);
+			filtered = filtered.filter((s) => {
+				const matchTitle = (s.title || '').toLowerCase().includes(q);
+				const matchCode = (s.sop_code || '').toLowerCase().includes(q);
+				const matchDept = (s.department || '').toLowerCase().includes(q);
+				const matchSub = (s.sub_kategori || '').toLowerCase().includes(q);
+				const matchTags = Array.isArray(s.tags) && s.tags.some((t: any) => String(t).toLowerCase().includes(q));
+				return matchTitle || matchCode || matchDept || matchSub || matchTags;
+			});
 		}
 
 		// Ambil status konfirmasi baca user aktif secara terpisah

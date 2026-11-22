@@ -22,7 +22,9 @@ const err = async (body: any) => {
 };
 
 let writes: Array<{ url: string; method: string; body: any }>;
-function db({ tracker, template, open = [], cats = true }: any = {}) {
+let eqHm: number | null = null;
+function db({ tracker, template, open = [], cats = true, hmUnit = null }: any = {}) {
+	eqHm = hmUnit;
 	writes = [];
 	dx.mockImplementation(async (url: string, opts: any = {}) => {
 		if (opts.method) {
@@ -30,9 +32,10 @@ function db({ tracker, template, open = [], cats = true }: any = {}) {
 			return { data: { id: 'new-1' } };
 		}
 		if (url.includes('/items/category'))
-			return { data: cats ? [{ id: 'st-a', name: 'Active', group: 'pm_status' }, { id: 'st-c', name: 'Completed', group: 'pm_status' }, { id: 'b', name: 'Bulan', group: 'interval_unit' }] : [] };
+			return { data: cats ? [{ id: 'st-a', name: 'Active', group: 'pm_status' }, { id: 'st-c', name: 'Completed', group: 'pm_status' }, { id: 'b', name: 'Bulan', group: 'interval_unit' }, { id: 'j', name: 'Jam (HM)', group: 'interval_unit' }] : [] };
 		if (url.includes('/items/pm_due_tracker/')) return { data: tracker };
 		if (url.includes('/items/pm_task_template/')) return { data: template };
+		if (url.includes('/items/equipment/') && !opts.method) return { data: { id: 'm1', last_hoursmeter: eqHm } };
 		if (url.includes('/items/pm_due_tracker?')) return { data: open };
 		throw new Error('url tak terduga: ' + url);
 	});
@@ -90,6 +93,32 @@ describe('POST /api/preventive/pm/selesai', () => {
 		db({ tracker: tracker(), template: { ...template, interval_value_primary: null, interval_unit_primary: null } });
 		const r = await call({ tracker_id: TR });
 		expect(r.berikutnya).toBeNull();
+	});
+
+	describe('PM berbasis jam (HM)', () => {
+		const tplJam = { id: 't1', task_name: 'PM 250 Jam', interval_value_primary: 250, interval_unit_primary: 'j' };
+		it('siklus berikutnya: due_hoursmeter = HM selesai + N; perkiraan tanggal = selesai + ceil(N/6) hari', async () => {
+			db({ tracker: tracker(), template: tplJam });
+			const r = await call({ tracker_id: TR, hoursmeter: 1240 });
+			expect(writes.find((w) => w.method === 'PATCH' && w.url.includes('pm_due_tracker'))!.body).toMatchObject({ last_done_hoursmeter: 1240 });
+			const baru = writes.find((w) => w.method === 'POST' && w.url.includes('pm_due_tracker'))!;
+			expect(baru.body).toMatchObject({ due_hoursmeter: 1490, last_done_hoursmeter: 1240 });
+			expect(baru.body.due_date).toBe(r.berikutnya);
+			expect(writes.some((w) => w.url.includes('/items/equipment/') && w.method === 'PATCH' && w.body.last_hoursmeter === 1240)).toBe(true);
+		});
+		it('tanpa HM dari mekanik memakai HM unit; tanpa keduanya → 400 dan TIDAK menulis apa pun', async () => {
+			db({ tracker: tracker(), template: tplJam, hmUnit: 1100 });
+			await call({ tracker_id: TR });
+			expect(writes.find((w) => w.method === 'POST' && w.url.includes('pm_due_tracker'))!.body.due_hoursmeter).toBe(1350);
+			db({ tracker: tracker(), template: tplJam, hmUnit: null });
+			expect((await err({ tracker_id: TR }))?.status).toBe(400);
+			expect(writes).toHaveLength(0);
+		});
+		it('HM yang diisi lebih kecil dari HM unit tidak menurunkan HM unit', async () => {
+			db({ tracker: tracker(), template: tplJam, hmUnit: 2000 });
+			await call({ tracker_id: TR, hoursmeter: 1500 });
+			expect(writes.some((w) => w.url.includes('/items/equipment/') && w.method === 'PATCH')).toBe(false);
+		});
 	});
 
 	it('kategori status PM belum ada → 503 pesan jelas; id tak valid → 400; tracker tak ada → 404', async () => {

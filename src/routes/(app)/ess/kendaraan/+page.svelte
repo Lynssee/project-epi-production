@@ -1238,7 +1238,7 @@
 										target="_blank"
 										rel="noreferrer"
 										class="p-2.5 rounded-xl border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400 hover:bg-green-100 flex items-center gap-1 text-xs font-bold transition-transform hover:scale-105"
-										title="WhatsApp Driver: {b.driver.nama}"
+										title="WhatsApp Driver: {b.driver?.nama}"
 									>
 										<IconBrandWhatsapp size={16} />
 										<span class="hidden sm:inline">Chat Driver</span>

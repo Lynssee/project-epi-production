@@ -14,6 +14,7 @@ import type { RequestHandler } from './$types';
 import QRCode from 'qrcode';
 import { requireUser } from '$lib/server/firebaseAuth';
 import { htmlToPdf } from '$lib/server/gotenbergClient';
+import { forwardReportEvent } from '$lib/server/reportEventForward';
 import { buildProduksiTablePdfHtml } from '$lib/pdf-templates/produksiTablePdf';
 import {
 	isProduksiExportKey,
@@ -91,6 +92,7 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		const buffer = await htmlToPdf(html, { landscape, filename: 'produksi-export.pdf' });
 		const safe = judul.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80) || 'produksi-export';
+		forwardReportEvent(event, { catalog_key: 'export-produksi', format: 'pdf' }); // Report Center: catat unduhan
 		return new Response(Uint8Array.from(buffer), {
 			headers: {
 				'Content-Type': 'application/pdf',

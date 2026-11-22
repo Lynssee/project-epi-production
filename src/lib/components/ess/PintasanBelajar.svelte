@@ -5,6 +5,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { getPintasanBelajar, type PintasanItem } from '$lib/services/ess/training';
+	import MicroQuiz from '$lib/components/ess/MicroQuiz.svelte';
 	import { IconSchool, IconChevronRight, IconX } from '@tabler/icons-svelte';
 
 	let { konteks }: { konteks: string } = $props();
@@ -63,7 +64,8 @@
 					</span>
 					<IconChevronRight size={18} class="shrink-0" style="color: var(--sys-label4)" />
 				</button>
-			{/each}
+			{#if (it.microQuiz ?? 0) > 0}<MicroQuiz programId={it.programId} {konteks} />{/if}
+				{/each}
 		</div>
 		<p class="text-[11px] mt-2 font-medium" style="color: var(--sys-label4)">Pintasan ini mengarah ke kursus yang relevan dengan halaman ini dan belum Anda selesaikan.</p>
 	</aside>

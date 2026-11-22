@@ -3,7 +3,9 @@
   import { onMount } from 'svelte';
 
   let { height = 180 } = $props();
+  /** @type {any} */
   let canvas;
+  /** @type {any} */
   let ctx;
   let drawing = false;
   let dirty = false;
@@ -35,20 +37,20 @@
     ctx = c;
   }
 
-  function pos(e) {
+  function pos(/** @type {any} */ e) {
     const rect = canvas.getBoundingClientRect();
     const p = e.touches ? e.touches[0] : e;
     return { x: p.clientX - rect.left, y: p.clientY - rect.top };
   }
 
-  function start(e) {
+  function start(/** @type {any} */ e) {
     e.preventDefault();
     drawing = true;
     const { x, y } = pos(e);
     ctx.beginPath();
     ctx.moveTo(x, y);
   }
-  function move(e) {
+  function move(/** @type {any} */ e) {
     if (!drawing) return;
     e.preventDefault();
     const { x, y } = pos(e);
@@ -77,6 +79,7 @@
     out.width = canvas.width;
     out.height = canvas.height;
     const c = out.getContext('2d');
+    if (!c) return null; // konteks 2D tak tersedia → tak ada gambar (sebelumnya melempar TypeError)
     c.fillStyle = '#ffffff';
     c.fillRect(0, 0, out.width, out.height);
     c.drawImage(canvas, 0, 0);

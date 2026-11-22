@@ -14,6 +14,7 @@ import { authenticatePreventiveOperator } from '$lib/server/preventive/preventiv
 import { directusServerJson } from '$lib/server/directus';
 import { getMleSettingServer } from '$lib/server/mleSettings';
 import { notifyProjectP2hTutupDilarang } from '$lib/server/projectNotify';
+import { autoWoIdentity } from '$lib/server/preventive/woNumber';
 
 const KONDISI_VALID = ['baik', 'perlu_periksa', 'dilarang'] as const;
 type Kondisi = (typeof KONDISI_VALID)[number];
@@ -95,6 +96,7 @@ export const POST: RequestHandler = async (event) => {
 				const woRes = await directusServerJson<{ data: any }>('/items/work_order', {
 					method: 'POST',
 					body: JSON.stringify({
+						...(await autoWoIdentity(wibDateString())), // wo_number + created_at wajib (KPI & Laporan Bulanan membaca keduanya)
 						equipment_id: session.equipment_id,
 						keluhan: `[DILARANG DIPAKAI saat tutup pemakaian] ${catatanSelesai || 'Operator menandai unit dilarang dipakai.'}`,
 						kategori_perbaikan_id: P2H_WO_IDS.DARURAT,

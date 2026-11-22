@@ -229,7 +229,7 @@
 		else if (ex?.reason === 'kiosk_mati') { tutupSheet(); fase = 'mati'; }
 	}
 
-	const kruTampil = $derived(filterKru(roster?.kru, q));
+	const kruTampil = $derived(filterKru(roster?.kru, q) as any[]);
 	const tanggalLabel = $derived(
 		roster?.tanggal
 			? new Date(`${roster.tanggal}T00:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })

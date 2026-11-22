@@ -139,3 +139,40 @@ describe('normalizeFlowRow & inferProcedureType — klasifikasi sifat prosedur (
 		expect(x.flow.parent_row_id).toBeUndefined();
 	});
 });
+
+describe('SOP-RSTR Fase 1 — kompatibilitas bentuk data lama', () => {
+	it('title/description → label/desc; gate_key+scope → gate baku; /(app) dibuang dari pintasan lapangan', () => {
+		const d = def({
+			nodes: [
+				{ id: 'n1', type: 'start', lane: 'a', col: 0, title: 'Judul Lama', description: 'Desc lama',
+					actions_field: [{ label: 'Packing', href: '/(app)/packing-list' }, { label: 'Biasa', href: '/stok' }],
+					gates: [{ gate_key: 'G_X', scope: { modul: 'inventory', documentType: 'sj' }, required: true }] }
+			],
+			edges: []
+		});
+		const n = normalizeFlowRow(base(d))!.flow.nodes[0];
+		expect(n.label).toBe('Judul Lama');
+		expect(n.desc).toBe('Desc lama');
+		expect(n.actions!.map((a) => a.href)).toEqual(['/packing-list', '/stok']);
+		expect(n.gates).toEqual([{ key: 'G_X', modul: 'inventory', documentType: 'sj' }]);
+	});
+});
+
+describe('normalizeFlowRow — negative_scenarios', () => {
+	const base = { flow_key: 'x', title: 'X', definition: { lanes: [{ key: 'l', label: 'L' }], nodes: [{ id: 'a', lane: 'l', type: 'task', label: 'A' }], edges: [] } };
+	it('mempertahankan skenario valid; membuang rusak; rute luar ditolak', () => {
+		const r = normalizeFlowRow({
+			...base,
+			definition: { ...base.definition, sop: { negative_scenarios: [
+				{ code: 'NEG-1', category: 'system_erp_error', severity: 'critical', trigger: 't', fallback_action: 'f', action_href_field: '/bantuan', recovery_sla_hours: 4 },
+				{ code: 'NEG-2', category: 'network_offline', trigger: 't', fallback_action: 'f', action_href_field: 'https://evil.example' },
+				{ code: 'NEG-3', category: 'ngawur', trigger: 't', fallback_action: 'f' },
+				null
+			] } }
+		});
+		const list = r!.flow.sop!.negative_scenarios!;
+		expect(list.map((x) => x.code)).toEqual(['NEG-1', 'NEG-2']);
+		expect(list[0]).toMatchObject({ action_href_field: '/bantuan', recovery_sla_hours: 4, severity: 'critical' });
+		expect(list[1].action_href_field).toBeUndefined();
+	});
+});

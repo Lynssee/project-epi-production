@@ -28,7 +28,7 @@
 	let creatingId = $state<number | null>(null);
 	let errorMsg = $state('');
 
-	let dueSoonItems = $derived(items.filter((i) => i.isDueSoon));
+	let dueSoonItems = $derived(items.filter((i: any) => i.isDueSoon));
 
 	function formatRupiah(val: number): string {
 		return new Intl.NumberFormat('id-ID', {
@@ -43,7 +43,7 @@
 		errorMsg = '';
 		try {
 			const auth = get(authStore);
-			const pengajuName = auth?.user?.nama || auth?.user?.email || 'Project Leader';
+			const pengajuName = auth?.karyawanName || auth?.user?.displayName || auth?.user?.email || 'Project Leader';
 			const draftId = await createDraftFromRecurring(item, pengajuName);
 			if (draftId) {
 				goto(`/anggaran/${draftId}`);

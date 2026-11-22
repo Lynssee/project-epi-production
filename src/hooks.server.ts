@@ -121,7 +121,11 @@ const appHandle: Handle = async ({ event, resolve }) => {
 	});
 
 	response.headers.set('X-Content-Type-Options', 'nosniff');
-	response.headers.set('X-Frame-Options', 'SAMEORIGIN');
+	// Jangan pasang X-Frame-Options SAMEORIGIN untuk alur panduan / preview
+	// agar CSP frame-ancestors dapat mengizinkan embedding di iframe Dashboard ERP
+	if (!pathname.startsWith('/panduan') && event.url.searchParams.get('preview') !== '1') {
+		response.headers.set('X-Frame-Options', 'SAMEORIGIN');
+	}
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', 'geolocation=(self), camera=(self), microphone=()');
 

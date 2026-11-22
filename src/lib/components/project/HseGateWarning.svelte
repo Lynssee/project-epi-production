@@ -10,7 +10,7 @@
 	let { projectId }: { projectId: number | string } = $props();
 
 	let loading = $state(true);
-	let jsaBerlaku = $state(true);
+	let jsaBerlaku = $state<boolean | null>(true); // null = belum diketahui (jsa_project belum ada) → diperlakukan seperti belum ada JSA
 	let toolboxHariIni = $state(true);
 
 	onMount(async () => {

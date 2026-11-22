@@ -8,6 +8,7 @@
      lapangan tidak pernah mengisinya. -->
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
+	import SopSayaWidget from '$lib/components/ess/SopSayaWidget.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
@@ -512,7 +513,7 @@
 				laporanKendala = draft.kendala ?? '';
 				laporanCatatan = draft.catatan ?? '';
 				if (Array.isArray(draft.rows)) {
-					const draftMap = new Map(draft.rows.map((r: any) => [`${r.po_id}_${r.subtask_id || r.so_detail_id || ''}`, r]));
+					const draftMap = new Map<string, any>(draft.rows.map((r: any): [string, any] => [`${r.po_id}_${r.subtask_id || r.so_detail_id || ''}`, r]));
 					for (const r of newRows) {
 						const key = `${r.po_id}_${r.subtask_id || r.so_detail_id || ''}`;
 						const d = draftMap.get(key);
@@ -936,6 +937,8 @@
 			{/each}
 		</div>
 	</div>
+
+	<SopSayaWidget />
 
 	<!-- Rekomendasi Tambahan Lapangan #3 (Offline Mode Enhancement) — antrian tertunda -->
 	{#if pendingTerimaCount + pendingLaporanCount > 0}

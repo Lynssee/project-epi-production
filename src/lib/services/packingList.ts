@@ -158,7 +158,8 @@ export async function createPackingListItems(
 	projectId: number,
 	items: PackingListItem[],
 	pic: string,
-	projectName?: string
+	projectName?: string,
+	alasanKeyakinan?: { kategori: string; catatan: string } | null
 ) {
 	try {
 		await postCreatePackingItems(projectId, pic, projectName, items.map((it) => ({
@@ -172,7 +173,7 @@ export async function createPackingListItems(
 			identitas_barang_id: it.identitas_barang_id ?? null,
 			usul_baru: !it.identitas_barang_id && !!(it as any).usul_baru,
 			usul_catatan: (it as any).usul_catatan ?? null
-		})));
+		})), alasanKeyakinan ?? null);
 		return true;
 	} catch (error) {
 		handleDirectusError(error);
@@ -232,13 +233,14 @@ async function postCreatePackingItems(
 		template_item_id?: number | null;
 		usul_baru?: boolean | null;
 		usul_catatan?: string | null;
-	}[]
+	}[],
+	alasanKeyakinan?: { kategori: string; catatan: string } | null
 ) {
 	const token = await getIdToken();
 	const res = await fetch('/api/packing-list/create-items', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-		body: JSON.stringify({ projectId, pic, projectName, items })
+		body: JSON.stringify({ projectId, pic, projectName, items, alasan_keyakinan: alasanKeyakinan ?? null })
 	});
 	const text = await res.text();
 	let parsed: any = null;
@@ -542,7 +544,7 @@ export async function submitPackingRequest(
 	// dihitung server-side (packingListSubmit.ts, dari harga project_budgets asli,
 	// bukan dari unit_price sisi klien). Parameter dipertahankan agar caller lama
 	// tidak perlu diubah.
-	_context?: { projectName?: string; requesterName?: string }
+	_context?: { projectName?: string; requesterName?: string; alasanKeyakinan?: { kategori: string; catatan: string } | null }
 ) {
 	try {
 		const token = await getIdToken();
@@ -552,7 +554,7 @@ export async function submitPackingRequest(
 				'Content-Type': 'application/json',
 				Authorization: `Bearer ${token}`
 			},
-			body: JSON.stringify({ items: items.map(({ id, qty }) => ({ id, qty })) })
+			body: JSON.stringify({ items: items.map(({ id, qty }) => ({ id, qty })), alasan_keyakinan: _context?.alasanKeyakinan ?? null })
 		});
 		const text = await res.text();
 		let parsed: any = null;
@@ -1406,6 +1408,8 @@ export interface ReturnItem {
 	qty_returned: number;
 	unit: string;
 	leader_notes?: string;
+	/** Kode alasan retur (dibaca server returSubmit.ts bila diisi; opsional). */
+	reason_code?: string | null;
 	/** Fase 3 (Goods Return v3, 19 Agu 2026): kondisi wajib diisi Leader saat pengajuan —
 	 *  kosakata sama dengan yang dipakai gudang (ok | bekas_layak | rusak | hilang). Gudang
 	 *  tetap bisa mengoreksinya saat menerima (ProjectReturnReceiving.svelte pre-fill dari sini). */

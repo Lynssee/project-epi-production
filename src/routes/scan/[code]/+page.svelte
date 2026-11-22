@@ -17,7 +17,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolveCheckpoint } from '$lib/services/gaChecklist';
-	import { routeCheckpointScan } from '$lib/utils/checkpointScanRoute';
+	import { routeCheckpointScan, cleanCheckpointCode } from '$lib/utils/checkpointScanRoute';
 	import { parseEpiQr, type ParsedEpiQr } from '$lib/utils/qrParse';
 	import { resolveServisLuarQr } from '$lib/services/servisLuar';
 	import { resolveSjQr, submitWorkshopSjkConfirmReceipt, SjkReasonRequiredError, resolveBatchQr, mintaRetestBatch, type ResolveSjResult, type ResolveCiketingSjkResult, type ResolveBatchResult } from '$lib/services/scanResolve';
@@ -27,7 +27,8 @@
 	import { getCurrentPosition } from '$lib/utils/geoClient';
 	import { enqueuePeminjamanScan, registerPeminjamanAutoFlush, type QueuedPeminjamanEntry } from '$lib/utils/offlinePeminjamanQueue';
 	import { getEquipmentByCode } from '$lib/services/preventive';
-	import { verifyEquipment, quickPosition, EquipmentVerifyError, type EquipmentVerifyResult } from '$lib/services/equipmentVerify';
+	import { verifyEquipment, quickPosition, resolveItemQr, EquipmentVerifyError, type EquipmentVerifyResult, type BridgeItemInfo } from '$lib/services/equipmentVerify';
+	import EquipmentHub from '$lib/components/equipment/EquipmentHub.svelte';
 	import { getComponentUnitById, recordComponentInspection, type ComponentUnitLite } from '$lib/services/clm';
 	import { resolveGudangArea } from '$lib/services/cekAreaApi';
 	import { saveScanProof } from '$lib/utils/p2hScanProof';
@@ -37,9 +38,9 @@
 	import DraftIndicator from '$lib/components/shared/DraftIndicator.svelte';
 	import KnowledgeCard from '$lib/components/inventory360/KnowledgeCard.svelte';
 
-	const code = decodeURIComponent(page.params.code || '');
+	const code = cleanCheckpointCode(decodeURIComponent(page.params.code || ''));
 
-	let status = $state<'resolving' | 'error' | 'epi' | 'sj' | 'comp' | 'ciketing_sjk'>('resolving');
+	let status = $state<'resolving' | 'error' | 'epi' | 'hub' | 'sj' | 'comp' | 'ciketing_sjk'>('resolving');
 	let errorMsg = $state('');
 	let epiParsed = $state<ParsedEpiQr | null>(null);
 	let sjResolved = $state<ResolveSjResult | null>(null);
@@ -86,6 +87,13 @@
 	}
 	let scannedEquipment = $state<{ id: string; name: string; code?: string | null } | null>(null);
 	let equipmentVerification = $state<EquipmentVerifyResult | null>(null);
+	// Hub Equipment 360° (G_EQ_SCAN_HUB_ACCESS): bila mode gate bukan shadow, scan membuka Hub inline; bottom-sheet lama tetap
+	// tersedia lewat tombol di Hub (alih pakai darurat) dan menjadi tampilan utama saat gate shadow.
+	let hubMode = $state(false);
+	let sheetOpen = $state(true);
+	// Info barang hasil resolusi server untuk EPI:ITEM (nama & kode lengkap; dipakai prefill form stok). Stiker lama kendaraan/alat
+	// otomatis dijembatani ke EPI:EQUIPMENT sehingga tidak perlu dicetak ulang.
+	let itemInfo = $state<BridgeItemInfo | null>(null);
 
 	// QR komponen (EPI:COMP:<id>, CLM v2 Fase 4) — mekanik/operator hanya melihat identitas
 	// & mencatat kondisi. TIDAK ada rupiah di layar lapangan.
@@ -179,7 +187,25 @@
 
 		// QR Surat Jalan (EPI:SJ:<id>:<token>, Keputusan D1) — resolver tunggal menentukan
 		// peran & aksi yang diizinkan di server (Bab 6.2), klien hanya merutekan.
-		const epi = parseEpiQr(code);
+		let epi = parseEpiQr(code);
+
+		// Stiker lama EPI:ITEM:<id> → jembatani ke equipment bila master barang tertaut ke unit aset (kendaraan/alat).
+		// Gagal jaringan/server = fail-open: lanjut sebagai barang stok seperti sebelumnya. 404 = barang memang tidak ada.
+		if (epi && epi.type === 'ITEM') {
+			try {
+				const bridged = await resolveItemQr(Number(epi.id));
+				if (bridged.kind === 'equipment') epi = { type: 'EQUIPMENT', id: bridged.code };
+				else itemInfo = bridged.item;
+			} catch (err) {
+				if (err instanceof EquipmentVerifyError && err.status === 404) {
+					status = 'error';
+					errorMsg = err.message;
+					return;
+				}
+				console.error('[scan] jembatan ITEM→EQUIPMENT gagal, lanjut sebagai barang stok:', err instanceof Error ? err.message : err);
+			}
+		}
+
 		if (epi && epi.type === 'SJ') {
 			try {
 				const res = await resolveSjQr(code);
@@ -310,7 +336,9 @@
 			await loadEquipmentActionSheet();
 			scannedEquipment = { id: equipment.id, name: equipment.name, code: equipment.code };
 			equipmentVerification = verified;
-			status = 'epi';
+			hubMode = !!verified?.hub?.opensOnScan;
+			sheetOpen = !hubMode;
+			status = hubMode ? 'hub' : 'epi';
 			epiParsed = epi;
 			return;
 		}
@@ -582,7 +610,7 @@
 								<p class="text-[11px]" style="color: var(--sys-label4)">Anda tidak punya aksi untuk Surat Jalan ini — ringkasan saja.</p>
 							{/if}
 							<!-- Tracking SJ v2 Fase 4: timeline tahap + aksi lengkap di halaman Lacak SJ -->
-							<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold" style="background: var(--sys-fill2, #eef2ff); color: var(--sys-label, #1e293b); border: 1px solid var(--sys-sep)" onclick={() => goto(`/lacak-sj/${sjResolved.suratJalan.id}`)}>
+							<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold" style="background: var(--sys-fill2, #eef2ff); color: var(--sys-label, #1e293b); border: 1px solid var(--sys-sep)" onclick={() => goto(`/lacak-sj/${sjResolved!.suratJalan.id}`)}>
 								Lihat Lacak & Riwayat Tahap
 							</button>
 						</div>
@@ -705,12 +733,25 @@
 					</p>
 				{/if}
 			</div>
-		{:else if status === 'epi' && epiParsed && epiParsed.type !== 'EQUIPMENT'}
+		{:else if status === 'hub' && scannedEquipment}
+				<div class="w-full">
+					<div class="flex items-center justify-between mb-3">
+						<button class="flex items-center gap-1.5 text-[13px] font-semibold" style="color: var(--sys-label3)" onclick={() => goto('/ess')}>
+							<IconArrowLeft size={16} /> Beranda
+						</button>
+						<span class="text-[10px]" style="color: var(--sys-label4)">Hub Equipment 360°</span>
+					</div>
+					<EquipmentHub equipmentId={scannedEquipment.id} verify={equipmentVerification} onOpenSheet={() => (sheetOpen = true)} />
+				</div>
+			{:else if status === 'epi' && epiParsed && epiParsed.type !== 'EQUIPMENT'}
 			<div class="rounded-xl p-6 w-full" style="background: var(--sys-fill); border: 1px solid var(--sys-sep)">
 				<IconQrcode size={28} style="color: var(--g); margin: 0 auto 8px" />
 				<p class="text-[13px] font-semibold mb-1" style="color: var(--sys-label)">
-					{EPI_TYPE_LABEL[epiParsed.type] || epiParsed.type} #{epiParsed.id}
+					{itemInfo?.nama_barang_lengkap || `${EPI_TYPE_LABEL[epiParsed.type] || epiParsed.type} #${epiParsed.id}`}
 				</p>
+				{#if itemInfo}
+					<p class="text-[11px] mb-3" style="color: var(--sys-label3)">{itemInfo.kode_item || `#${itemInfo.id}`}{itemInfo.satuan ? ` · satuan ${itemInfo.satuan}` : ''}</p>
+				{/if}
 				{#if epiParsed.type === 'ITEM'}
 					<!-- Inventory 360°: panduan pakai, APD, dan tanda harus ganti langsung dari QR barang -->
 					<div class="text-left rounded-lg p-3 mb-3 border bg-white" style="border-color: var(--sys-sep)">
@@ -781,16 +822,20 @@
 					{/if}
 				{/if}
 				<p class="text-[11px] mb-4" style="color: var(--sys-label3)">
-					Pilih alur stok lapangan untuk memproses kode ini — cari kode {code} secara manual di dalam form.
+					{#if epiParsed.type === 'ITEM'}
+							Pilih alur stok — barang ini otomatis terpilih di form, tidak perlu mengetik kode.
+						{:else}
+							Pilih alur stok lapangan untuk memproses kode ini — cari kode {code} secara manual di dalam form.
+						{/if}
 				</p>
 				<div class="flex flex-col gap-2">
-					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto('/stock-lapangan/opname')}>
+					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto(`/stock-lapangan/opname${epiParsed?.type === 'ITEM' ? '?item_id=' + epiParsed.id : ''}`)}>
 						Stok Opname
 					</button>
-					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto('/stock-lapangan/masuk')}>
+					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto(`/stock-lapangan/masuk${epiParsed?.type === 'ITEM' ? '?item_id=' + epiParsed.id : ''}`)}>
 						Barang Masuk
 					</button>
-					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto('/stock-lapangan/output')}>
+					<button class="w-full rounded-lg py-2.5 text-[13px] font-semibold text-white" style="background: var(--g)" onclick={() => goto(`/stock-lapangan/output${epiParsed?.type === 'ITEM' ? '?item_id=' + epiParsed.id : ''}`)}>
 						Barang Keluar
 					</button>
 				</div>
@@ -799,6 +844,14 @@
 	</div>
 </div>
 
-{#if scannedEquipment && EquipmentActionSheet}
-	<EquipmentActionSheet equipment={scannedEquipment} verify={equipmentVerification} onClose={() => { scannedEquipment = null; goto('/ess'); }} />
+{#if scannedEquipment && EquipmentActionSheet && sheetOpen}
+	<EquipmentActionSheet
+		equipment={scannedEquipment}
+		verify={equipmentVerification}
+		onClose={() => {
+			if (hubMode) { sheetOpen = false; return; }
+			scannedEquipment = null;
+			goto('/ess');
+		}}
+	/>
 {/if}

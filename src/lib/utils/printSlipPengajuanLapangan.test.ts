@@ -49,7 +49,7 @@ describe('printSlipPengajuanLapangan', () => {
 		(globalThis as any).window = { open: vi.fn(() => win) };
 		expect(printSlipPengajuanLapangan(pa, items, steps)).toBe(true);
 		expect((globalThis as any).window.open).toHaveBeenCalledTimes(1);
-		expect(win.document.write.mock.calls.at(-1)[0]).toContain('PA-2610-0007');
+		expect(win.document.write.mock.calls.at(-1)![0]).toContain('PA-2610-0007');
 		vi.advanceTimersByTime(300);
 		expect(win.print).toHaveBeenCalled();
 	});
@@ -60,13 +60,13 @@ describe('printSlipPengajuanLapangan', () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
 		printSlipPengajuanLapangan(pa, items, steps, { qrProvider: async () => ({ qrDataUrl: 'data:image/png;base64,Q', verifyUrl: 'https://v' }) });
 		await new Promise((r) => setTimeout(r, 0));
-		expect(win.document.write.mock.calls.at(-1)[0]).toContain('class="qr"');
+		expect(win.document.write.mock.calls.at(-1)![0]).toContain('class="qr"');
 		const win2 = mkWin();
 		(globalThis as any).window = { open: vi.fn(() => win2) };
 		printSlipPengajuanLapangan(pa, items, steps, { qrProvider: async () => { throw new Error('boom'); } });
 		await new Promise((r) => setTimeout(r, 0));
-		expect(win2.document.write.mock.calls.at(-1)[0]).not.toContain('class="qr"');
-		expect(win2.document.write.mock.calls.at(-1)[0]).toContain('SLIP RINGKAS');
+		expect(win2.document.write.mock.calls.at(-1)![0]).not.toContain('class="qr"');
+		expect(win2.document.write.mock.calls.at(-1)![0]).toContain('SLIP RINGKAS');
 	});
 
 	it('QR lambat (> batas) -> slip tetap tercetak tanpa QR', async () => {
@@ -75,8 +75,8 @@ describe('printSlipPengajuanLapangan', () => {
 		(globalThis as any).window = { open: vi.fn(() => win) };
 		printSlipPengajuanLapangan(pa, items, steps, { qrProvider: () => new Promise(() => {}) });
 		await vi.advanceTimersByTimeAsync(QR_TIMEOUT_MS + 10);
-		expect(win.document.write.mock.calls.at(-1)[0]).toContain('SLIP RINGKAS');
-		expect(win.document.write.mock.calls.at(-1)[0]).not.toContain('class="qr"');
+		expect(win.document.write.mock.calls.at(-1)![0]).toContain('SLIP RINGKAS');
+		expect(win.document.write.mock.calls.at(-1)![0]).not.toContain('class="qr"');
 	});
 
 	it('pop-up diblokir atau tanpa data -> false', () => {

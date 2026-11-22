@@ -60,6 +60,7 @@ export interface VehicleVerifyResult {
 	holder: PersonCard | null;
 	verification: VehicleVerdict;
 	override: { allowed: boolean; reasonMin: number } | null;
+	hub?: { opensOnScan?: boolean; [key: string]: unknown } | null;
 }
 
 export interface ToolVerifyResult {
@@ -76,6 +77,7 @@ export interface ToolVerifyResult {
 	} | null;
 	borrower: PersonCard | null;
 	verification: BorrowerVerdict;
+	hub?: { opensOnScan?: boolean; [key: string]: unknown } | null;
 }
 
 export type EquipmentVerifyResult = VehicleVerifyResult | ToolVerifyResult;
@@ -135,4 +137,41 @@ export async function submitHandover(code: string, reason: string): Promise<{ ok
 	// Pengguna sudah sedang berinteraksi (mengisi alasan) — beri waktu GPS sedikit lebih lama daripada saat scan.
 	const gps = await quickPosition(4000);
 	return post('/api/equipment/handover', { code, reason, gps, clientEventId: crypto.randomUUID() });
+}
+
+// ── Jembatan stiker lama EPI:ITEM:<id> & Hub Equipment 360° ───────────────────────────────────────────────────────────
+export interface BridgeItemInfo {
+	id: number;
+	nama_barang_lengkap: string | null;
+	kode_item: string | null;
+	satuan: string | null;
+	id_equipment: string | null;
+	nomor_polisi: string | null;
+	parent_category: number | null;
+}
+
+export type ResolveItemResult =
+	| { kind: 'equipment'; code: string; equipmentId: string; name: string; item: BridgeItemInfo }
+	| { kind: 'item'; item: BridgeItemInfo };
+
+/** EPI:ITEM:<id> → equipment bila master barang tertaut ke unit aset; selain itu info barang stok (nama & kode lengkap). */
+export function resolveItemQr(itemId: number): Promise<ResolveItemResult> {
+	return post<ResolveItemResult>('/api/equipment/resolve-item', { itemId });
+}
+
+export type HubSectionName = 'summary' | 'repair' | 'p2h' | 'purchase' | 'usage' | 'pelatihan';
+
+/** Satu bagian Hub (dimuat saat tab dibuka — hemat kuota). Menghormati 404 (tab dinonaktifkan) lewat EquipmentVerifyError. */
+export async function fetchHubSection<T = any>(equipmentId: string, section: HubSectionName): Promise<T> {
+	const user = auth.currentUser;
+	if (!user) throw new EquipmentVerifyError('Sesi tidak ditemukan. Silakan login ulang.', 401);
+	const idToken = await user.getIdToken();
+	const res = await fetch(`/api/equipment/hub/${encodeURIComponent(equipmentId)}?section=${section}`, {
+		headers: { Authorization: `Bearer ${idToken}` }
+	});
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({}));
+		throw new EquipmentVerifyError(body?.message || `Gagal memuat (${res.status}).`, res.status);
+	}
+	return res.json();
 }

@@ -31,7 +31,7 @@
 
 	onMount(async () => {
 		try {
-			requisition = await getRequisitionDetail(page.params.id);
+			requisition = await getRequisitionDetail(page.params.id as string);
 		} catch (e: any) {
 			error = e?.message || 'Gagal memuat detail pengajuan';
 		} finally {

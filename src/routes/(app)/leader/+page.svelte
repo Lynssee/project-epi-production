@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PosisiLiniCard from '$lib/components/strategy/PosisiLiniCard.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -13,7 +14,9 @@
 	import LeaderTimeline from '$lib/components/leader/LeaderTimeline.svelte';
 	import LeaderKesiapanCard from '$lib/components/leader/LeaderKesiapanCard.svelte';
 	import LeaderDailyDisciplineCard from '$lib/components/leader/LeaderDailyDisciplineCard.svelte';
+	import GateKpiSayaCard from '$lib/components/ess/GateKpiSayaCard.svelte';
 	import LeaderKpiEarlyWarningBanner from '$lib/components/leader/LeaderKpiEarlyWarningBanner.svelte';
+	import LeaderKpiDampakCard from '$lib/components/leader/LeaderKpiDampakCard.svelte';
 	import TugasSayaAlurCard from '$lib/components/ess/TugasSayaAlurCard.svelte';
 	import LeaderSopTahapCard from '$lib/components/leader/LeaderSopTahapCard.svelte';
 	import { getIdToken } from '$lib/services/secureDirectus';
@@ -188,6 +191,8 @@
 		{/if}
 	</p>
 
+	<div class="mb-4"><PosisiLiniCard /></div>
+
 	{#if newAssignments.length}
 		<div class="rounded-xl border p-3.5 mb-4" style="border-color: var(--g); background: var(--pl)">
 			<p class="text-[13px] font-bold mb-0.5" style="color: var(--pd)">Penugasan Baru ({newAssignments.length})</p>
@@ -254,17 +259,24 @@
 		<LeaderTimeline karyawanId={$authStore.karyawanId} karyawanName={$authStore.karyawanName} />
 	{/if}
 
+	<a href="/leader/kpi-saya" class="flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-[13px] font-semibold" style="border-color: var(--sys-sep); color: var(--sys-label)" title="Health Score, P2H, PM per proyek yang Anda pimpin">
+		<span>📈 KPI Saya — Health Score &amp; peralatan per proyek</span><span style="color: var(--pd)">&rarr;</span>
+	</a>
+
 	<LeaderKpiEarlyWarningBanner departemen="Project" projectIds={projects.map((p) => p.id)} />
+
+	<LeaderKpiDampakCard />
 
 	{#if projects.length}
 		<LeaderDailyDisciplineCard projectIds={projects.map((p) => p.id)} {equipmentIds} />
+		<GateKpiSayaCard />
 		<LeaderKesiapanCard projectIds={projects.map((p) => p.id)} />
 		<!-- SOP yang ditandai relevan untuk TAHAP proyek yang sedang berjalan (maks. 2 tahap × 3 SOP). Diam bila belum ada SOP bertahap. -->
 		<LeaderSopTahapCard {projects} />
 	{/if}
 
 	<!-- SOP yang relevan untuk jabatan ini saja (maks. 4 langkah, ber-SLA dulu) — bukan ratusan SOP. Fail-soft: tanpa data kartu tak tampil. -->
-	<TugasSayaAlurCard />
+	<TugasSayaAlurCard cacheOwner={$authStore.karyawanId} />
 
 	{#if loading}
 		<div class="flex flex-col items-center justify-center py-16">

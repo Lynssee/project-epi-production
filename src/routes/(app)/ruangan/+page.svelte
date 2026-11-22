@@ -12,7 +12,7 @@
 	import { goto } from '$app/navigation';
 	import { fetchDaftarRuangan, cariBarang, type RuanganRingkas, type CariBarangHit } from '$lib/services/gaRuangan';
 	import { resolveCheckpoint } from '$lib/services/gaChecklist';
-	import { routeCheckpointScan } from '$lib/utils/checkpointScanRoute';
+	import { routeCheckpointScan, cleanCheckpointCode } from '$lib/utils/checkpointScanRoute';
 	import { IconLoader2, IconAlertTriangle, IconQrcode, IconSearch, IconChevronRight, IconPackage } from '@tabler/icons-svelte';
 
 	let status = $state<'loading' | 'error' | 'ok'>('loading');
@@ -32,7 +32,8 @@
 	async function onScanDetect(code: string) {
 		scanOpen = false;
 		try {
-			const result = await resolveCheckpoint(code);
+			const cpCode = cleanCheckpointCode(code);
+			const result = await resolveCheckpoint(cpCode);
 			const { url } = routeCheckpointScan(result, { scanRouteMode: result.scan_route_mode });
 			await goto(url);
 		} catch (err) {

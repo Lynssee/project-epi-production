@@ -22,7 +22,7 @@
 	import { get } from 'svelte/store';
 	import { IconArrowLeft, IconCamera, IconCheck, IconClock } from '@tabler/icons-svelte';
 
-	const projectId = $page.params.project_id;
+	const projectId = $page.params.project_id as string;
 
 	let loading = $state(true);
 	let project = $state<any>(null);
@@ -79,7 +79,7 @@
 
 			const grouped = new Map<string, SubtaskDocumentationRow[]>();
 			for (const d of docs) {
-				const k = subKey(d.task_index, d.subtask_index);
+				const k = subKey(d.task_index as number, d.subtask_index as number);
 				if (!grouped.has(k)) grouped.set(k, []);
 				grouped.get(k)!.push(d);
 			}

@@ -3,6 +3,7 @@
 
 import { directusServerJson } from '$lib/server/directus';
 import { hitungPilar, loadPilarConfig, type PilarKaryawan } from '$lib/server/ess/kpiPilar';
+import { bedahIndikator } from '$lib/server/ess/kpiBedah';
 
 export interface KpiTarget {
 	id: string;
@@ -216,7 +217,8 @@ export async function listKpiKaryawan(karyawanId: number): Promise<KpiRecord[]> 
 	const pilarCfg = await loadPilarConfig();
 	const records: KpiRecord[] = (result?.data || []).map(({ sumber_perhitungan, ...rec }) => ({
 		...rec,
-		pilar: hitungPilar({ departemen: (rec as { departemen?: string | null }).departemen, targets: rec.targets, sumber_perhitungan }, pilarCfg)
+		pilar: hitungPilar({ departemen: (rec as { departemen?: string | null }).departemen, targets: rec.targets, sumber_perhitungan }, pilarCfg),
+		indikator: bedahIndikator({ targets: rec.targets, sumber_perhitungan }, pilarCfg.overrideMap)
 	}));
 	const withCutoff = await attachCutoffInfo(records);
 	return attachRank(withCutoff);
@@ -381,4 +383,74 @@ export async function submitSelfReview(
 		body: JSON.stringify(payload)
 	});
 	return result.data;
+}
+
+export interface GayaKerjaSummary {
+	available: boolean;
+	profil: string | null;
+	primaryLetter: string | null;
+	dimensiLabel: string | null;
+	kekuatan: string | null;
+	tipPengembangan: string | null;
+	tanggalTes: string | null;
+}
+
+export async function getMyGayaKerja(karyawanId: number): Promise<GayaKerjaSummary> {
+	try {
+		const res = await directusServerJson<{ data: { profil_utama: string; tanggal_tes: string }[] }>(
+			`/items/karyawan_assessment_result?filter[karyawan_id][_eq]=${karyawanId}&filter[jenis_asesmen][_eq]=disc&fields=profil_utama,tanggal_tes&sort=-tanggal_tes&limit=1`
+		);
+		const row = res?.data?.[0];
+		if (!row?.profil_utama) {
+			return {
+				available: false,
+				profil: null,
+				primaryLetter: null,
+				dimensiLabel: null,
+				kekuatan: null,
+				tipPengembangan: null,
+				tanggalTes: null
+			};
+		}
+		const p = String(row.profil_utama).trim();
+		const letter = p.charAt(0).toUpperCase();
+		const labels: Record<string, string> = {
+			D: 'Dominance — Berorientasi Hasil & Tegas',
+			I: 'Influence — Komunikatif & Memotivasi Tim',
+			S: 'Steadiness — Stabil, Sabar & Andal',
+			C: 'Conscientiousness — Teliti & Taat Standar SOP'
+		};
+		const strengths: Record<string, string> = {
+			D: 'Cepat mengambil keputusan, berani memecahkan kebuntuan di lapangan, dan fokus menyelesaikan target.',
+			I: 'Mampu membangun suasana kerja positif, menggerakkan rekan tim, dan menjembatani komunikasi.',
+			S: 'Sangat konsisten, loyal terhadap proses, telaten dalam pekerjaan berulang, dan menjaga keharmonisan kru.',
+			C: 'Sangat teliti memeriksa checklist peralatan, menjaga akurasi laporan teknis, dan patuh pada prosedur mutu.'
+		};
+		const growthTips: Record<string, string> = {
+			D: 'Berikan ruang bagi rekan kerja untuk menyampaikan masukan; dengarkan kendala tim sebelum mengeksekusi keputusan cepat.',
+			I: 'Jaga fokus pada dokumentasi tertulis dan checklist detail agar tidak ada instruksi teknis yang terlewat.',
+			S: 'Latih keberanian menyuarakan kendala lapangan lebih awal dan beradaptasi fleksibel saat ada perubahan darurat.',
+			C: 'Hindari over-analisis saat situasi darurat lapangan membutuhkan keputusan taktis yang cepat namun tetap aman.'
+		};
+		return {
+			available: true,
+			profil: p,
+			primaryLetter: letter,
+			dimensiLabel: labels[letter] || p,
+			kekuatan: strengths[letter] || 'Memiliki gaya kerja yang adaptif dan kontributif bagi regu.',
+			tipPengembangan: growthTips[letter] || 'Terus kembangkan komunikasi dua arah dengan Project Leader.',
+			tanggalTes: row.tanggal_tes ? String(row.tanggal_tes).slice(0, 10) : null
+		};
+	} catch (e: any) {
+		console.warn('[getMyGayaKerja] gagal:', e?.message || e);
+		return {
+			available: false,
+			profil: null,
+			primaryLetter: null,
+			dimensiLabel: null,
+			kekuatan: null,
+			tipPengembangan: null,
+			tanggalTes: null
+		};
+	}
 }

@@ -27,7 +27,7 @@ const append = vi.fn(async (p: any) => ({ entry: { id: 1, ...p }, deduped: false
 const rebuild = vi.fn(async () => {});
 vi.mock('$lib/server/projectLedger', () => ({
 	appendLedgerEntry: (p: any) => append(p),
-	rebuildProjectStockBalance: (p: any) => rebuild(p),
+	rebuildProjectStockBalance: (p: any) => (rebuild as any)(p),
 	TRANSACTION_TYPES: { IN_RECEIPT: 'IN-RECEIPT' }
 }));
 

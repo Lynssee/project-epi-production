@@ -15,6 +15,7 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { requireUser } from '$lib/server/firebaseAuth';
 import { getKaryawanByFirebaseUid } from '$lib/server/approvalSubmit';
 import { directusServerJson, directusServerUpload } from '$lib/server/directus';
+import { autoWoIdentity } from '$lib/server/preventive/woNumber';
 
 const WO_IDS = {
 	DARURAT: 'c8006ed8-b434-402f-9fb0-97c2f5284a42',
@@ -117,6 +118,7 @@ export async function POST(event: RequestEvent) {
 		const created = await directusServerJson<{ data: any }>('/items/work_order', {
 			method: 'POST',
 			body: JSON.stringify({
+				...(await autoWoIdentity(new Date().toISOString().slice(0, 10))), // wo_number + created_at wajib (KPI & Laporan Bulanan membaca keduanya)
 				equipment_id: draft.equipmentId,
 				keluhan,
 				kategori_perbaikan_id: draft.urgency === 'darurat' ? WO_IDS.DARURAT : WO_IDS.MINOR,

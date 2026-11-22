@@ -44,8 +44,8 @@ describe('PdfFetchSheet', () => {
 		vi.stubGlobal('fetch', f);
 		await render({});
 		expect(f).toHaveBeenCalledTimes(1);
-		expect(f.mock.calls[0][0]).toBe('/api/x/pdf?alur=a');
-		expect((f.mock.calls[0][1] as any).headers.Authorization).toBe('Bearer tok-123');
+		expect((f.mock.calls as any[][])[0][0]).toBe('/api/x/pdf?alur=a');
+		expect(((f.mock.calls as any[][])[0][1] as any).headers.Authorization).toBe('Bearer tok-123');
 		expect(container!.querySelector('[data-testid="pdf-viewer-stub"]')).not.toBeNull();
 		expect(container!.textContent).toContain('Bagikan PDF');
 	});

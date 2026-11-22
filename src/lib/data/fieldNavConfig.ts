@@ -194,6 +194,14 @@ export const FIELD_NAV_ITEMS: FieldNavItem[] = [
 		permissions: ['access_ess'],
 		keywords: 'pengumuman berita edaran memo internal kabar kantor kabar direksi hari libur'
 	},
+	{
+		id: 'ess-referral',
+		title: 'Rekomendasi Relasi (Internal Referral)',
+		parent: 'Portal Karyawan',
+		href: '/ess/referral',
+		permissions: ['access_ess'],
+		keywords: 'referral rekomendasi relasi teman lowongan kerja bonus rekrutmen lamaran karir'
+	},
 
 	// ── Project & Proyek Lapangan ──
 	{
@@ -237,6 +245,13 @@ export const FIELD_NAV_ITEMS: FieldNavItem[] = [
 		keywords: 'mutasi barang transfer barang antar proyek pindah stok kirim material ke proyek lain'
 	},
 	{
+		id: 'laporan-saya',
+		title: 'Laporan Saya',
+		parent: 'Project Lapangan',
+		href: '/laporan-saya',
+		keywords: 'laporan saya katalog daftar laporan unduh cetak favorit pusat laporan'
+	},
+	{
 		id: 'laporan-harian',
 		title: 'Laporan Harian Proyek',
 		parent: 'Project Lapangan',
@@ -251,6 +266,14 @@ export const FIELD_NAV_ITEMS: FieldNavItem[] = [
 		href: '/leader',
 		permissions: ['view_all_projects', 'view_own_projects'],
 		keywords: 'leader regu mandor pengawas foreman tim kerja pembagian kelompok shift'
+	},
+	{
+		id: 'leader-kpi-saya',
+		title: 'KPI Saya (Leader)',
+		parent: 'Project Lapangan',
+		href: '/leader/kpi-saya',
+		permissions: ['view_all_projects', 'view_own_projects'],
+		keywords: 'kpi saya leader health score kinerja proyek p2h pm wo skor'
 	},
 	{
 		id: 'timeline-jadwal',

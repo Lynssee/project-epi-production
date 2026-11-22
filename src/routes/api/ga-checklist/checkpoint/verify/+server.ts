@@ -5,6 +5,7 @@ import { directusServerJson } from '$lib/server/directus';
 import { withinRadius } from '$lib/server/ess/geo';
 import { todayJakarta } from '$lib/server/ess/time';
 import { getPatrolControlSettings } from '$lib/server/patrolControlSettings';
+import { cleanCheckpointCode } from '$lib/utils/checkpointScanRoute';
 
 /**
  * 1.6/1.7 (Kontrol Patroli Fase 1) — GPS enforcement configurable via app_settings
@@ -71,7 +72,8 @@ async function alertGpsAnomaly(checkpoint: any, jarak: number | null): Promise<v
 export const POST: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
 	const body = await event.request.json().catch(() => null);
-	const code = String(body?.code || '').trim();
+	const rawCode = String(body?.code || '').trim();
+	const code = cleanCheckpointCode(rawCode);
 	const areaId = Number(body?.area_id) || null;
 	const routeId = Number(body?.route_id) || null;
 	const lat = body?.lat ? Number(body.lat) : null;

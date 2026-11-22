@@ -5,7 +5,6 @@
 	// form P2H/PM yang sudah padat supaya tidak menambah risiko ke alur input yang sudah jalan.
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
 	import { getEquipmentById, getEquipmentTimeline, getDuePmTasks, type EquipmentTimelineEntry } from '$lib/services/preventive';
 	import { getAssetOwnershipSummary, type AssetOwnershipSummary } from '$lib/services/assetOwnership';
 	import IconArrowLeft from '@tabler/icons-svelte/icons/arrow-left';
@@ -16,6 +15,7 @@
 	import IconClock from '@tabler/icons-svelte/icons/clock';
 	import IconShare2 from '@tabler/icons-svelte/icons/share-2';
 	import FieldExportSheet from '$lib/components/shared/FieldExportSheet.svelte';
+	import EquipmentHub from '$lib/components/equipment/EquipmentHub.svelte';
 
 	// Fase 4 (implementation_plan_ai_pertajam.md, rekomendasi #6 lapangan "Equipment QR Hub"):
 	// halaman ini SUDAH punya timeline gabungan WO+P2H+Tiket+PM sejak restrukturisasi B4 —
@@ -66,7 +66,12 @@
 		}))
 	);
 
-	onMount(async () => {
+	// Hub 360° di atas memuat ringkasan + tab on-demand. Timeline gabungan & TCO (tampilan lama) hanya dimuat saat bagian
+	// "Timeline lengkap" dibuka — hemat API di HP lapangan.
+	let legacyRequested = false;
+	async function loadLegacy() {
+		if (legacyRequested) return;
+		legacyRequested = true;
 		try {
 			[equipment, entries, pmDue, ownership] = await Promise.all([
 				getEquipmentById(equipmentId),
@@ -79,7 +84,7 @@
 		} finally {
 			loading = false;
 		}
-	});
+	}
 
 	function iconFor(type: EquipmentTimelineEntry['type']) {
 		if (type === 'wo') return IconTool;
@@ -118,7 +123,12 @@
 	<h1 class="text-xl font-bold mb-1" style="color: var(--sys-label)">
 		Info Unit{equipment?.name ? `: ${equipment.name}` : ''}
 	</h1>
-	<p class="text-[12px] mb-6" style="color: var(--sys-label3)">Status, WO aktif, jadwal PM, dan riwayat lengkap unit ini</p>
+	<p class="text-[12px] mb-4" style="color: var(--sys-label3)">Hub 360°: status, aktivitas, dan log perbaikan / P2H / pembelian / pemakaian unit ini</p>
+
+	<EquipmentHub {equipmentId} />
+
+	<details class="mt-6" ontoggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) loadLegacy(); }}>
+		<summary class="text-[12px] font-semibold cursor-pointer mb-3" style="color: var(--sys-label3)" title="Timeline gabungan semua jenis catatan, biaya kepemilikan (TCO), dan ekspor CSV">Timeline lengkap, Biaya Kepemilikan & Ekspor</summary>
 
 	{#if loading}
 		<div class="flex flex-col items-center justify-center py-16">
@@ -240,6 +250,7 @@
 			{/each}
 		</ul>
 	{/if}
+	</details>
 </div>
 
 <FieldExportSheet

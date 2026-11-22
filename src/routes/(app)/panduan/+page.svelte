@@ -11,6 +11,8 @@
   import { fetchPanduanContent, fetchPanduanBookmarks, addPanduanBookmark, removePanduanBookmark } from '$lib/services/panduanApi';
   import { sanitizeRichHtml, resolveRichImages } from '$lib/utils/richContent';
   import PanduanBlocks from '$lib/components/help/PanduanBlocks.svelte';
+  import { PROCESS_FLOWS } from '$lib/data/processGuidance';
+  import { searchHelpEntities } from '$lib/utils/universalHelpSearch';
 
   // §6 Fase 1 wiring baca (implementation_plan_panduan pertajam.md): coba
   // Directus dulu (diisi editor §6 Fase 2 di erp-epi-1), fallback ke
@@ -58,6 +60,27 @@
 
   let keyword = $state('');
   let modulAktif = $state<ModulPanduan | null>(null);
+
+  // Pemetaan modul ke Alur Kerja Lapangan (Deep-link ke /panduan/alur?alur=...)
+  const MODUL_TO_FLOW: Record<string, string> = {
+    project: 'pelaksanaan_proyek_lapangan',
+    'manpower-borongan': 'pelaksanaan_proyek_lapangan',
+    qa: 'pelaksanaan_proyek_lapangan',
+    maintenance: 'maintenance_wo',
+    'maintenance-komponen': 'maintenance_wo',
+    fleet: 'maintenance_wo',
+    sales: 'sales_to_inventory',
+    inventory: 'sales_to_inventory',
+    procurement: 'procurement_to_pay',
+    pengajuan: 'pengajuan_anggaran',
+    'kasbon-terpusat': 'pengajuan_anggaran',
+    production: 'produksi_cat',
+    rnd: 'produksi_cat',
+    rmc: 'produksi_cat',
+    finance: 'penagihan_piutang_ar'
+  };
+
+  let relatedFlowId = $derived(modulAktif ? MODUL_TO_FLOW[modulAktif.id] || null : null);
   let langkahTerbuka = $state<Record<string, boolean>>({});
   let faqTerbuka = $state<Record<string, boolean>>({});
   let kategoriTerbuka = $state<Record<string, boolean>>({});
@@ -92,6 +115,15 @@
   kategoriModul.forEach((k) => (kategoriTerbuka[k.id] = true));
 
   let modulFiltered = $derived(searchModul(keyword));
+  let unifiedResults = $derived(
+    searchHelpEntities(keyword, {
+      modulDokumentasi,
+      processFlows: PROCESS_FLOWS,
+      faqs: modulDokumentasi.flatMap((m) =>
+        (m.faq || []).map((f) => ({ ...f, modulId: m.id, modulNama: m.nama }))
+      )
+    })
+  );
 
   $effect(() => {
     if (keyword) {
@@ -207,12 +239,31 @@
         <p class="text-xs sm:text-sm text-gray-500 mt-0.5 hidden sm:block">Panduan lengkap penggunaan aplikasi Dashboard Lapangan</p>
       </div>
       <div class="flex items-center gap-2">
-        <a
-          href="/bantuan?tab=sop"
-          class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
-        >
-          <span>📜 Direktori SOP &amp; K3 Lapangan →</span>
-        </a>
+        <!-- Quick Nav Chips Desktop -->
+        <div class="hidden sm:flex items-center gap-1 bg-gray-100 p-1 rounded-xl text-xs font-semibold">
+          <span class="px-2.5 py-1 rounded-lg bg-white text-gray-900 shadow-2xs font-bold">
+            📘 Panduan Modul
+          </span>
+          <a
+            href="/panduan/alur"
+            class="px-2.5 py-1 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-white/60 transition-colors"
+          >
+            🗺️ Alur &amp; Buku Saku
+          </a>
+          <a
+            href="/bantuan?tab=sop"
+            class="px-2.5 py-1 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-white/60 transition-colors"
+          >
+            📜 SOP &amp; K3
+          </a>
+          <a
+            href="/bantuan?tab=untuk-anda"
+            class="px-2.5 py-1 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-white/60 transition-colors"
+          >
+            🎯 Untuk Anda
+          </a>
+        </div>
+
         <!-- Hamburger untuk sidebar di mobile -->
         <button
           onclick={() => mobileSidebarOpen = !mobileSidebarOpen}
@@ -227,10 +278,20 @@
     </div>
   </div>
 
-  <!-- Mobile quick link banner -->
-  <div class="sm:hidden bg-indigo-50 border-b border-indigo-100 px-4 py-2 flex items-center justify-between text-xs">
-    <span class="text-indigo-900 font-medium">Butuh SOP K3 atau instruksi proyek?</span>
-    <a href="/bantuan?tab=sop" class="font-bold text-indigo-700 underline">Buka SOP Lapangan →</a>
+  <!-- Mobile quick link bar (scrollable horizontal pills) -->
+  <div class="sm:hidden bg-slate-100 border-b border-gray-200 px-3 py-2 flex items-center gap-1.5 overflow-x-auto text-xs no-scrollbar">
+    <span class="px-2.5 py-1 rounded-lg bg-white text-gray-900 font-bold shadow-2xs flex-shrink-0">
+      📘 Panduan
+    </span>
+    <a href="/panduan/alur" class="px-2.5 py-1 rounded-lg bg-white/70 text-gray-700 hover:bg-white flex-shrink-0">
+      🗺️ Alur &amp; Buku Saku
+    </a>
+    <a href="/bantuan?tab=sop" class="px-2.5 py-1 rounded-lg bg-white/70 text-gray-700 hover:bg-white flex-shrink-0">
+      📜 SOP &amp; K3
+    </a>
+    <a href="/bantuan?tab=untuk-anda" class="px-2.5 py-1 rounded-lg bg-white/70 text-gray-700 hover:bg-white flex-shrink-0">
+      🎯 Untuk Anda
+    </a>
   </div>
 
   <!-- Mobile sidebar backdrop -->
@@ -293,27 +354,58 @@
       <!-- Daftar modul -->
       <nav class="flex-1 overflow-y-auto py-2">
         {#if keyword}
-          <!-- Mode pencarian: tampilkan flat list -->
-          <div class="px-3 py-1 text-xs text-gray-400 font-medium uppercase tracking-wide">
-            {modulFiltered.length} hasil ditemukan
+          <!-- Mode pencarian terpadu 4-in-1 (Modul + Alur + FAQ) -->
+          <div class="px-3 py-1 text-xs text-gray-500 font-bold border-b border-gray-100 flex items-center justify-between">
+            <span>Hasil ({unifiedResults.length})</span>
+            <span class="text-[10px] text-gray-400 font-normal">Modul · Alur · FAQ</span>
           </div>
-          {#each modulFiltered as modul}
-            <button
-              onclick={() => pilihModul(modul)}
-              class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 transition-colors
-                {modulAktif?.id === modul.id
-                  ? 'bg-blue-50 text-[var(--p)] font-medium border-l-2 border-[var(--p)]'
-                  : 'text-gray-700 hover:bg-gray-50'}"
-            >
-              <span class="truncate">{modul.nama}</span>
-            </button>
+
+          {#each unifiedResults as item}
+            {#if item.type === 'modul'}
+              <button
+                onclick={() => pilihModul(item.data)}
+                class="w-full text-left px-3 py-2 text-xs flex items-start gap-2 transition-colors border-b border-gray-50
+                  {modulAktif?.id === item.data.id ? 'bg-blue-50 text-[var(--p)] font-bold' : 'text-gray-700 hover:bg-gray-50'}"
+              >
+                <span class="text-sm mt-0.5">📘</span>
+                <div class="min-w-0 flex-1">
+                  <div class="font-semibold truncate">{item.title}</div>
+                  {#if item.subtitle}
+                    <div class="text-[10px] text-gray-400 truncate">{item.subtitle}</div>
+                  {/if}
+                </div>
+              </button>
+            {:else if item.type === 'alur'}
+              <a
+                href="/panduan/alur?alur={item.data.flow.id}"
+                class="w-full text-left px-3 py-2 text-xs flex items-start gap-2 transition-colors border-b border-gray-50 text-emerald-800 hover:bg-emerald-50/60"
+              >
+                <span class="text-sm mt-0.5">🗺️</span>
+                <div class="min-w-0 flex-1">
+                  <div class="font-semibold truncate">{item.title}</div>
+                  <div class="text-[10px] text-emerald-600 truncate">{item.subtitle || 'Buka Peta Alur'}</div>
+                </div>
+              </a>
+            {:else if item.type === 'faq'}
+              <button
+                onclick={() => {
+                  const m = getModulById(item.data.modulId);
+                  if (m) pilihModul(m);
+                }}
+                class="w-full text-left px-3 py-2 text-xs flex items-start gap-2 transition-colors border-b border-gray-50 text-amber-800 hover:bg-amber-50/60"
+              >
+                <span class="text-sm mt-0.5">❓</span>
+                <div class="min-w-0 flex-1">
+                  <div class="font-semibold line-clamp-1">{item.title}</div>
+                  <div class="text-[10px] text-gray-500 line-clamp-1">{item.snippet}</div>
+                </div>
+              </button>
+            {/if}
           {/each}
-          {#if modulFiltered.length === 0}
-            <div class="px-4 py-6 text-center text-sm text-gray-400">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 mx-auto mb-2 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Tidak ada modul yang cocok
+
+          {#if unifiedResults.length === 0}
+            <div class="px-4 py-6 text-center text-xs text-gray-400">
+              Tidak ada hasil yang cocok untuk "<strong>{keyword}</strong>"
             </div>
           {/if}
         {:else}
@@ -376,7 +468,16 @@
                 <h2 class="text-xl sm:text-2xl font-bold text-gray-900 mt-2">{modulAktif.nama}</h2>
                 <p class="text-gray-600 mt-1 text-sm leading-relaxed">{modulAktif.deskripsi}</p>
               </div>
-              <div class="flex-shrink-0 flex gap-2">
+              <div class="flex-shrink-0 flex items-center gap-2">
+                {#if relatedFlowId}
+                  <a
+                    href="/panduan/alur?alur={relatedFlowId}"
+                    class="hidden sm:inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-lg hover:bg-emerald-100 transition-colors"
+                    title="Buka Peta Alur Bisnis & Buku Saku yang mengatur alur modul ini"
+                  >
+                    <span>🗺️ Alur &amp; Buku Saku</span>
+                  </a>
+                {/if}
                 <a
                   href={modulAktif.href}
                   class="flex items-center justify-center gap-1.5 px-4 py-2 bg-[var(--p)] text-white text-sm font-medium rounded-lg hover:bg-[var(--p-hover, var(--p))] transition-colors"
@@ -396,6 +497,36 @@
               </div>
             </div>
           </div>
+
+          <!-- Strip Alur Bisnis & Buku Saku Kontekstual -->
+          {#if relatedFlowId}
+            <div class="mb-5 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50/50 border border-emerald-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div class="flex items-start gap-2.5">
+                <span class="text-xl">🗺️</span>
+                <div>
+                  <h4 class="text-xs font-bold text-gray-900">Alur Standar &amp; Buku Saku Lapangan</h4>
+                  <p class="text-[11px] text-gray-600 mt-0.5">
+                    Lihat tahapan PIC, checklist gate, dan download Buku Saku offline untuk modul <strong>{modulAktif.nama}</strong>.
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 flex-shrink-0">
+                <a
+                  href="/panduan/alur?alur={relatedFlowId}"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs transition-colors"
+                >
+                  <span>Buka Peta Alur</span>
+                  <span>→</span>
+                </a>
+                <a
+                  href="/bantuan?tab=sop"
+                  class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <span>📜 SOP Resmi</span>
+                </a>
+              </div>
+            </div>
+          {/if}
 
           <!-- Langkah-langkah -->
           <div class="mb-5">

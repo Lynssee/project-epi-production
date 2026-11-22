@@ -260,7 +260,7 @@
 
 	// §7 rekomendasi L4 — satu dokumen retur bisa membawa material DAN alat sekaligus
 	// (realitas demobilisasi: satu truk, satu kali kirim), bukan dua dokumen terpisah.
-	let projectEquipment = $state<Array<{ id: string; equipment?: { name?: string; code?: string } | null; start_date?: string; end_date_planned?: string | null }>>([]);
+	let projectEquipment = $state<Array<{ id: string; equipment?: { name?: string; code?: string; ownership_type?: string; owner_name?: string | null } | null; ownership_type?: string; owner_name?: string | null; start_date?: string; end_date_planned?: string | null }>>([]);
 	let selectedEquipment = $state<Set<string>>(new Set());
 	let loadingEquipment = $state(false);
 
@@ -791,7 +791,7 @@
 				// sudah membawa identitas_barang_id — teruskan ke packing_returns.item_id.
 				item_id: unwrapId(item.identitas_barang_id)
 			};
-			const err = validateReturnItem({ ...candidate, leader_notes: candidate.leader_notes || '' });
+			const err = validateReturnItem({ ...candidate, reason_code: candidate.reason_code as any, leader_notes: candidate.leader_notes || '' });
 			if (err) return { items: [], photoKeys: [], error: `"${candidate.material_name}": ${err}` };
 			items.push(candidate);
 			photoKeys.push(cond !== 'ok' ? key : null);
@@ -823,7 +823,7 @@
 				reason_code: item.reason_code || undefined,
 				item_id: item.item_id
 			};
-			const err = validateReturnItem({ ...candidate, leader_notes: candidate.leader_notes || '' });
+			const err = validateReturnItem({ ...candidate, reason_code: candidate.reason_code as any, leader_notes: candidate.leader_notes || '' });
 			if (err) return { items: [], photoKeys: [], error: `"${candidate.material_name || 'Barang manual'}": ${err}` };
 			items.push(candidate);
 			photoKeys.push(item.condition !== 'ok' ? item._key : null);

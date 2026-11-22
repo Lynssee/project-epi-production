@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { routeCheckpointScan, roomPageUrl, type ScanRouteMode } from './checkpointScanRoute.ts';
+import { routeCheckpointScan, roomPageUrl, cleanCheckpointCode, type ScanRouteMode } from './checkpointScanRoute.ts';
 
 const gaAssigned = { kind: 'ga' as const, schedule_id: 12, area_id: 29, template_id: 5, is_assigned: true };
 const gaNotAssigned = { kind: 'ga' as const, schedule_id: 'unscheduled', area_id: 29, template_id: 5, is_assigned: false };
@@ -62,4 +62,13 @@ test('kind ga tanpa area_id: jatuh ke checklist, TIDAK pernah /ruangan/undefined
 test('is_assigned undefined (server lama) diperlakukan sebagai non-petugas', () => {
 	const legacy = { kind: 'ga' as const, schedule_id: 'unscheduled', area_id: 7, template_id: 2 };
 	assert.equal(routeCheckpointScan(legacy, { scanRouteMode: 'auto' }).url, roomPageUrl(7));
+});
+
+test('cleanCheckpointCode membersihkan kode mentah, label QR prefix, dan URL /scan/...', () => {
+	assert.equal(cleanCheckpointCode('CP-KB-006'), 'CP-KB-006');
+	assert.equal(cleanCheckpointCode('  CP-KB-006  '), 'CP-KB-006');
+	assert.equal(cleanCheckpointCode('QR CP-KB-006'), 'CP-KB-006');
+	assert.equal(cleanCheckpointCode('qr cp-kb-006'), 'cp-kb-006');
+	assert.equal(cleanCheckpointCode('https://project.eltamaprimaindo.com/scan/CP-KB-006'), 'CP-KB-006');
+	assert.equal(cleanCheckpointCode('https://project.eltamaprimaindo.com/scan/CP-KB-006?foo=bar#target'), 'CP-KB-006');
 });

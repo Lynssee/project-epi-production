@@ -164,7 +164,7 @@ describe('timelineDisiplin.js - Pure Function Evaluator (project-epi)', () => {
       expect(res.scheduledCount).toBe(1);
       expect(res.unscheduledCount).toBe(2);
       expect(res.scheduledPct).toBe(33);
-      expect(res.unscheduledSubtasks.map((s) => s.subName)).toEqual(['Primer Coat', 'Finish Coat']);
+      expect(res.unscheduledSubtasks.map((/** @type {any} */ s) => s.subName)).toEqual(['Primer Coat', 'Finish Coat']);
       expect(res.missingPicCount).toBe(1);
       expect(res.missingPics[0].subName).toBe('Primer Coat');
     });

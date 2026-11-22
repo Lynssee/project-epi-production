@@ -9,6 +9,7 @@ import type { RequestHandler } from './$types';
 import { requireUser } from '$lib/server/firebaseAuth';
 import { fetchPenawaran } from '$lib/server/penawaranExport';
 import { buildPenawaranPdfBuffer } from '$lib/server/penawaranPdf';
+import { forwardReportEvent } from '$lib/server/reportEventForward';
 
 export const GET: RequestHandler = async (event) => {
 	await requireUser(event);
@@ -22,6 +23,7 @@ export const GET: RequestHandler = async (event) => {
 	try {
 		const buffer = await buildPenawaranPdfBuffer(data.header, data.items);
 		const safeNo = (data.header.nomor_penawaran || `penawaran-${id}`).replace(/[^\w.-]+/g, '-');
+		forwardReportEvent(event, { catalog_key: 'penawaran-pdf', format: 'pdf', entity_id: event.params?.id }); // Report Center: catat unduhan
 		return new Response(Uint8Array.from(buffer), {
 			headers: {
 				'Content-Type': 'application/pdf',

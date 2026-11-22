@@ -22,10 +22,16 @@ import { loadProjectStagesConfig } from '$lib/server/processProjectStagesConfig'
 import { buildChain } from '$lib/utils/processHandoffChain';
 import { loadGateInfoForFlow } from './gateInfo';
 import { searchKendala, MIN_QUERY } from './kendalaSearch';
+import { loadFieldHierarchyConfig } from './fieldHierarchyConfig';
 
 export const GET: RequestHandler = async (event) => {
 	await authenticateEss(event);
 	const params = event.url?.searchParams ?? new URLSearchParams();
+	// ?hierarchy_config=1: label hirarki & filter bawaan dari app_settings (cache 5 mnt, tanpa mengunduh daftar alur).
+	if (params.get('hierarchy_config') === '1') {
+		const config = await loadFieldHierarchyConfig();
+		return json({ success: true, source: 'directus', config });
+	}
 	// Kueri terlalu pendek: jawab kosong TANPA membaca alur (ketikan pertama tidak membebani server).
 	const kendala = params.get('kendala');
 	if (kendala !== null && kendala.trim().length < MIN_QUERY) return json({ success: true, hits: [] });

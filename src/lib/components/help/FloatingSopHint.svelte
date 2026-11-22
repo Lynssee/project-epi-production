@@ -103,18 +103,27 @@
 					</div>
 				{/if}
 
-				<!-- Tombol Menuju Alur Lengkap -->
-				<div class="pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
-					<a
-						href="/panduan/alur?kategori=turunan"
-						class="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-800 hover:underline"
-					>
-						<span>🗺️ Buka Peta Alur Lengkap</span>
-						<span>→</span>
-					</a>
+				<!-- Tombol Menuju Alur & SOP Ringkas -->
+				<div class="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between gap-1.5">
+					<div class="flex items-center gap-2">
+						<a
+							href="/panduan/alur?kategori=turunan"
+							class="inline-flex items-center gap-1 text-[10.5px] font-bold text-blue-700 hover:text-blue-800 hover:underline"
+						>
+							<span>📊 Alur Cepat</span>
+							<span>→</span>
+						</a>
+						<a
+							href="/panduan/alur?kategori=turunan&view=visual"
+							class="inline-flex items-center gap-1 text-[10.5px] font-bold text-teal-700 hover:text-teal-800 hover:underline"
+						>
+							<span>📸 Foto SOP</span>
+							<span>→</span>
+						</a>
+					</div>
 					<button
 						type="button"
-						class="px-2 py-1 text-[10.5px] font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg"
+						class="px-2 py-0.5 text-[10px] font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg"
 						onclick={() => (isOpen = false)}
 					>
 						Tutup

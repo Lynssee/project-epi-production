@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
+	import SopSayaWidget from '$lib/components/ess/SopSayaWidget.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { authStore } from '$lib/stores/auth';
@@ -141,6 +142,8 @@
 			<span>🔧 Panduan IK Mekanik</span>
 		</a>
 	</div>
+
+	<SopSayaWidget />
 
 	{#if loading}
 		<div class="flex flex-col items-center justify-center py-16">
@@ -301,6 +304,17 @@
 				<span class="text-sm font-bold" style="color: var(--sys-label)">Riwayat Perbaikan Unit</span>
 				<div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center transition-transform group-hover:translate-x-1">
 					<IconChevronRight size={18} style="color: var(--sys-label4)" />
+				</div>
+			</button>
+			<button
+				class="glass-panel hover-lift h-16 rounded-2xl flex items-center justify-between px-5 group focus:outline-none border border-indigo-200 bg-indigo-50/50"
+				onclick={() => goto('/ess/maintenance-kpi')}
+				title="Lihat rapor Anda: penyelesaian WO, MTTR, PM &amp; P2H yang Anda isi, serta filter WO terlambat / menunggu QC"
+				data-testid="aksi-rapor-saya"
+			>
+				<span class="text-sm font-bold text-indigo-700">Rapor Kinerja &amp; Kepatuhan Saya</span>
+				<div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center transition-transform group-hover:translate-x-1">
+					<IconChevronRight size={18} class="text-indigo-600" />
 				</div>
 			</button>
 			<button

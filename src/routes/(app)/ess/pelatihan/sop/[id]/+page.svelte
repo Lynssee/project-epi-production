@@ -4,10 +4,10 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { getSopDetail, confirmSopRead, submitSopUsulan, type SopDocument } from '$lib/services/ess/sop';
+	import { getSopDetail, confirmSopRead, submitSopUsulan, type SopDocument, type SopTrainingStatus } from '$lib/services/ess/sop';
 	import { JENIS_USULAN, CATATAN_MIN, CATATAN_MAX } from '$lib/utils/sopUsulan';
 	import { cacheSopDetail, getCachedSopDetail, enqueueSopConfirmation, registerSopAutoFlush } from '$lib/utils/offlineSopCache';
-	import { IconAlertTriangle, IconArrowLeft, IconCheck, IconClock, IconFileText, IconLoader2, IconPaperclip, IconWifiOff } from '@tabler/icons-svelte';
+	import { IconAlertTriangle, IconArrowLeft, IconCertificate, IconCheck, IconClock, IconFileText, IconLoader2, IconPaperclip, IconWifiOff } from '@tabler/icons-svelte';
 
 	const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_API_URL;
 	const ERP_BASE_URL =
@@ -21,6 +21,7 @@
 	let confirming = $state(false);
 	let sop = $state<SopDocument | null>(null);
 	let sudahKonfirmasi = $state(false);
+	let training = $state<SopTrainingStatus | null>(null);
 	let offlineMode = $state(false);
 	let confirmQueued = $state(false);
 	const sopId = $page.params.id as string;
@@ -33,6 +34,7 @@
 			const res = await getSopDetail(sopId);
 			sop = res.sop;
 			sudahKonfirmasi = res.sudahKonfirmasi;
+			training = res.training ?? null;
 			await cacheSopDetail(res.sop);
 		} catch (err: any) {
 			// R2: sinyal buruk di lapangan -- pakai salinan tersimpan bila ada, alih-alih error kosong.
@@ -168,6 +170,25 @@
 						</a>
 					{/each}
 				</div>
+			{/if}
+
+			{#if training}
+				<!-- Integrasi SOP ↔ Training: pintasan ke materi + kuis SOP ini (program sudah diterbitkan HRD & karyawan terdaftar). -->
+				{#if training.status === 'Lulus'}
+					<div class="rounded-xl p-3 flex items-center gap-2 text-sm font-bold" style="background: var(--rel); color: #16A34A">
+						<IconCertificate size={18} /> Tersertifikasi SOP{sop.sop_code ? ` ${sop.sop_code}` : ''} — pelatihan & kuis sudah lulus.
+					</div>
+				{:else}
+					<div class="rounded-xl p-3 space-y-2" style="background: var(--sys-fill2)">
+						<p class="text-sm font-bold">📌 SOP ini mewajibkan uji pemahaman</p>
+						<p class="text-xs" style="color: var(--sys-label3)">
+							Status: {training.status === 'Gagal' || training.status === 'Remedial' ? 'Belum lulus — ulangi materi & kuis' : training.progress > 0 ? `Sedang berjalan (${training.progress}%)` : 'Belum dimulai'}{training.tenggat ? ` · Tenggat ${training.tenggat}` : ''}
+						</p>
+						<button class="w-full px-4 py-3 rounded-xl text-sm font-bold text-white gradient-bg hover:opacity-90 transition-opacity shadow-lg" onclick={() => goto(`/ess/pelatihan/${training?.programId}`)}>
+							{training.progress > 0 ? 'Lanjutkan Pelatihan & Kuis →' : 'Ikuti Pelatihan & Kuis Sekarang →'}
+						</button>
+					</div>
+				{/if}
 			{/if}
 
 			<div class="pt-2 border-t" style="border-color: var(--sys-separator)">

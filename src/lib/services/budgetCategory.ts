@@ -196,3 +196,38 @@ export async function previewAttachment(
 		return { available: false, reason: (e as Error)?.message || 'gagal' };
 	}
 }
+
+// FIN-23 — penanda "wajib lewat PR/PO" (kolom opsional budget_category_config.wajib_po / po_arah_hint, dibuat Lead lewat
+// erp-epi scripts/setup-fin23-wajib-po.mjs). Query TERPISAH + fail-soft (kolom belum ada -> 403 -> peta kosong = tidak ada kewajiban).
+export interface BudgetCategoryPo { wajib_po: boolean; po_arah_hint: string | null }
+
+export async function getBudgetCategoryPoSettings(): Promise<Record<string, BudgetCategoryPo>> {
+	try {
+		const rows = (await directus.request(
+			readItems('budget_category_config' as any, { filter: { status: { _eq: 'active' } }, fields: ['kode', 'wajib_po', 'po_arah_hint'], limit: -1 })
+		)) as Array<{ kode: string; wajib_po?: boolean | null; po_arah_hint?: string | null }>;
+		const peta: Record<string, BudgetCategoryPo> = {};
+		for (const r of rows || []) peta[r.kode] = { wajib_po: r.wajib_po === true, po_arah_hint: r.po_arah_hint || null };
+		return peta;
+	} catch (e) {
+		console.warn('[budgetCategory] kolom wajib_po belum tersedia / gagal dibaca (tidak ada kategori wajib PR/PO):', e);
+		return {};
+	}
+}
+
+/** Nama akun COA untuk daftar kode (tampilan akun rekomendasi). Fail-soft: kembalikan peta kosong bila gagal. */
+export async function getNamaAkunCoa(kodeList: string[]): Promise<Record<string, string>> {
+	const kode = [...new Set((kodeList || []).filter(Boolean))];
+	if (!kode.length) return {};
+	try {
+		const rows = (await directus.request(
+			readItems('chart_of_accounts' as any, { filter: { account_code: { _in: kode } }, fields: ['account_code', 'account_name'], limit: -1 })
+		)) as Array<{ account_code: string; account_name: string }>;
+		return Object.fromEntries((rows || []).map((r) => [r.account_code, r.account_name]));
+	} catch (e) {
+		console.warn('[budgetCategory] nama akun COA gagal dimuat:', e);
+		return {};
+	}
+}
+
+export const PO_ARAH_DEFAULT = 'Kategori ini wajib melalui PR/PO (bukan pengajuan anggaran biasa) agar kontrak vendor, PPN, dan PPh sewa tercatat benar. Buat PR di menu Pengadaan, lalu ajukan pembayarannya dari PR/PO tersebut.';

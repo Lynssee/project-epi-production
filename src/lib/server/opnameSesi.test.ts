@@ -42,12 +42,61 @@ function setup(opts: { sessionMode?: string; status?: string; blind?: boolean } 
 		}
 		if (url.startsWith('/items/identitas_barang')) return { data: [{ id: 10, nama_barang_lengkap: 'Cat A', kode_item: 'CA', satuan: 'KG' }, { id: 11, nama_barang_lengkap: 'Cat B', kode_item: 'CB', satuan: 'PCS' }] };
 		if (url.startsWith('/items/gudang?')) return { data: [{ id: 2, kode_gudang: 'R-2', nama_gudang: 'Rak 2' }] };
+		if (url.startsWith('/items/projects/')) return { data: { id: 5, name: 'Proyek Jembatan Kapuas' } };
+		if (url.startsWith('/items/projects')) return { data: [{ id: 5, name: 'Proyek Jembatan Kapuas' }] };
 		throw new Error('mock: url tak dikenal ' + url);
 	});
 }
 beforeEach(() => setup());
 
+describe('listSesiAktif — gudang & site proyek', () => {
+	it('memuat sesi proyek dengan project_id dan project_nama', async () => {
+		directus.mockImplementation(async (url: string) => {
+			if (url.startsWith('/items/stock_opname_session?')) {
+				return {
+					data: [{
+						id: 2,
+						kode: 'OPN-PRJ-KAPUAS-2610-001',
+						status: 'counting',
+						scope_type: 'project',
+						project_id: 5,
+						gudang_id: null,
+						rak_id: null,
+						total_lines: 3,
+						counted_lines: 1,
+						pic_hitung: 'Budi'
+					}]
+				};
+			}
+			if (url.startsWith('/items/projects?')) return { data: [{ id: 5, name: 'Proyek Jembatan Kapuas' }] };
+			if (url.startsWith('/items/stock_opname_line?') && url.includes('aggregate')) return { data: [] };
+			return { data: [] };
+		});
+		const res = await m.listSesiAktif({ nama_karyawan: 'Budi' });
+		expect(res).toHaveLength(1);
+		expect(res[0]).toMatchObject({
+			id: 2,
+			kode: 'OPN-PRJ-KAPUAS-2610-001',
+			scope_type: 'project',
+			project_id: 5,
+			project_nama: 'Proyek Jembatan Kapuas',
+			mine: true
+		});
+	});
+});
+
 describe('getSesiLapangan — blind count di SERVER', () => {
+	it('sesi site proyek menyertakan scope_type dan project_nama', async () => {
+		header.scope_type = 'project';
+		header.project_id = 5;
+		const r = await m.getSesiLapangan(1);
+		expect(r.session).toMatchObject({
+			id: 1,
+			scope_type: 'project',
+			project_id: 5,
+			project_nama: 'Proyek Jembatan Kapuas'
+		});
+	});
 	it('blind: qty sistem tidak ikut terkirim', async () => {
 		const r = await m.getSesiLapangan(1);
 		expect(r.lines).toHaveLength(2);

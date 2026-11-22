@@ -590,7 +590,7 @@
 			</div>
 			<p class="text-sm font-bold text-red-400 mb-2">Gagal Memuat Kas Kecil</p>
 			<p class="text-xs text-slate-400 mb-4">{errorMsg}</p>
-			<button class="px-4 py-2 rounded-xl text-xs font-bold text-white gradient-bg" onclick={load}>
+			<button class="px-4 py-2 rounded-xl text-xs font-bold text-white gradient-bg" onclick={() => load()}>
 				Coba Lagi
 			</button>
 		</div>

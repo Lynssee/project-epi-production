@@ -10,6 +10,8 @@ export interface LemburRecord {
 	tanggal: string;
 	jam_mulai: string | null;
 	jam_selesai: string | null;
+	/** Durasi lembur (jam) hasil hitung server saat pengajuan. */
+	durasi_jam?: number | null;
 	alasan: string | null;
 	status: string;
 	approver_id: string | null;

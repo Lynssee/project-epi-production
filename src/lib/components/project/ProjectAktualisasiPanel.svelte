@@ -253,7 +253,7 @@
         form = emptyForm();
         showAddForm = false;
         await loadComparison();
-        toast.success(res.message);
+        toast.success(res.message ?? "");
       } else {
         toast.error(res.error || 'Gagal menyimpan');
       }
@@ -305,7 +305,7 @@
     if (res.success) {
       items = items.filter(i => i.id !== itemId);
       await loadComparison();
-      toast.success(res.message);
+      toast.success(res.message ?? "");
     } else {
       toast.error(res.error || 'Gagal menghapus');
     }
@@ -322,7 +322,7 @@
       try {
         const price = await getPriceBySJAndMaterial(form.reference_number, form.material_name);
         if (price > 0) {
-          form.unit_price = price;
+          form.unit_price = String(price);
           toast.success(`Harga otomatis diisi: ${formatRp(price)}`);
         }
       } catch (err) {

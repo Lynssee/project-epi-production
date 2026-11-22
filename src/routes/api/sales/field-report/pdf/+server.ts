@@ -12,6 +12,7 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireUser } from '$lib/server/firebaseAuth';
 import { htmlToPdf } from '$lib/server/gotenbergClient';
+import { forwardReportEvent } from '$lib/server/reportEventForward';
 
 const COMPANY = 'PT Eltama Prima Indo';
 const PRICE_RE = /(harga|margin|markup|hpp|cogs|nilai|omzet|amount|total_nilai|grand_total|subtotal|rupiah|rp\b)/i;
@@ -98,6 +99,7 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		const pdf = await htmlToPdf(html, { filename: 'field-report.html', landscape: columns.length > 6 });
 		const safe = title.replace(/[^\w.-]+/g, '-').slice(0, 60) || 'laporan';
+		forwardReportEvent(event, { catalog_key: 'sales-field-report', format: 'pdf' }); // Report Center: catat unduhan
 		return new Response(Uint8Array.from(pdf), {
 			headers: {
 				'Content-Type': 'application/pdf',

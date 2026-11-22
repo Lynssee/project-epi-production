@@ -400,12 +400,20 @@ async function bridgePenawaranToCrm(
 
 		// Nudge stage pipeline — forward-only & konservatif. Perpindahan ke won/lost
 		// tetap keputusan admin (suggest-only, Fase 3).
-		if (header.status === 'final' || header.status === 'sent') {
+		// Sinkron nilai SPH → prospek (akar KPI Pipeline Value Rp 0: prospek open tanpa quoted_amount).
+		// Nilai = grand_total SPH TERAKHIR yang disimpan untuk prospek ini; SPH ditolak/diarsipkan tidak menimpa.
+		const grandTotal = Number(header.grand_total) || 0;
+		const syncAmount = grandTotal > 0 && header.status !== 'rejected' && header.status !== 'archived';
+		const nudgeStage = header.status === 'final' || header.status === 'sent';
+		if (syncAmount || nudgeStage) {
 			const prospect = (await directus.request(
-				readItem(CRM_PROSPECTS, prospectId, { fields: ['id', 'stage'] })
+				readItem(CRM_PROSPECTS, prospectId, { fields: ['id', 'stage', 'quoted_amount'] })
 			)) as any;
-			if (prospect && (prospect.stage === 'new' || prospect.stage === 'qualified')) {
-				await directus.request(updateItem(CRM_PROSPECTS, prospectId, { stage: 'proposal' }));
+			if (prospect) {
+				const patch: Record<string, any> = {};
+				if (nudgeStage && (prospect.stage === 'new' || prospect.stage === 'qualified')) patch.stage = 'proposal';
+				if (syncAmount && Number(prospect.quoted_amount) !== grandTotal) patch.quoted_amount = grandTotal;
+				if (Object.keys(patch).length) await directus.request(updateItem(CRM_PROSPECTS, prospectId, patch));
 			}
 		}
 	} catch (e) {

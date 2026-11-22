@@ -17,29 +17,29 @@ export const RAB_UNITS = UNIT_LABELS;
 
 // ==================== HEADER so_rab ====================
 
-export async function getRabBySOId(soCustomerId) {
+export async function getRabBySOId(soCustomerId: any) {
   try {
     const filter = encodeURIComponent(JSON.stringify({ so_customer_id: { _eq: soCustomerId } }));
     const result = await secureDirectusJson(`/items/so_rab?filter=${filter}&limit=1`);
     return { data: (result.data || [])[0] || null, success: true };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
-export async function createRab(soCustomerId) {
+export async function createRab(soCustomerId: any) {
   try {
     const result = await secureDirectusJson(`/items/so_rab`, {
       method: 'POST',
       body: JSON.stringify({ so_customer_id: soCustomerId, status: 'draft' })
     });
     return { data: result.data, success: true, message: 'RAP berhasil dibuat' };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
-export async function updateRab(rabId, data) {
+export async function updateRab(rabId: any, data: any) {
   try {
     const payload = { ...data };
     delete payload.id;
@@ -50,54 +50,54 @@ export async function updateRab(rabId, data) {
       body: JSON.stringify(payload)
     });
     return { data: result.data, success: true };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
-export async function submitRab(rabId, submittedBy) {
+export async function submitRab(rabId: any, submittedBy: any) {
   try {
     const result = await secureDirectusJson(`/items/so_rab/${rabId}`, {
       method: 'PATCH',
       body: JSON.stringify({ status: 'submitted', submitted_by: submittedBy, submitted_at: new Date().toISOString() })
     });
     return { data: result.data, success: true, message: 'RAP berhasil diajukan untuk approval' };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
-export async function approveRab(rabId, approvedBy) {
+export async function approveRab(rabId: any, approvedBy: any) {
   try {
     const result = await secureDirectusJson(`/items/so_rab/${rabId}`, {
       method: 'PATCH',
       body: JSON.stringify({ status: 'approved', approved_by: approvedBy, approved_at: new Date().toISOString(), rejection_note: null })
     });
     return { data: result.data, success: true, message: 'RAP berhasil disetujui' };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
-export async function rejectRab(rabId, rejectedBy, note) {
+export async function rejectRab(rabId: any, rejectedBy: any, note: any) {
   try {
     const result = await secureDirectusJson(`/items/so_rab/${rabId}`, {
       method: 'PATCH',
       body: JSON.stringify({ status: 'draft', rejection_note: note || 'Ditolak tanpa catatan', approved_by: null, approved_at: null })
     });
     return { data: result.data, success: true, message: 'RAP ditolak dan dikembalikan ke draft' };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
 // ==================== ITEMS project_budgets (RAB Items) ====================
 
-export async function getRabItems(rabId) {
+export async function getRabItems(rabId: any) {
   try {
     const result = await secureDirectusJson(`/items/project_budgets?filter[so_rab_id][_eq]=${rabId}&sort=id&limit=-1`);
     return { data: result.data || [], success: true };
-  } catch (err) {
+  } catch (err: any) {
     return { data: [], success: false, error: err.message };
   }
 }
@@ -125,7 +125,7 @@ export async function getRabTotalsForProjects(projectIds: number[]): Promise<Rec
       const pid = Number(row.project_id);
       totals[pid] = (totals[pid] || 0) + Number(row.planned_amount || 0);
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('getRabTotalsForProjects (project_id):', err);
     return {};
   }
@@ -163,23 +163,23 @@ export async function getRabTotalsForProjects(projectIds: number[]): Promise<Rec
       const pid = projectByRab.get(Number(rabId));
       if (pid) totals[pid] = (totals[pid] || 0) + Number(row.planned_amount || 0);
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('getRabTotalsForProjects (baris tanpa project_id) — total bisa kurang:', err);
   }
   return totals;
 }
 
-export async function getRabItemsByCategory(rabId, category) {
+export async function getRabItemsByCategory(rabId: any, category: any) {
   try {
     const filter = encodeURIComponent(JSON.stringify({ so_rab_id: { _eq: rabId }, budget_category: { _eq: category } }));
     const result = await secureDirectusJson(`/items/project_budgets?filter=${filter}&sort=id&limit=-1`);
     return { data: result.data || [], success: true };
-  } catch (err) {
+  } catch (err: any) {
     return { data: [], success: false, error: err.message };
   }
 }
 
-export async function addRabItem(rabId, data) {
+export async function addRabItem(rabId: any, data: any) {
   try {
     const qty = parseFloat(data.qty) || 0;
     const unitPrice = parseFloat(data.unit_price) || 0;
@@ -192,7 +192,7 @@ export async function addRabItem(rabId, data) {
       soCustomerId = typeof rawSo === 'object' ? rawSo?.id : rawSo;
     }
 
-    const payload = {
+    const payload: Record<string, any> = {
       so_rab_id: rabId,
       so_customer_id: soCustomerId,
       project_id: null,
@@ -224,12 +224,12 @@ export async function addRabItem(rabId, data) {
       body: JSON.stringify(payload)
     });
     return { data: result.data, success: true, message: 'Item RAP berhasil ditambahkan' };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
-export async function updateRabItem(itemId, data) {
+export async function updateRabItem(itemId: any, data: any) {
   try {
     const payload = { ...data };
     delete payload.id;
@@ -257,47 +257,47 @@ export async function updateRabItem(itemId, data) {
       body: JSON.stringify(payload)
     });
     return { data: result.data, success: true };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
-export async function deleteRabItem(itemId) {
+export async function deleteRabItem(itemId: any) {
   try {
     await secureDirectusJson(`/items/project_budgets/${itemId}`, { method: 'DELETE' });
     return { success: true, message: 'Item RAP berhasil dihapus' };
-  } catch (err) {
+  } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
 // ==================== SUMMARY ====================
 
-export async function getRabSummary(rabId) {
+export async function getRabSummary(rabId: any) {
   try {
     const res = await getRabItems(rabId);
     if (!res.success) return { data: null, success: false, error: res.error };
 
     const items = res.data;
-    const summary = {};
+    const summary: Record<string, any> = {};
     let grandTotal = 0;
 
     for (const cat of RAB_CATEGORIES) {
-      const catItems = items.filter(i => (i.budget_category || 'operasional') === cat.id);
-      const total = catItems.reduce((s, i) => s + (parseFloat(i.planned_amount) || 0), 0);
+      const catItems = items.filter((i: any) => (i.budget_category || 'operasional') === cat.id);
+      const total = catItems.reduce((s: any, i: any) => s + (parseFloat(i.planned_amount) || 0), 0);
       summary[cat.id] = { rab: total, count: catItems.length };
       grandTotal += total;
     }
 
     return { data: { categories: summary, grand_total: grandTotal }, success: true };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
 // ==================== LOAD FULL RAB (header + items) ====================
 
-export async function loadFullRab(soCustomerId) {
+export async function loadFullRab(soCustomerId: any) {
   try {
     const rabRes = await getRabBySOId(soCustomerId);
     if (!rabRes.success) return { rab: null, items: [], success: false, error: rabRes.error };
@@ -314,7 +314,7 @@ export async function loadFullRab(soCustomerId) {
       items: itemsRes.data || [],
       success: true
     };
-  } catch (err) {
+  } catch (err: any) {
     return { rab: null, items: [], success: false, error: err.message };
   }
 }
@@ -327,7 +327,7 @@ export async function getRapTemplates() {
 	try {
 		const result = await secureDirectusJson(`/items/rap_templates?filter[active][_eq]=true&sort=sort&limit=-1`);
 		return { data: result.data || [], success: true };
-	} catch (err) {
+	} catch (err: any) {
 		return { data: [], success: false, error: err.message };
 	}
 }
@@ -348,18 +348,18 @@ export async function seedRapFromSO(soCustomerId: number, templateId: number) {
 	}
 }
 
-export async function getRabStatusForSOs(soCustomerIds) {
+export async function getRabStatusForSOs(soCustomerIds: any) {
   try {
     if (!soCustomerIds?.length) return { data: {}, success: true };
     const filter = encodeURIComponent(JSON.stringify({ so_customer_id: { _in: soCustomerIds } }));
     const result = await secureDirectusJson(`/items/so_rab?filter=${filter}&fields=id,so_customer_id,status&limit=-1`);
-    const map = {};
+    const map: Record<string, any> = {};
     for (const r of result.data || []) {
       const soId = typeof r.so_customer_id === 'object' ? r.so_customer_id?.id : r.so_customer_id;
       map[soId] = { rabId: r.id, status: r.status };
     }
     return { data: map, success: true };
-  } catch (err) {
+  } catch (err: any) {
     return { data: {}, success: false, error: err.message };
   }
 }
@@ -401,7 +401,7 @@ export async function getRapPosOptions(projectId: number): Promise<RapPosOption[
       rap: parseFloat(b.planned_amount) || 0,
       terpakai: used[String(b.id)] || 0
     }));
-  } catch (e) {
+  } catch (e: any) {
     console.error('getRapPosOptions:', e);
     return [];
   }

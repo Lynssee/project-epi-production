@@ -3,14 +3,18 @@ import type { RequestHandler } from './$types';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { listCatalogForKaryawan, listMyEnrollments } from '$lib/server/ess/training';
 import { getPillarConfig, pillarOfProgram } from '$lib/server/ess/trainingPillars';
+import { getFieldGuideSteps } from '$lib/server/ess/trainingGuide';
+import { getSumberConfig, sumberOfProgram } from '$lib/server/ess/trainingSource';
 
 export const GET: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
 
-	const [programs, enrollments, pillarConfig] = await Promise.all([
+	const [programs, enrollments, pillarConfig, sumberConfig, panduan] = await Promise.all([
 		listCatalogForKaryawan(karyawan.divisi, karyawan.divisi_id),
 		listMyEnrollments(karyawan.id),
-		getPillarConfig()
+		getPillarConfig(),
+		getSumberConfig(),
+		getFieldGuideSteps()
 	]);
 
 	const byProgram = new Map(enrollments.map((e) => [e.program_id, e]));
@@ -22,7 +26,8 @@ export const GET: RequestHandler = async (event) => {
 			enrollment,
 			terdaftar: !!enrollment,
 			bisaSelfEnroll: !p.wajib && p.self_enroll && !enrollment,
-			pilar: pillarOfProgram(p, pillarConfig)
+			pilar: pillarOfProgram(p, pillarConfig),
+			sumber: sumberOfProgram(p, sumberConfig)
 		};
 	});
 
@@ -33,5 +38,5 @@ export const GET: RequestHandler = async (event) => {
 		.filter((p) => (jumlah.get(p.code) ?? 0) > 0)
 		.map(({ code, label, short, icon, hint }) => ({ code, label, short, icon, hint, jumlah: jumlah.get(code) ?? 0 }));
 
-	return json({ kursus, pilar });
+	return json({ kursus, pilar, panduan });
 };

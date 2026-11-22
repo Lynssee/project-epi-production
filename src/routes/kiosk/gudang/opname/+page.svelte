@@ -73,6 +73,7 @@
 	let loadingRecs = $state(false);
 	let gate = $state<GateInfo>({ toleransi_pct: 0, wajib_approval: true });
 	let selectedRack = $state<{ id: number; nama_gudang: string; kode_gudang: string | null } | null>(null);
+	let showSopGuide = $state(false);
 	let debounce: ReturnType<typeof setTimeout> | null = null;
 
 	// Modal Scanner QR/Barcode Kamera
@@ -346,6 +347,22 @@
 			Hitung fisik barang di rak, lalu masukkan angkanya. Selisih dalam batas toleransi ({gate.toleransi_pct}%)
 			langsung disesuaikan ke stok sistem.
 		</p>
+
+		<!-- Panduan Ringkas SOP-LOG-002 / IK-LOG-005 (Collapsible & Touch-Friendly) -->
+		<div class="sop-guide-box">
+			<button type="button" class="sop-guide-toggle" onclick={() => (showSopGuide = !showSopGuide)}>
+				<span>📋 Panduan Kiosk SOP-LOG-002 · IK-LOG-005 (Cycle Count ABC · Stiker AUDITED-SO)</span>
+				<span>{showSopGuide ? 'Tutup ▲' : 'Lihat ▼'}</span>
+			</button>
+			{#if showSopGuide}
+				<div class="sop-guide-body">
+					<p><strong>• Kapan Pakai Kiosk:</strong> Untuk <strong>Spot Check Harian</strong> &amp; <strong>Cycle Count ABC</strong> (Kelas A = 14 hari, B = 30 hari, C = 90 hari) di rak Gudang Pusat, Ciketing &amp; Balaraja.</p>
+					<p><strong>• Langkah Cepat:</strong> Scan QR Rak (<code>LOC-...</code>) → Scan SKU → ketik qty di <strong>Touch Numpad</strong> → tempel stiker fisik <strong>AUDITED-SO</strong>.</p>
+					<p><strong>• Mode Blind Sesi (•••):</strong> Bila sesi opname bulanan sedang aktif, saldo sistem otomatis disembunyikan (<em>Blind Count</em>). Jika selisih &gt; 2% atau kemasan rusak, lanjutkan foto bukti di Mobile (<code>/stock-lapangan/opname-sesi</code>).</p>
+					<p><strong>• Kualifikasi Operator:</strong> Pastikan petugas opname telah menyelesaikan modul &amp; kuis pemahaman SOP di menu Pelatihan (Gate <code>G_TRN_SOP_COMPLIANCE</code>).</p>
+				</div>
+			{/if}
+		</div>
 
 		<div class="search-row">
 			<div class="search-box">
@@ -800,6 +817,45 @@
 		color: #64748b;
 		margin: 0;
 		line-height: 1.45;
+	}
+
+	.sop-guide-box {
+		border: 1.5px solid #c7d2fe;
+		background: #eef2ff;
+		border-radius: 0.75rem;
+		overflow: hidden;
+		margin: 0.25rem 0;
+	}
+
+	.sop-guide-toggle {
+		width: 100%;
+		padding: 0.6rem 0.85rem;
+		background: transparent;
+		border: none;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		font-size: 0.82rem;
+		font-weight: 700;
+		color: #1e1b4b;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.sop-guide-body {
+		padding: 0.55rem 0.85rem 0.75rem;
+		border-top: 1px solid #c7d2fe;
+		font-size: 0.8rem;
+		color: #334155;
+		line-height: 1.45;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.sop-guide-body p {
+		margin: 0;
 	}
 
 	.search-row {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
+	import KioskStandby from '$lib/components/kiosk/KioskStandby.svelte';
 	// src/routes/kiosk/home/+page.svelte
 	// Layar Beranda Terminal Kiosk Produksi — Penajaman UI/UX Touchscreen
 	import { goto } from '$app/navigation';
@@ -29,6 +30,17 @@
 	let announcements = $state<any[]>([]);
 	let spkBerjalanTotal = $state(0);
 	let kioskMenuAccess = $state<string[]>([]);
+	// Budaya & Propaganda Fase 2 — non-blocking: gagal/mati/kosong = tidak tampil, tidak menunda beranda kiosk.
+	let cultureBanner = $state<{ judul: string; isi_pesan: string } | null>(null);
+	async function loadCultureBanner() {
+		try {
+			const res = await fetch('/api/kiosk/culture-banner');
+			if (!res.ok) return;
+			cultureBanner = (await res.json())?.banner ?? null;
+		} catch (e) {
+			console.warn('[kiosk/home] banner budaya gagal dimuat:', e);
+		}
+	}
 	// File 11 §2 — dulu spkError dari API TIDAK PERNAH dibaca: kegagalan (401/500/network) dan
 	// "memang belum ada SPK" tampil SAMA PERSIS ("Belum ada SPK aktif"), operator awam tidak
 	// tahu harus menunggu koneksi atau memang belum ada kerjaan. Tiga keadaan eksplisit sekarang:
@@ -58,7 +70,10 @@
 		}
 	}
 
-	onMount(loadHome);
+	onMount(() => {
+		loadHome();
+		loadCultureBanner();
+	});
 
 	const tiles = $derived([
 		{
@@ -212,12 +227,22 @@
 	]);
 </script>
 
+<!-- Budaya Fase 5: slideshow standby saat layar menganggur; sentuhan apa pun menutupnya (beranda kerja ada di bawahnya). -->
+<KioskStandby />
+
 <div class="home-container">
 	{#if loading}
 		<div class="py-12 flex justify-center">
 			<CircularProgressGauge size={72} strokeWidth={6} label="Memuat Terminal Kerja..." sublabel="Inisialisasi sistem kiosk" />
 		</div>
 	{:else}
+		{#if cultureBanner}
+			<div class="culture-banner" role="note">
+				<span class="culture-label">📢 Budaya Hari Ini</span>
+				<p class="culture-text">{cultureBanner.isi_pesan}</p>
+			</div>
+		{/if}
+
 		{#if announcements.length > 0}
 			<div class="announcements-stack">
 				{#each announcements as a}
@@ -351,6 +376,28 @@
 		to {
 			transform: rotate(360deg);
 		}
+	}
+
+	/* Budaya & Propaganda */
+	.culture-banner {
+		background: linear-gradient(135deg, #eef2ff, #e0f2fe);
+		border: 1px solid #c7d2fe;
+		border-radius: 0.85rem;
+		padding: 0.85rem 1.25rem;
+		color: #1e1b4b;
+	}
+	.culture-label {
+		font-size: 0.7rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #4f46e5;
+	}
+	.culture-text {
+		margin: 0.2rem 0 0;
+		font-size: 1.05rem;
+		font-weight: 700;
+		line-height: 1.35;
 	}
 
 	/* Pengumuman */

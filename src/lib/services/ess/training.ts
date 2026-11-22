@@ -53,6 +53,8 @@ export interface TrainingModuleRecord {
 	durasi_menit: number | null;
 	min_persen_tonton: number | null;
 	youtube_id: string | null;
+	/** UUID file Directus (video kecil/MP4 yang diunggah admin). Video besar tetap lewat konten_url. */
+	file?: string | null;
 	chapters: Array<{ detik: number; judul: string }> | null;
 	transkrip: string | null;
 }
@@ -99,6 +101,14 @@ export interface KursusListItem {
 	bisaSelfEnroll: boolean;
 	/** Kode pilar Knowledge (product | technical | management | general | administrative). */
 	pilar?: string;
+	/** Asal materi (Inventory 360°, SOP, TDS/MSDS, dst.) — label & ikon mengikuti setelan admin. */
+	sumber?: SumberPelatihan;
+}
+
+export interface SumberPelatihan {
+	key: string;
+	label: string;
+	icon: string;
 }
 
 export interface PilarKnowledge {
@@ -118,6 +128,9 @@ export interface KursusDetail {
 	modules: Array<{ modul: TrainingModuleRecord; progress: TrainingProgressRecord | null; minBacaDetik?: number }>;
 	finalQuizId: number | null;
 	bisaSelfEnroll: boolean;
+	sumber?: SumberPelatihan;
+	/** Barang Inventory 360° di balik modul (hanya program bersumber Inventory 360°). */
+	kartu360?: Array<{ moduleId: number; itemId: number }>;
 }
 
 export interface QuizQuestion {
@@ -138,17 +151,50 @@ export interface QuizAttempt {
 	jawaban: Array<{ question_id: number; jawaban: string; benar: boolean | null }>;
 	waktu_mulai: string;
 	waktu_selesai: string | null;
+	periode_ke?: number | null;
+	durasi_detik?: number | null;
+	tab_switch_count?: number | null;
+	status_integritas?: string | null;
 }
 
 export interface QuizDetail {
-	quiz: { id: number; program_id: number; module_id: number | null; judul: string; passing_score: number | null; acak_soal: boolean };
+	quiz: {
+		id: number;
+		program_id: number;
+		module_id: number | null;
+		judul: string;
+		passing_score: number | null;
+		acak_soal: boolean;
+		durasi_menit?: number | null;
+		durasi_per_soal_detik?: number | null;
+		acak_opsi?: boolean | null;
+		mode_navigasi?: string | null;
+		anti_cheat_tab_limit?: number | null;
+		cegah_copy_paste?: boolean | null;
+	};
 	questions: QuizQuestion[];
 	attempts: QuizAttempt[];
+	sessionToken?: string;
+	serverTime?: string;
 	maxAttempts: number;
+	/** Batas percobaan tercapai & belum lulus: atasan/mentor yang dapat menyetujui percobaan ulang (gate G_TRN_MENTOR_SIGNOFF). */
+	perluPembinaan?: { mentorNama: string | null } | null;
 	showAnswersAfter: 'immediately' | 'after_pass' | 'never';
 	sopTerkait: { id: number; title: string } | null;
 	/** Kuis akhir + enrollment sudah Lulus: form disembunyikan, server menolak pengerjaan ulang (409). */
 	sudahLulus?: boolean;
+	/** Flashcard persiapan 1 menit: 3-5 poin kunci dari admin (kosong = tidak ada). */
+	ringkasanPoin?: string[];
+	/** Kuis periodik (asynchronous terjadwal): info periode berjalan; null untuk kuis biasa. */
+	periodik?: {
+		periodeKe: number;
+		state: 'pending' | 'remedial' | 'done' | 'dispensed';
+		tanggalMulai: string | null;
+		tanggalSelesai: string | null;
+		durasiMenit: number | null;
+		jumlahSoal: number;
+		bankSoal: number;
+	} | null;
 }
 
 async function getIdToken(): Promise<string> {
@@ -178,7 +224,7 @@ async function authedFetch(url: string, options: RequestInit = {}): Promise<Resp
 	});
 }
 
-export async function getKursusList(): Promise<{ kursus: KursusListItem[]; pilar?: PilarKnowledge[] }> {
+export async function getKursusList(): Promise<{ kursus: KursusListItem[]; pilar?: PilarKnowledge[]; panduan?: string[] }> {
 	const res = await authedFetch('/api/ess/training');
 	if (!res.ok) throw new Error(await parseErrorMessage(res));
 	return res.json();
@@ -194,6 +240,36 @@ export interface PintasanItem {
 	progress: number;
 	wajib: boolean;
 	status: 'baru' | 'berjalan';
+	/** Jumlah soal micro-quiz latihan yang ditawarkan (0 = tidak ada tombol). */
+	microQuiz?: number;
+}
+
+export interface MicroQuizQuestion {
+	id: number;
+	pertanyaan: string;
+	tipe: string;
+	opsi: string[];
+}
+export interface MicroQuizResult {
+	results: Array<{ id: number; benar: boolean; jawabanBenar: string }>;
+	benar: number;
+	total: number;
+}
+
+export async function getMicroQuiz(programId: number, konteks: string): Promise<{ questions: MicroQuizQuestion[]; token: string | null }> {
+	const res = await authedFetch(`/api/ess/training/pintasan/micro-quiz?program=${programId}&konteks=${encodeURIComponent(konteks)}`);
+	if (!res.ok) throw new Error(await parseErrorMessage(res));
+	return res.json();
+}
+
+export async function submitMicroQuiz(programId: number, token: string, answers: Record<string, string>): Promise<MicroQuizResult> {
+	const res = await authedFetch('/api/ess/training/pintasan/micro-quiz', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ program: programId, token, answers })
+	});
+	if (!res.ok) throw new Error(await parseErrorMessage(res));
+	return res.json();
 }
 
 // Cache per sesi (1 panggilan API per konteks) — kartu pintasan muncul di banyak halaman; hemat request.
@@ -338,12 +414,125 @@ export async function downloadKursusSertifikat(programId: number | string): Prom
 
 export async function submitQuizAttempt(
 	quizId: number | string,
-	jawaban: Array<{ question_id: number; jawaban: string }>
-): Promise<{ attempt: QuizAttempt }> {
+	jawaban: Array<{ question_id: number; jawaban: string }>,
+	meta?: { session_token?: string; tab_switch_count?: number; client_started_at?: number }
+): Promise<{ attempt: QuizAttempt; remedial?: boolean }> {
 	const res = await authedFetch(`/api/ess/training/quiz/${quizId}`, {
 		method: 'POST',
-		body: JSON.stringify({ jawaban })
+		body: JSON.stringify({
+			jawaban,
+			session_token: meta?.session_token,
+			tab_switch_count: meta?.tab_switch_count ?? 0,
+			client_started_at: meta?.client_started_at
+		})
 	});
 	if (!res.ok) throw new Error(await parseErrorMessage(res));
 	return res.json();
+}
+
+// Status kelulusan saya per program (Kartu 360° lapangan). Cache per sesi per program: 1 panggilan untuk banyak kartu.
+const statusSayaCache = new Map<number, Promise<string | null>>();
+export function getStatusSayaProgram(programId: number | string): Promise<string | null> {
+	const id = Number(programId);
+	if (!Number.isFinite(id) || id <= 0) return Promise.resolve(null);
+	const hit = statusSayaCache.get(id);
+	if (hit) return hit;
+	const p = authedFetch(`/api/ess/training/status?ids=${id}`)
+		.then(async (res) => (res.ok ? ((await res.json())?.status?.[String(id)] ?? null) : null))
+		.catch(() => null);
+	statusSayaCache.set(id, p);
+	return p;
+}
+
+// ─── Referensi cepat Buku Saku (profil 360° terverifikasi + bahaya material R&D) ──────────────────
+export interface ReferensiSakuData {
+	barang: Array<{ itemId: number; nama: string; kritis: boolean; ringkasan: string; interval: string; tandaGanti: string; tandaPalsu: string; apd: string[]; bahaya: string; spesifikasi?: Array<{ label: string; nilai: string }> }>;
+	material: Array<{ materialId: number; nama: string; fungsi: string; bahaya: string }>;
+	dibuat: string;
+}
+const REFERENSI_KEY = 'epi_referensi_saku_v2';
+const REFERENSI_TTL_MS = 24 * 3600 * 1000;
+
+/** Salinan lokal 24 jam (hemat kuota; tetap tampil offline). Gagal jaringan → pakai salinan lama bila ada. */
+export async function getReferensiSaku(): Promise<{ data: ReferensiSakuData | null; dariCache: boolean }> {
+	let cached: { at: number; data: ReferensiSakuData } | null = null;
+	try {
+		const raw = localStorage.getItem(REFERENSI_KEY);
+		cached = raw ? JSON.parse(raw) : null;
+	} catch { cached = null; }
+	if (cached && Date.now() - cached.at < REFERENSI_TTL_MS) return { data: cached.data, dariCache: true };
+	try {
+		const res = await authedFetch('/api/ess/referensi-saku');
+		if (!res.ok) throw new Error(await parseErrorMessage(res));
+		const data = (await res.json()) as ReferensiSakuData;
+		try { localStorage.setItem(REFERENSI_KEY, JSON.stringify({ at: Date.now(), data })); } catch { /* penyimpanan penuh/diblokir: abaikan */ }
+		return { data, dariCache: false };
+	} catch (e) {
+		if (cached) return { data: cached.data, dariCache: true };
+		throw e;
+	}
+}
+
+// ── Kartu Troubleshoot Quick Reference (Buku Saku). Salinan lokal 24 jam; saat offline memakai salinan terakhir berapa pun umurnya. ──
+export interface KartuTroubleshoot { id: string; judul: string; alat: string; gejala: string; keselamatan: string; langkah: string[]; programId: number | null }
+const TROUBLESHOOT_KEY = 'epi_troubleshoot_v1';
+export async function getKartuTroubleshoot(): Promise<{ cards: KartuTroubleshoot[]; dariCache: boolean }> {
+	let cached: { at: number; cards: KartuTroubleshoot[] } | null = null;
+	try {
+		const raw = localStorage.getItem(TROUBLESHOOT_KEY);
+		cached = raw ? JSON.parse(raw) : null;
+	} catch { cached = null; }
+	if (cached && Date.now() - cached.at < REFERENSI_TTL_MS) return { cards: cached.cards, dariCache: true };
+	try {
+		const res = await authedFetch('/api/ess/training/troubleshoot');
+		if (!res.ok) throw new Error(await parseErrorMessage(res));
+		const cards = ((await res.json()) as { cards: KartuTroubleshoot[] }).cards || [];
+		try { localStorage.setItem(TROUBLESHOOT_KEY, JSON.stringify({ at: Date.now(), cards })); } catch { /* penyimpanan penuh/diblokir: abaikan */ }
+		return { cards, dariCache: false };
+	} catch (e) {
+		if (cached) return { cards: cached.cards, dariCache: true };
+		throw e;
+	}
+}
+
+// --- Kartu Sertifikat Digital (dompet sertifikat di HP) ---
+export interface KartuSertifikatClient {
+	enrollmentId: number;
+	programId: number;
+	judul: string;
+	kode: string | null;
+	sertifikatNo: string;
+	nilaiAkhir: number | null;
+	expired: string | null;
+	status: 'aktif' | 'segera_habis' | 'kedaluwarsa' | 'tanpa_batas';
+	sisaHari: number | null;
+	verifyUrl: string | null;
+}
+export interface SertifikatSayaData {
+	kartu: KartuSertifikatClient[];
+	ringkasan: { total: number; aktif: number; segeraHabis: number; kedaluwarsa: number };
+	warnDays: number;
+}
+
+const SERTIFIKAT_KEY = 'epi_sertifikat_saya_v1';
+
+/** Ambil sertifikat saya. Gagal karena offline → pakai salinan terakhir (QR dibuat di HP, jadi tetap bisa ditunjukkan). */
+export async function getSertifikatSaya(): Promise<{ data: SertifikatSayaData; dariCache: boolean; cachedAt: string | null }> {
+	try {
+		const res = await authedFetch('/api/ess/training/sertifikat-saya');
+		if (!res.ok) throw new Error(await parseErrorMessage(res));
+		const data = (await res.json()) as SertifikatSayaData;
+		try { localStorage.setItem(SERTIFIKAT_KEY, JSON.stringify({ at: new Date().toISOString(), data })); } catch { /* penyimpanan penuh/diblokir: abaikan */ }
+		return { data, dariCache: false, cachedAt: null };
+	} catch (err: any) {
+		const offline = err instanceof TypeError || (typeof navigator !== 'undefined' && navigator.onLine === false);
+		if (offline) {
+			try {
+				const raw = localStorage.getItem(SERTIFIKAT_KEY);
+				const c = raw ? JSON.parse(raw) : null;
+				if (c?.data?.kartu) return { data: c.data as SertifikatSayaData, dariCache: true, cachedAt: String(c.at) };
+			} catch { /* salinan rusak: lanjut error */ }
+		}
+		throw err;
+	}
 }

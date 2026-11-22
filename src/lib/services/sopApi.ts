@@ -24,9 +24,13 @@ export interface CompanySopItem {
 	keterangan?: string;
 	kategori_sop?: string;
 	sub_kategori?: string;
+	tags?: string[];
 	external_flowchart_url?: string;
 	external_doc_url?: string;
 	is_confirmed?: boolean;
+	/** 'flow' = alur terbit dari process_guidance_flows (read-only; dibuka di /panduan/alur). Kosong = sop_documents. */
+	source?: 'flow';
+	flow_key?: string;
 }
 
 async function getIdToken(): Promise<string> {
@@ -35,7 +39,13 @@ async function getIdToken(): Promise<string> {
 	return user.getIdToken();
 }
 
-export async function fetchSopList(params: { search?: string; includeContent?: boolean } = {}): Promise<{
+export async function fetchSopList(params: {
+	search?: string;
+	tag?: string;
+	kategori?: string;
+	subKategori?: string;
+	includeContent?: boolean;
+} = {}): Promise<{
 	success: boolean;
 	data: CompanySopItem[];
 	error?: string;
@@ -44,6 +54,9 @@ export async function fetchSopList(params: { search?: string; includeContent?: b
 		const idToken = await getIdToken();
 		const qs = new URLSearchParams();
 		if (params.search) qs.set('search', params.search);
+		if (params.tag) qs.set('tag', params.tag);
+		if (params.kategori) qs.set('kategori', params.kategori);
+		if (params.subKategori) qs.set('sub_kategori', params.subKategori);
 		if (params.includeContent) qs.set('include_content', 'true');
 
 		const res = await fetch(`/api/sop?${qs.toString()}`, {

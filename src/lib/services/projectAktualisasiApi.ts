@@ -41,6 +41,7 @@ function isNetworkFailure(err: unknown): boolean {
 // tanpa menyeret runtime SvelteKit/Firebase — di-import ke scope lokal dan di-re-export
 // agar call site lama tetap jalan.
 import { RAB_COA_MAPPING } from './rabCoaMapping';
+import { KUNCI_SETELAN_WIP, susunKebijakanWip, debitBiayaProyek, AKUN_WIP_DEFAULT, AKUN_BIAYA_WIP_DEFAULT, type KebijakanWip } from '$lib/shared/wipPolicy'; // FIN-15
 import { isPackingCategory, resolveCategoryBucket } from '$lib/shared/rapCategory';
 export { RAB_COA_MAPPING };
 
@@ -62,12 +63,33 @@ function generateJournalNumber(): string {
  * Non-fatal — kegagalan di sini TIDAK membatalkan project_expenses yang sudah tersimpan, dan TIDAK
  * ikut antre offline (draft jurnal ini best-effort, retry-nya cukup lewat review manual Finance).
  */
-async function createDraftExpenseJournalEntry(projectId: number | string, expenseType: string, amount: number, description: string, referenceNumber?: string) {
+/** FIN-15 (K10): kebijakan WIP dari system_settings (klien). Gagal baca → MATI (akun semula). */
+async function muatKebijakanWipKlien(tanggal: string): Promise<KebijakanWip> {
+  try {
+    const res = await secureDirectusJson(`/items/system_settings?filter[setting_key][_in]=${KUNCI_SETELAN_WIP.join(',')}&fields=setting_key,setting_value&limit=10`);
+    return susunKebijakanWip(tanggal, res?.data || []);
+  } catch (e: any) {
+    console.warn('[aktualisasi] setelan WIP gagal dibaca — kebijakan dianggap mati:', e);
+    return { aktif: false, akun: AKUN_WIP_DEFAULT, akunBiaya: AKUN_BIAYA_WIP_DEFAULT };
+  }
+}
+
+async function createDraftExpenseJournalEntry(projectId: number | string, expenseType: string, amount: number, description: string, referenceNumber?: string, expenseId?: number | string | null) {
   if (!amount || amount <= 0) return;
   const mapping = RAB_COA_MAPPING[expenseType] || RAB_COA_MAPPING.lain_lain;
+  const txDateWip = new Date().toISOString().split('T')[0];
+  // FIN-15 (K10): biaya proyek ditahan di WIP sampai BAST (mati bawaan, tidak retroaktif).
+  const wipKeb = await muatKebijakanWipKlien(txDateWip);
+  const debit = debitBiayaProyek({ mappingDebit: mapping.debit, mappingDebitName: mapping.debitName, jenisLabel: expenseType, projectId: Number(projectId) || null, wip: wipKeb });
+  // FIN-20: idempotency_key (kolom UNIK journal_entries) per biaya → retry/klik ganda tidak menggandakan jurnal.
+  // Nomor jurnal deterministik per biaya (dulu 3 digit acak → rawan kembar).
+  const idemKey = expenseId != null ? `PRJEXP:${expenseId}` : null;
+  const journalNumber = expenseId != null ? `JE-PE-${expenseId}` : generateJournalNumber();
+  let journalId: number | null = null;
+  const detailIds: number[] = [];
   try {
-    const journalEntry = {
-      journal_number: generateJournalNumber(),
+    const journalEntry: Record<string, unknown> = {
+      journal_number: journalNumber,
       transaction_date: new Date().toISOString().split('T')[0],
       reference_type: 'PROJECT_EXPENSE_DIRECT',
       reference_number: referenceNumber || `PRJ-${projectId}`,
@@ -75,25 +97,36 @@ async function createDraftExpenseJournalEntry(projectId: number | string, expens
       total_debit: amount,
       total_credit: amount,
       is_posted: false,
-      created_by: 'system'
+      created_by: 'system',
+      ...(debit.dialihkan ? { cost_center_project_id: Number(projectId) || null } : {})
     };
+    if (idemKey) journalEntry.idempotency_key = idemKey;
     const jeData = await secureDirectusJson('/items/journal_entries', {
       method: 'POST',
       body: JSON.stringify(journalEntry)
     });
-    const journalId = jeData?.data?.id;
-    if (!journalId) return;
+    journalId = jeData?.data?.id ?? null;
+    if (!journalId) throw new Error('Header jurnal tersimpan tanpa id');
 
+    // Baris detail ditulis SATU PER SATU dan DIPERIKSA (dulu .catch(() => null): header tersimpan dengan total,
+    // baris hilang diam-diam → draf jurnal kosong di review Finance).
     const details = [
-      { journal_entry_id: journalId, account_code: mapping.debit, account_name: mapping.debitName, debit_amount: amount, credit_amount: 0, description: description || '', line_number: 1 },
+      { journal_entry_id: journalId, account_code: debit.account_code, account_name: debit.account_name, debit_amount: amount, credit_amount: 0, description: `${debit.prefix}${description || ''}`, line_number: 1 },
       { journal_entry_id: journalId, account_code: mapping.credit, account_name: mapping.creditName, debit_amount: 0, credit_amount: amount, description: description || '', line_number: 2 }
     ];
-    await Promise.all(details.map((d) => secureDirectusJson('/items/journal_entry_details', {
-      method: 'POST',
-      body: JSON.stringify(d)
-    }).catch(() => null)));
-  } catch (e) {
-    console.warn('Gagal membuat draft jurnal aktualisasi (diabaikan, expense tetap tersimpan):', e);
+    for (const d of details) {
+      const r = await secureDirectusJson('/items/journal_entry_details', { method: 'POST', body: JSON.stringify(d) });
+      if (!r?.data?.id) throw new Error(`Baris jurnal #${d.line_number} tersimpan tanpa id`);
+      detailIds.push(r.data.id);
+    }
+  } catch (e: any) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // Kunci unik bentrok = jurnal untuk biaya ini sudah ada (retry/klik ganda) → bukan kegagalan.
+    if (!journalId && /unique|duplicate/i.test(msg)) return;
+    console.error(`[createDraftExpenseJournalEntry] Jurnal PROJECT_EXPENSE_DIRECT untuk biaya ${expenseId ?? '-'} (proyek ${projectId}) GAGAL: ${msg}. Biaya tetap tersimpan; Finance perlu membuat jurnalnya manual.`);
+    // Tidak meninggalkan header yatim / draf separuh jadi.
+    for (const id of detailIds) await secureDirectusJson(`/items/journal_entry_details/${id}`, { method: 'DELETE' }).catch((er) => console.error(`[createDraftExpenseJournalEntry] gagal membersihkan detail #${id}:`, er));
+    if (journalId) await secureDirectusJson(`/items/journal_entries/${journalId}`, { method: 'DELETE' }).catch((er) => console.error(`[createDraftExpenseJournalEntry] gagal membersihkan header #${journalId}:`, er));
   }
 }
 
@@ -139,7 +172,7 @@ export async function loadAktualisasiCategories(force = false): Promise<typeof A
         AKTUALISASI_CATEGORIES.length = 0;
         for (const r of rows) AKTUALISASI_CATEGORIES.push({ id: r.kode, label: r.label, icon: r.icon || '📦' });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[projectAktualisasiApi] gagal memuat kategori aktualisasi, pakai fallback statis:', e);
     } finally {
       aktualisasiCategoriesLoaded = true;
@@ -183,7 +216,7 @@ async function resolveManpowerMap(rawItems: any[] = []) {
           manpowerMap.set(Number(m.id), m.nama);
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Could not fetch manpower names for actual expenses:', e);
     }
   }
@@ -264,7 +297,7 @@ export async function getActualTotalsForProjects(projectIds: number[]): Promise<
       totals[pid] = (totals[pid] || 0) + amt;
     }
     return totals;
-  } catch (err) {
+  } catch (err: any) {
     console.error('getActualTotalsForProjects:', err);
     return {};
   }
@@ -290,7 +323,7 @@ export async function getAktualisasiByCategory(projectId: number, category: stri
 
 // ==================== CREATE ====================
 
-export async function addAktualisasi(projectId, data) {
+export async function addAktualisasi(projectId: any, data: any) {
   try {
     const qty = parseFloat(data.qty) || 0;
     let unitPrice = parseFloat(data.unit_price) || 0;
@@ -331,7 +364,7 @@ export async function addAktualisasi(projectId, data) {
         method: 'POST',
         body: JSON.stringify(payload)
       });
-      createDraftExpenseJournalEntry(projectId, payload.expense_type, actualAmount, payload.description || payload.material_name, payload.reference_number).catch(() => {});
+      createDraftExpenseJournalEntry(projectId, payload.expense_type, actualAmount, payload.description || payload.material_name, payload.reference_number, result?.data?.id).catch((e) => console.error('[addAktualisasi] jurnal draf biaya gagal (biaya tetap tersimpan):', e));
       return { data: mapExpenseToAktualisasi(result.data), success: true, message: 'Aktualisasi berhasil ditambahkan' };
     } catch (postErr) {
       // Sinyal lemah/offline (Fase 5, Penajaman Finance Project v2) — antre lokal, JANGAN
@@ -342,14 +375,14 @@ export async function addAktualisasi(projectId, data) {
       }
       throw postErr;
     }
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
 // ==================== UPDATE ====================
 
-export async function updateAktualisasi(itemId, data) {
+export async function updateAktualisasi(itemId: any, data: any) {
   try {
     const qty = parseFloat(data.qty) || 0;
     let unitPrice = parseFloat(data.unit_price) || 0;
@@ -388,31 +421,31 @@ export async function updateAktualisasi(itemId, data) {
       body: JSON.stringify(payload)
     });
     return { data: mapExpenseToAktualisasi(result.data), success: true };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
 // ==================== DELETE ====================
 
-export async function deleteAktualisasi(itemId) {
+export async function deleteAktualisasi(itemId: any) {
   try {
     await secureDirectusJson(`/items/project_expenses/${itemId}`, { method: 'DELETE' });
     return { success: true, message: 'Aktualisasi berhasil dihapus' };
-  } catch (err) {
+  } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
 // ==================== SUMMARY ====================
 
-export async function getAktualisasiSummary(projectId) {
+export async function getAktualisasiSummary(projectId: any) {
   try {
     const res = await getAktualisasiByProject(projectId);
     if (!res.success) return { data: null, success: false, error: res.error };
 
     const items = res.data;
-    const summary = {};
+    const summary: Record<string, any> = {};
     let grandTotal = 0;
 
     await loadAktualisasiCategories();
@@ -424,19 +457,19 @@ export async function getAktualisasiSummary(projectId) {
     }
 
     return { data: { categories: summary, grand_total: grandTotal }, success: true };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
 
 // Gabungan RAB vs Aktualisasi untuk perbandingan
-export async function getRABvsAktualisasi(projectId, rabItems = []) {
+export async function getRABvsAktualisasi(projectId: any, rabItems: any[] = []) {
   try {
     const aktRes = await getAktualisasiByProject(projectId);
     if (!aktRes.success) return { data: null, success: false, error: aktRes.error };
 
     const aktItems = aktRes.data;
-    const summary = {};
+    const summary: Record<string, any> = {};
     let grandRAB = 0;
     let grandAktual = 0;
 
@@ -509,7 +542,7 @@ export async function getRABvsAktualisasi(projectId, rabItems = []) {
       },
       success: true
     };
-  } catch (err) {
+  } catch (err: any) {
     return { data: null, success: false, error: err.message };
   }
 }
@@ -534,7 +567,7 @@ export async function getPriceBySJAndMaterial(referenceNumber: string, materialN
       if (stockRes.data && stockRes.data.length > 0 && stockRes.data[0].unit_price) {
         return parseFloat(stockRes.data[0].unit_price) || 0;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Error fetching price from stock_transactions:', e);
     }
 
@@ -547,7 +580,7 @@ export async function getPriceBySJAndMaterial(referenceNumber: string, materialN
       if (ciketingRes.data && ciketingRes.data.length > 0) {
         poNumber = ciketingRes.data[0].no_po;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Error fetching PO from ciketing_surat_jalan_masuk:', e);
     }
 
@@ -560,7 +593,7 @@ export async function getPriceBySJAndMaterial(referenceNumber: string, materialN
         if (balarajaRes.data && balarajaRes.data.length > 0) {
           poNumber = balarajaRes.data[0].no_po;
         }
-      } catch (e) {
+      } catch (e: any) {
         console.warn('Error fetching PO from balaraja_surat_jalan_masuk:', e);
       }
     }
@@ -585,7 +618,7 @@ export async function getPriceBySJAndMaterial(referenceNumber: string, materialN
         if (poItemsRes.data && poItemsRes.data.length > 0 && poItemsRes.data[0].unit_price) {
           return parseFloat(poItemsRes.data[0].unit_price) || 0;
         }
-      } catch (e) {
+      } catch (e: any) {
         console.warn('Error fetching price from purchase_order_supplier_items:', e);
       }
     }
@@ -609,7 +642,7 @@ export async function getPriceBySJAndMaterial(referenceNumber: string, materialN
       if (directPoRes.data && directPoRes.data.length > 0 && directPoRes.data[0].unit_price) {
         return parseFloat(directPoRes.data[0].unit_price) || 0;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Error fetching direct PO price:', e);
     }
 
@@ -636,11 +669,11 @@ export async function getPriceBySJAndMaterial(referenceNumber: string, materialN
         }
         return defaultPrice;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Error fetching master price from identitas_barang:', e);
     }
 
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error in getPriceBySJAndMaterial:', err);
   }
   return 0;
@@ -669,7 +702,7 @@ export async function findPossibleDuplicateOutflows(projectId: number | string, 
       ...(pa?.data || []).map((r: any) => ({ id: r.id, source: 'pengajuan_anggaran' as const, date: r.date_created, amount: Number(r.total_amount) || 0, label: `Pengajuan ${r.nomor_pengajuan || '#' + r.id}` })),
       ...(ex?.data || []).map((r: any) => ({ id: r.id, source: 'project_expenses' as const, date: r.expense_date, amount: Number(r.expense_amount) || 0, label: `Biaya tercatat${r.source ? ' (' + r.source + ')' : ''}: ${String(r.description || '').slice(0, 40)}` }))
     ], amount, dateStr);
-  } catch (e) {
+  } catch (e: any) {
     console.warn('[aktualisasi] cek duplikat gagal, input tetap dilanjutkan:', e);
     return [];
   }

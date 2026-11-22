@@ -380,7 +380,7 @@ export async function downloadPengajuanLapanganPdf(pengajuan: any, items: any[],
 			html2canvas: { scale: 2, useCORS: true },
 			jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
 		};
-		return await html2pdf().set(opt).from(tempDiv).output('blob');
+		return await html2pdf().set(opt as any).from(tempDiv).output('blob');
 	} finally {
 		document.body.removeChild(tempDiv);
 	}

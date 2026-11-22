@@ -4,7 +4,16 @@
 // Konvensi wajib: sertakan `.id` eksplisit pada subfield relasi bersarang (lihat CLAUDE nested-field gotcha)
 // agar respons Directus yang di-expand tidak dianggap objek penuh saat menulis ulang.
 
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { directusServerJson } from '$lib/server/directus';
+import { getRemedialTenggat } from '$lib/server/ess/trainingRemedial';
+import {
+	isPeriodicQuiz,
+	quizPeriode,
+	quizSampleSeed,
+	sampleQuestionIds,
+	type PeriodicQuizRow
+} from '$lib/utils/quizPeriodic';
 import {
 	READ_GATE_DEFAULTS,
 	PESAN_KUIS_AKHIR_SUDAH_LULUS,
@@ -59,6 +68,7 @@ export interface TrainingModuleRecord {
 	durasi_menit: number | null;
 	min_persen_tonton: number | null;
 	youtube_id: string | null;
+	file?: string | null;
 	chapters: Array<{ detik: number; judul: string }> | null;
 	transkrip: string | null;
 }
@@ -122,6 +132,25 @@ export interface TrainingQuizRecord {
 	judul: string;
 	passing_score: number | null;
 	acak_soal: boolean;
+	// Kuis periodik / asynchronous terjadwal (12 Nov 2026) — kolom aditif, null = perilaku lama.
+	tanggal_mulai?: string | null;
+	tanggal_selesai?: string | null;
+	durasi_menit?: number | null;
+	durasi_per_soal_detik?: number | null;
+	acak_opsi?: boolean | null;
+	mode_navigasi?: string | null;
+	anti_cheat_tab_limit?: number | null;
+	cegah_copy_paste?: boolean | null;
+	is_mandatory_gate?: boolean | null;
+	bypass_module_lock?: boolean | null;
+	recurrence_type?: string | null;
+	prep_notify_days?: number | null;
+	jumlah_soal_tampil?: number | null;
+	target_divisi_ids?: unknown;
+	target_karyawan_ids?: unknown;
+	periode_ke?: number | null;
+	/** Flashcard persiapan 1 menit (3-5 poin kunci) — array teks. */
+	ringkasan_poin?: unknown;
 }
 
 export interface TrainingQuizQuestionRecord {
@@ -142,6 +171,10 @@ export interface TrainingQuizAttemptRecord {
 	jawaban: Array<{ question_id: number; jawaban: string; benar: boolean | null }>;
 	waktu_mulai: string;
 	waktu_selesai: string | null;
+	periode_ke?: number | null;
+	durasi_detik?: number | null;
+	tab_switch_count?: number | null;
+	status_integritas?: string | null;
 }
 
 const PROGRAM_FIELDS = [
@@ -152,7 +185,7 @@ const PROGRAM_FIELDS = [
 
 const MODULE_FIELDS = [
 	'id', 'program_id', 'judul', 'urutan', 'tipe_konten', 'konten_url', 'konten_teks',
-	'durasi_menit', 'min_persen_tonton', 'youtube_id', 'chapters', 'transkrip'
+	'durasi_menit', 'min_persen_tonton', 'youtube_id', 'file', 'chapters', 'transkrip'
 ].join(',');
 
 const NOTE_FIELDS = ['id', 'karyawan_id', 'module_id', 'detik', 'catatan', 'date_created'].join(',');
@@ -172,7 +205,51 @@ const PROGRESS_FIELDS = [
 	'persen_ditonton', 'detik_ditonton', 'durasi_video', 'segmen_ditonton', 'waktu_selesai'
 ].join(',');
 
-const QUIZ_FIELDS = ['id', 'program_id', 'module_id', 'judul', 'passing_score', 'acak_soal'].join(',');
+export const QUIZ_FIELDS = [
+	'id', 'program_id', 'module_id', 'judul', 'passing_score', 'acak_soal',
+	'tanggal_mulai', 'tanggal_selesai', 'durasi_menit', 'durasi_per_soal_detik', 'acak_opsi', 'mode_navigasi', 'anti_cheat_tab_limit', 'cegah_copy_paste',
+	'is_mandatory_gate', 'bypass_module_lock', 'recurrence_type',
+	'prep_notify_days', 'jumlah_soal_tampil', 'target_divisi_ids', 'target_karyawan_ids', 'periode_ke', 'ringkasan_poin'
+].join(',');
+
+const QUIZ_SESSION_SECRET = process.env.DIRECTUS_TOKEN || 'eltama-quiz-session-guard-2026';
+
+/** Buat token sesi tamper-proof bertanda tangan HMAC saat peserta mulai kuis. */
+export function createQuizSessionToken(karyawanId: number, quizId: number, startedAtMs: number): string {
+	const data = `${karyawanId}:${quizId}:${startedAtMs}`;
+	const signature = createHmac('sha256', QUIZ_SESSION_SECRET).update(data).digest('hex');
+	return Buffer.from(`${data}:${signature}`).toString('base64url');
+}
+
+/** Tanda tangan HMAC generik (hex) memakai rahasia sesi kuis yang sama — untuk token latihan micro-quiz. */
+export function signQuizPayload(data: string): string {
+	return createHmac('sha256', QUIZ_SESSION_SECRET).update(data).digest('hex');
+}
+
+/** Verifikasi token sesi pengerjaan kuis di server untuk validasi durasi riil. */
+export function verifyQuizSessionToken(token: string | null | undefined, karyawanId: number, quizId: number): { valid: boolean; startedAtMs: number | null } {
+	if (!token) return { valid: false, startedAtMs: null };
+	try {
+		const decoded = Buffer.from(token, 'base64url').toString('utf8');
+		const parts = decoded.split(':');
+		if (parts.length !== 4) return { valid: false, startedAtMs: null };
+		const [tokenKaryawanId, tokenQuizId, tokenStartedAt, signature] = parts;
+		if (Number(tokenKaryawanId) !== karyawanId || Number(tokenQuizId) !== quizId) {
+			return { valid: false, startedAtMs: null };
+		}
+		const expectedSig = createHmac('sha256', QUIZ_SESSION_SECRET).update(`${tokenKaryawanId}:${tokenQuizId}:${tokenStartedAt}`).digest('hex');
+		if (signature.length !== expectedSig.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
+			return { valid: false, startedAtMs: null };
+		}
+		const startedAt = Number(tokenStartedAt);
+		if (!Number.isFinite(startedAt) || startedAt <= 0 || startedAt > Date.now() + 60_000) {
+			return { valid: false, startedAtMs: null };
+		}
+		return { valid: true, startedAtMs: startedAt };
+	} catch {
+		return { valid: false, startedAtMs: null };
+	}
+}
 
 /** TIDAK PERNAH sertakan jawaban_benar di sini — kuis dikirim ke klien tanpa kunci jawaban. */
 const QUESTION_FIELDS_SAFE = ['id', 'quiz_id', 'pertanyaan', 'tipe', 'opsi', 'bobot'].join(',');
@@ -693,7 +770,7 @@ export async function listMyAttempts(enrollmentId: number, quizId: number): Prom
 	const query = new URLSearchParams({
 		'filter[enrollment_id][_eq]': String(enrollmentId),
 		'filter[quiz_id][_eq]': String(quizId),
-		fields: ['id', 'enrollment_id', 'quiz_id', 'skor', 'lulus', 'jawaban', 'waktu_mulai', 'waktu_selesai'].join(','),
+		fields: ['id', 'enrollment_id', 'quiz_id', 'skor', 'lulus', 'jawaban', 'waktu_mulai', 'waktu_selesai', 'periode_ke', 'durasi_detik', 'tab_switch_count', 'status_integritas'].join(','),
 		sort: '-waktu_mulai',
 		limit: '20'
 	});
@@ -708,17 +785,32 @@ export async function listMyAttempts(enrollmentId: number, quizId: number): Prom
 export async function submitQuizAttemptSafe(
 	enrollment: TrainingEnrollmentRecord,
 	quiz: TrainingQuizRecord,
-	jawabanKaryawan: Array<{ question_id: number; jawaban: string }>
+	jawabanKaryawan: Array<{ question_id: number; jawaban: string }>,
+	/** Kuis periodik: dinilai hanya pada soal yang disajikan (sampel deterministik), attempt ditandai periode, enrollment TIDAK disentuh. */
+	periodik?: { karyawanId: number; attemptIndex: number },
+	meta?: { sessionToken?: string; tabSwitchCount?: number; clientStartedAt?: number }
 ): Promise<TrainingQuizAttemptRecord> {
+	const isPeriodik = isPeriodicQuiz(quiz as unknown as PeriodicQuizRow);
 	// Kuis akhir pada enrollment 'Lulus' ditolak SEBELUM menilai/menyimpan apa pun: status Lulus,
 	// nilai_akhir & sertifikat adalah catatan resmi (dibaca gate G_PRJ_MANPOWER_COMPETENCY di erp-epi)
 	// dan tidak boleh diturunkan ke 'Remedial'. Status dibaca ulang agar tahan terhadap submit ganda.
-	if (!quiz.module_id) {
+	if (!quiz.module_id && !isPeriodik) {
 		const terkini = await findEnrollmentById(enrollment.id);
 		if (isFinalQuizRetakeBlocked(quiz, terkini?.status ?? enrollment.status)) throw new QuizRetakeBlockedError();
 	}
 
-	const questions = await listQuestionsWithAnswers(quiz.id);
+	let questions = await listQuestionsWithAnswers(quiz.id);
+	if (isPeriodik && quiz.jumlah_soal_tampil) {
+		// Seed identik dengan GET kuis → server tahu persis soal mana yang disajikan, tanpa menyimpan state.
+		const allowed = new Set(
+			sampleQuestionIds(
+				questions.map((q) => q.id),
+				quiz.jumlah_soal_tampil,
+				quizSampleSeed(periodik?.karyawanId ?? 0, quiz.id, quizPeriode(quiz), periodik?.attemptIndex ?? 0)
+			)
+		);
+		questions = questions.filter((q) => allowed.has(q.id));
+	}
 	const gradable = questions.filter((q) => q.tipe !== 'essay');
 	const totalBobot = gradable.reduce((sum, q) => sum + (Number(q.bobot) || 1), 0) || 1;
 
@@ -738,14 +830,66 @@ export async function submitQuizAttemptSafe(
 	const passingScore = quiz.passing_score || 70;
 	const lulus = skor >= passingScore;
 
+	// Perhitungan durasi riil & verifikasi sesi token
+	const nowMs = Date.now();
+	let startedAtMs = nowMs;
+	let sessionValid = false;
+	const karyawanId = periodik?.karyawanId ?? 0;
+
+	if (meta?.sessionToken && karyawanId > 0) {
+		const verified = verifyQuizSessionToken(meta.sessionToken, karyawanId, quiz.id);
+		if (verified.valid && verified.startedAtMs) {
+			startedAtMs = verified.startedAtMs;
+			sessionValid = true;
+		}
+	} else if (meta?.clientStartedAt && Number.isFinite(meta.clientStartedAt) && meta.clientStartedAt > 0) {
+		startedAtMs = Math.min(nowMs, meta.clientStartedAt);
+	}
+
+	const durasiDetik = Math.max(1, Math.round((nowMs - startedAtMs) / 1000));
+	const waktu_mulai = new Date(startedAtMs).toISOString();
+	const waktu_selesai = new Date(nowMs).toISOString();
+	const tabSwitchCount = Math.max(0, Number(meta?.tabSwitchCount) || 0);
+
+	// Status Integritas (Audit Keamanan Pengerjaan)
+	let statusIntegritas = 'valid';
+	const totalSoalCount = questions.length;
+	const graceSeconds = 60; // 60s toleransi koneksi/latensi sinyal lapangan
+
+	if (quiz.durasi_per_soal_detik && Number(quiz.durasi_per_soal_detik) > 0) {
+		const maxAllowedSeconds = (Number(quiz.durasi_per_soal_detik) * totalSoalCount) + graceSeconds;
+		if (sessionValid && durasiDetik > maxAllowedSeconds) {
+			statusIntegritas = 'timeout';
+		}
+	} else if (quiz.durasi_menit && Number(quiz.durasi_menit) > 0) {
+		const maxAllowedSeconds = (Number(quiz.durasi_menit) * 60) + graceSeconds;
+		if (sessionValid && durasiDetik > maxAllowedSeconds) {
+			statusIntegritas = 'timeout';
+		}
+	}
+
+	if (quiz.anti_cheat_tab_limit && Number(quiz.anti_cheat_tab_limit) > 0) {
+		if (tabSwitchCount > Number(quiz.anti_cheat_tab_limit)) {
+			statusIntegritas = 'tab_limit_exceeded';
+		}
+	}
+
+	if (statusIntegritas === 'valid' && totalSoalCount >= 3 && durasiDetik < totalSoalCount * 2) {
+		statusIntegritas = 'suspect_speed';
+	}
+
 	const payload = {
 		enrollment_id: enrollment.id,
 		quiz_id: quiz.id,
 		skor,
 		lulus,
 		jawaban: jawabanDenganHasil,
-		waktu_mulai: new Date().toISOString(),
-		waktu_selesai: new Date().toISOString()
+		waktu_mulai,
+		waktu_selesai,
+		durasi_detik: durasiDetik,
+		tab_switch_count: tabSwitchCount,
+		status_integritas: statusIntegritas,
+		...(isPeriodik ? { periode_ke: quizPeriode(quiz) } : {})
 	};
 	const result = await directusServerJson<{ data: TrainingQuizAttemptRecord }>('/items/training_quiz_attempt', {
 		method: 'POST',
@@ -753,10 +897,18 @@ export async function submitQuizAttemptSafe(
 	});
 
 	// Propagasi skor kuis akhir ke nilai_teori enrollment (pola sama seperti admin).
-	if (!quiz.module_id) {
+	// Kuis periodik = pemeriksaan berkala: tidak menimpa status/nilai resmi/sertifikat enrollment.
+	if (!quiz.module_id && !isPeriodik) {
+		// Gagal → jadwalkan ulang otomatis (tenggat = hari ini + interval setelan; mati bila interval 0).
+		const tenggatRemedial = lulus ? null : await getRemedialTenggat();
 		await directusServerJson(`/items/training_enrollment/${enrollment.id}`, {
 			method: 'PATCH',
-			body: JSON.stringify({ nilai_teori: skor, nilai_akhir: skor, status: lulus ? 'Lulus' : 'Remedial' })
+			body: JSON.stringify({
+				nilai_teori: skor,
+				nilai_akhir: skor,
+				status: lulus ? 'Lulus' : 'Remedial',
+				...(tenggatRemedial ? { tenggat: tenggatRemedial } : {})
+			})
 		});
 
 		if (lulus) {
@@ -767,4 +919,21 @@ export async function submitQuizAttemptSafe(
 	}
 
 	return result?.data as TrainingQuizAttemptRecord;
+}
+
+/** Attempt milik periode berjalan saja (attempt lama tanpa periode_ke = periode 1). */
+export function attemptsInPeriod<T extends { periode_ke?: number | null }>(attempts: T[], periode: number): T[] {
+	return attempts.filter((a) => quizPeriode(a) === periode);
+}
+
+/**
+ * Pastikan karyawan target kuis periodik punya enrollment ke programnya (JIT, tanpa menunggu sapuan n8n).
+ * Hanya untuk program published. Null bila program tidak ditemukan / tidak published.
+ */
+export async function ensureEnrollmentForTargetedQuiz(karyawanId: number, programId: number): Promise<TrainingEnrollmentRecord | null> {
+	const existing = await findMyEnrollmentForProgram(karyawanId, programId);
+	if (existing) return existing;
+	const program = await findProgramById(programId);
+	if (!program || program.status !== 'published') return null;
+	return autoEnrollWajib(karyawanId, program);
 }

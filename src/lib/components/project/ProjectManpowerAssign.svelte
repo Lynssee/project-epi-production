@@ -23,32 +23,39 @@
   import { getManpowerSetting, loadManpowerSettings, manpowerSettingsStore } from "$lib/services/manpowerSettings";
   import SpkTtdLinkModal from "$lib/components/project/SpkTtdLinkModal.svelte";
 
-  const toast = { success: (m) => window.__showToast && window.__showToast(m, "success"), error: (m) => window.__showToast && window.__showToast(m, "error"), info: (m) => window.__showToast && window.__showToast(m, "info") };
+  const toast = { success: (/** @type {any} */ m) => window.__showToast && window.__showToast(m, "success"), error: (/** @type {any} */ m) => window.__showToast && window.__showToast(m, "error"), info: (/** @type {any} */ m) => window.__showToast && window.__showToast(m, "info") };
 
   let { project = null, actorName = "" } = $props();
 
+  /** @type {any[]} */
   let assignments = $state([]);
+  /** @type {any[]} */
   let registeredManpower = $state([]);
+  /** @type {any[]} */
   let activeSanctions = $state([]);
   let loading = $state(true);
+  /** @type {any} */
   let error = $state(null);
   let saving = $state(false);
 
   // ── Pelanggaran / Sanksi ──
   let showViolationModal = $state(false);
+  /** @type {any} */
   let violationTarget = $state(null);
 
   // ── Lapor Kabur / Anti-Desertion (Fase 2) ──
   let showLaporKaburModal = $state(false);
   let showSmartReplacementModal = $state(false);
+  /** @type {any} */
   let laporKaburTarget = $state(null);
-  function openLaporKabur(a) {
+  function openLaporKabur(/** @type {any} */ a) {
     laporKaburTarget = a;
     showLaporKaburModal = true;
   }
 
   // ── Tambah penugasan ──
   let showModal = $state(false);
+  /** @type {any} */
   let form = $state(emptyForm());
   let isNewManpower = $state(false);
   // GPA-10: peringatan nama kembar saat mendaftarkan pekerja baru dari form penugasan.
@@ -75,7 +82,7 @@
     };
   }
 
-  function onKtpFileSelected(e) {
+  function onKtpFileSelected(/** @type {any} */ e) {
     const file = e.target.files?.[0];
     if (file) {
       newManpowerForm.ktpFile = file;
@@ -85,12 +92,14 @@
 
   // ── Tanda tangan ──
   let showSignModal = $state(false);
+  /** @type {any} */
   let signTarget = $state(null);
   // TTD via tautan (Fase 4): tombol tampil hanya bila fitur diaktifkan di setelan Dokumen SPK (HRD admin).
+  /** @type {any} */
   let ttdLinkTarget = $state(null);
   // Anggota kru proyek yang sama (selain pemilik SPK & yang dibatalkan) — kandidat penerima pakta tanpa harga.
-  function kruDari(target) {
-    const idOf = (v) => (v && typeof v === "object" ? v.id : v);
+  function kruDari(/** @type {any} */ target) {
+    const idOf = (/** @type {any} */ v) => (v && typeof v === "object" ? v.id : v);
     const pid = String(idOf(target.project_id));
     const pemilik = String(idOf(target.manpower_id));
     const seen = new Set();
@@ -108,18 +117,22 @@
   const jumlahMenungguTtd = $derived(assignments.filter((a) => a.status === "menunggu_ttd").length);
   const ttdLinkAktif = $derived($manpowerSettingsStore["manpower.spk_doc.ttd_link_aktif"] === true);
   let signNama = $state("");
+  /** @type {any} */
   let signPad;
   let signing = $state(false);
 
   // ── Edit Rate ──
   let showEditRateModal = $state(false);
+  /** @type {any} */
   let editRateTarget = $state(null);
   let editRateForm = $state({ rate_tipe: "harian", rate_harian: "", nilai_borongan: "", rate_lembur: "", rate_standby: "", rate_uang_makan: "" });
   let editRateSaving = $state(false);
 
   // ── Mutasi ──
   let showMutasiModal = $state(false);
+  /** @type {any} */
   let mutasiTarget = $state(null);
+  /** @type {any[]} */
   let mutasiProjects = $state([]);
   let mutasiForm = $state({ project_id: "", rate_harian: "", tanggal_mulai: "", tanggal_selesai: "" });
   let mutasiSaving = $state(false);
@@ -127,9 +140,10 @@
   // ── Search Manpower ──
   let searchManpowerQuery = $state("");
   let showManpowerDropdown = $state(false);
+  /** @type {HTMLDivElement | null} */
   let manpowerDropdownRef = $state(null);
 
-  function handleWindowClick(e) {
+  function handleWindowClick(/** @type {any} */ e) {
     if (showManpowerDropdown && manpowerDropdownRef && !manpowerDropdownRef.contains(e.target)) {
       showManpowerDropdown = false;
     }
@@ -179,10 +193,10 @@
         getActiveSanctions(),
       ]);
       if (aRes.success) assignments = aRes.data; else error = aRes.error;
-      registeredManpower = Array.isArray(mRes) ? mRes : (mRes?.data || []);
+      registeredManpower = Array.isArray(mRes) ? mRes : ((/** @type {any} */ (mRes))?.data || []);
       activeSanctions = sRes || [];
     } catch (e) {
-      error = e.message;
+      error = /** @type {any} */ (e).message;
     } finally {
       loading = false;
     }
@@ -226,7 +240,8 @@
           posisi: form.jabatan || "Manpower",
           kategori: form.rate_tipe,
         });
-        const createdMp = mpRes && (mpRes.success ? mpRes.data : mpRes);
+        const mpAny = /** @type {any} */ (mpRes); // createManpower bisa mengembalikan record langsung atau {success,data}
+        const createdMp = mpAny && (mpAny.success ? mpAny.data : mpAny);
         if (!createdMp || !createdMp.id) {
           toast.error("Gagal membuat data master manpower");
           saving = false;
@@ -255,7 +270,7 @@
         form.manpower_id = String(createdMp.id);
         registeredManpower = [...registeredManpower, createdMp];
       } catch (err) {
-        toast.error("Error: " + err.message);
+        toast.error("Error: " + /** @type {any} */ (err).message);
         saving = false;
         return;
       }
@@ -295,7 +310,7 @@
     }
   }
 
-  function openSign(a) {
+  function openSign(/** @type {any} */ a) {
     signTarget = a;
     signNama = typeof a.manpower_id === "object" ? a.manpower_id?.nama || "" : "";
     showSignModal = true;
@@ -320,7 +335,8 @@
     }
   }
 
-  async function handleStatus(a, status) {
+  async function handleStatus(/** @type {any} */ a, /** @type {any} */ status) {
+    /** @type {Record<string, string>} */
     const labels = { selesai: "menyelesaikan", batal: "membatalkan" };
     if (!confirm(`Yakin ${labels[status]} penugasan ${nama(a)}?`)) return;
     const res = await setAssignmentStatus(a.id, status);
@@ -328,7 +344,7 @@
     else toast.error(res.error || "Gagal");
   }
 
-  async function handleDelete(a) {
+  async function handleDelete(/** @type {any} */ a) {
     if (!confirm(`Hapus penugasan ${nama(a)}? Tindakan ini permanen.`)) return;
     const res = await deleteAssignment(a.id);
     if (res.success) { toast.success("Penugasan dihapus"); await load(); }
@@ -336,7 +352,7 @@
   }
 
   // tanpaHarga=true → versi Syarat Manpower (tanpa nominal, watermark)
-  async function doPrint(a, tanpaHarga = false) {
+  async function doPrint(/** @type {any} */ a, tanpaHarga = false) {
     await printSpkAssignment(a, project, typeof a.manpower_id === "object" ? a.manpower_id : null, { tanpaHarga });
   }
 
@@ -347,7 +363,7 @@
   loadManpowerSettings();
   const nilaiMinBorongan = () => Number(getManpowerSetting("manpower.borongan.nilai_min")) || NILAI_BORONGAN_MIN_DEFAULT;
 
-  function openEditRate(a) {
+  function openEditRate(/** @type {any} */ a) {
     editRateTarget = a;
     editRateForm = {
       rate_tipe: a.rate_tipe || "harian",
@@ -394,13 +410,13 @@
   }
 
   // ── Mutasi ──
-  async function openMutasi(a) {
+  async function openMutasi(/** @type {any} */ a) {
     mutasiTarget = a;
     mutasiForm = { project_id: "", rate_harian: a.rate_harian || "", tanggal_mulai: "", tanggal_selesai: "" };
     showMutasiModal = true;
     if (mutasiProjects.length === 0) {
-      const res = await getProjects();
-      if (res.success) mutasiProjects = res.data.filter((p) => String(p.id) !== String(project?.id));
+      const res = /** @type {any} */ (await getProjects());
+      if (res.success) mutasiProjects = res.data.filter((/** @type {any} */ p) => String(p.id) !== String(project?.id));
     }
   }
 
@@ -436,15 +452,16 @@
   }
 
   // ── helpers ──
-  function nama(a) { return typeof a.manpower_id === "object" ? a.manpower_id?.nama || "-" : `#${a.manpower_id}`; }
-  function fmtRp(v) {
+  function nama(/** @type {any} */ a) { return typeof a.manpower_id === "object" ? a.manpower_id?.nama || "-" : `#${a.manpower_id}`; }
+  function fmtRp(/** @type {any} */ v) {
     if (v == null || v === "" || isNaN(v)) return "-";
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(v);
   }
-  function fmtDate(d) {
+  function fmtDate(/** @type {any} */ d) {
     if (!d) return "-";
     return new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
   }
+  /** @type {Record<string, { l: string, c: string }>} */
   const STATUS = {
     draft: { l: "Draft", c: "bg-gray-100 text-gray-600" },
     menunggu_validasi: { l: "Menunggu Validasi Admin", c: "bg-orange-100 text-orange-700" },
@@ -863,7 +880,7 @@
 
 <!-- ── Tanda Tangan SPK Modal ── -->
 {#if ttdLinkTarget}
-  <SpkTtdLinkModal assignment={ttdLinkTarget} namaManpower={nama(ttdLinkTarget)} kruKandidat={kruDari(ttdLinkTarget)} onclose={() => (ttdLinkTarget = null)} onchanged={() => load()} on:close={() => (ttdLinkTarget = null)} on:changed={() => load()} />
+  <SpkTtdLinkModal assignment={ttdLinkTarget} namaManpower={nama(ttdLinkTarget)} kruKandidat={kruDari(ttdLinkTarget)} onclose={() => (ttdLinkTarget = null)} onchanged={() => load()} />
 {/if}
 
 {#if showSignModal && signTarget}

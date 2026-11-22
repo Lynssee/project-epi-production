@@ -2,7 +2,7 @@
 // Normalisasi baris `process_guidance_flows` (Directus, DIKELOLA dari erp-epi /settings/process-guidance) → ProcessFlow versi LAPANGAN.
 // Beda dengan erp-epi: pintasan diambil dari `actions_field` (route project-epi); gates disertakan read-only untuk rambu lapangan.
 // Defensif: data rusak dibuang, tidak boleh membuat layar putih. Cermin processGuidanceFlowRow.js di erp-epi.
-import type { ProcessAction, ProcessHandoff, ProcessFlow, ProcessNode, ProcessNodeType, ProcessFlowSop, ProcessGateRef, ProcessTrainingLink } from '$lib/data/processGuidance';
+import type { ProcessAction, ProcessHandoff, ProcessFlow, ProcessNode, ProcessNodeType, ProcessFlowSop, ProcessGateRef, ProcessTrainingLink, ProcessNegativeScenario } from '$lib/data/processGuidance';
 
 const NODE_TYPES = new Set<string>(['start', 'task', 'decision', 'end']);
 
@@ -11,11 +11,16 @@ const int = (v: unknown, def = 0): number => (v !== null && v !== '' && v !== un
 const strList = (v: unknown, maxItems: number, maxLen: number): string[] =>
 	Array.isArray(v) ? v.map((x) => str(x, maxLen)).filter(Boolean).slice(0, maxItems) : [];
 
+/** Buang segmen route-group SvelteKit "/(app)/x" → "/x" (cermin stripRouteGroup erp-epi; prefiks itu 404 di lapangan). */
+function stripRouteGroup(href: string): string {
+	return href.replace(/^\/(?:\([^/)]*\)(?:\/|$))+/, '/');
+}
+
 /** Pintasan hanya path internal ("/…", bukan "//host" atau skema lain). */
 function cleanActions(v: unknown): ProcessAction[] {
 	if (!Array.isArray(v)) return [];
 	return v
-		.map((a: any) => ({ label: str(a?.label, 80), href: str(a?.href, 300) }))
+		.map((a: any) => ({ label: str(a?.label, 80), href: stripRouteGroup(str(a?.href, 300)) }))
 		.filter((a) => a.label && /^\/(?!\/)[^\s]*$/.test(a.href))
 		.slice(0, 8);
 }
@@ -39,9 +44,52 @@ function cleanHandoffs(v: unknown): ProcessHandoff[] {
 function cleanGates(v: unknown): ProcessGateRef[] {
 	if (!Array.isArray(v)) return [];
 	return v
-		.map((g: any) => ({ key: str(g?.key, 100), modul: str(g?.modul, 100), documentType: str(g?.documentType, 100) }))
+		.map((g: any) => {
+			// Baku {key,modul,documentType} + bentuk lama {gate_key,scope:{modul,documentType}} + string "G_X" (cermin readGateRef erp-epi).
+			if (typeof g === 'string') return { key: str(g, 100), modul: '', documentType: '' };
+			const scope = g && typeof g.scope === 'object' && g.scope ? g.scope : {};
+			return {
+				key: str(g?.key, 100) || str(g?.gate_key, 100),
+				modul: str(g?.modul, 100) || str(scope.modul, 100),
+				documentType: str(g?.documentType, 100) || str(scope.documentType, 100)
+			};
+		})
 		.filter((g) => g.key)
 		.slice(0, 20);
+}
+
+const NEG_CATEGORIES = new Set(['system_erp_error', 'network_offline', 'gate_blocked', 'data_mismatch', 'operational_reject', 'force_majeure_k3']);
+const NEG_SEVERITIES = ['critical', 'high', 'medium', 'low'];
+
+/** Skenario negatif: buang yang tak berkategori valid / tanpa pemicu & fallback; rute hanya path internal; maks. 20. Cermin erp-epi sopNegativeScenarios.js. */
+function canonicalizeNegatives(v: unknown): ProcessNegativeScenario[] {
+	const out: ProcessNegativeScenario[] = [];
+	const seen = new Set<string>();
+	for (const raw of Array.isArray(v) ? v : []) {
+		if (!raw || typeof raw !== 'object') continue;
+		const r = raw as Record<string, unknown>;
+		const category = str(r.category, 40);
+		const trigger = str(r.trigger, 600);
+		const fallback = str(r.fallback_action, 1500);
+		const code = str(r.code, 40);
+		if (!NEG_CATEGORIES.has(category) || !trigger || !fallback || !code || seen.has(code)) continue;
+		seen.add(code);
+		const sev = str(r.severity, 20).toLowerCase();
+		const row: ProcessNegativeScenario = { code, category, severity: (NEG_SEVERITIES.includes(sev) ? sev : 'medium') as ProcessNegativeScenario['severity'], trigger, fallback_action: fallback };
+		const set = (k: keyof ProcessNegativeScenario, val: string | number) => { if (val !== '' && val !== 0) (row as any)[k] = val; };
+		set('step_id', str(r.step_id, 60)); set('step_label', str(r.step_label, 120)); set('impact', str(r.impact, 600));
+		set('reconciliation_action', str(r.reconciliation_action, 1500)); set('escalation_pic', str(r.escalation_pic, 200));
+		set('related_gate_key', str(r.related_gate_key, 100)); set('fallback_flow_key', str(r.fallback_flow_key, 120));
+		const href = str(r.action_href_field, 300);
+		if (/^\/(?!\/)[^\s<>"']*$/.test(href)) row.action_href_field = stripRouteGroup(href);
+		for (const k of ['recovery_sla_hours', 'reconciliation_sla_hours'] as const) {
+			const n = Number(r[k]);
+			if (Number.isFinite(n) && n > 0 && n <= 2160) row[k] = Math.round(n * 100) / 100;
+		}
+		out.push(row);
+		if (out.length >= 20) break;
+	}
+	return out;
 }
 
 function canonicalizeSopBlock(sop: any): ProcessFlowSop | undefined {
@@ -88,7 +136,9 @@ function canonicalizeSopBlock(sop: any): ProcessFlowSop | undefined {
 		};
 	}
 
+	const negatives = canonicalizeNegatives(sop.negative_scenarios);
 	const res: ProcessFlowSop = {};
+	if (negatives.length) res.negative_scenarios = negatives;
 	if (doc_number) res.doc_number = doc_number;
 	if (effective_date) res.effective_date = effective_date;
 	if (revision_status) res.revision_status = revision_status;
@@ -256,8 +306,8 @@ export function normalizeFlowRow(row: any): NormalizedFlow | null {
 			lane: n.lane,
 			col: Math.max(0, int(n.col)),
 			row: Math.max(0, int(n.row)),
-			label: str(n.label, 80) || id,
-			desc: str(n.desc, 2000),
+			label: str(n.label, 80) || str(n.title, 80) || id, // data lama memakai `title`/`description`
+			desc: str(n.desc, 2000) || str(n.description, 2000),
 			pic: str(n.pic, 200),
 			checklist: strList(n.checklist, 20, 300),
 			blockers: strList(n.blockers, 20, 300),

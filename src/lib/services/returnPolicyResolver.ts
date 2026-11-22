@@ -39,7 +39,7 @@ export function resolveReturnPolicy(
 	const subCategory = item?.sub_category ?? null;
 	if (subCategory != null && policyMap && Object.prototype.hasOwnProperty.call(policyMap, String(subCategory))) {
 		const mapped = policyMap[String(subCategory)];
-		if (Object.values(RETURN_POLICY).includes(mapped)) {
+		if ((Object.values(RETURN_POLICY) as string[]).includes(mapped)) {
 			return { policy: mapped, reason: `policy_map[${subCategory}]` };
 		}
 	}

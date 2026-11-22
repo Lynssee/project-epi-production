@@ -51,8 +51,8 @@ describe('directusLatencyTracker — profil fetch', () => {
     expect(p.totals).toMatchObject({ calls: 21, hit: 20, miss: 1 });
     expect(p.totals.cacheHitPct).toBe(95);
     const c = p.collections.find((x) => x.name === 'employees');
-    expect(c.avgMs).toBe(200);
-    expect(c.calls).toBe(21);
+    expect(c!.avgMs).toBe(200);
+    expect(c!.calls).toBe(21);
   });
 
   it('log lambat hanya untuk upstream >= ambang, terbaru di depan, dengan flag overfetch', () => {
@@ -63,11 +63,11 @@ describe('directusLatencyTracker — profil fetch', () => {
     const p = getDirectusProfile();
     expect(p.slow.map((s) => s.collection)).toEqual(['c', 'b']);
     expect(p.slow[1]).toMatchObject({ route: '/laporan/:id', unboundedLimit: true, wildcardFields: true, bytes: 2048 });
-    expect(p.routes.find((r) => r.name === '/laporan/:id').unboundedLimit).toBe(1);
+    expect(p.routes.find((r) => r.name === '/laporan/:id')!.unboundedLimit).toBe(1);
   });
 
   it('configureProfiler mengabaikan nilai tak valid', () => {
-    configureProfiler({ slowMs: -5, cacheHitMaxMs: 'abc' });
+    configureProfiler({ slowMs: -5, cacheHitMaxMs: 'abc' as any });
     expect(getDirectusProfile().config).toMatchObject({ slowMs: 500, cacheHitMaxMs: 15 });
     configureProfiler({ slowMs: 800 });
     expect(getDirectusProfile().config.slowMs).toBe(800);
@@ -81,7 +81,7 @@ describe('directusLatencyTracker — profil fetch', () => {
   });
 
   it('tidak pernah melempar pada input rusak', () => {
-    expect(() => recordDirectusRequest({ path: undefined, durMs: NaN })).not.toThrow();
+    expect(() => recordDirectusRequest({ path: undefined as any, durMs: NaN })).not.toThrow();
     expect(() => recordDirectusRequest(null as any)).not.toThrow();
   });
 });

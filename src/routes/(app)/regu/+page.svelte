@@ -51,11 +51,32 @@
 	let busyId = $state<number | null>(null);
 	let tab = $state<'regu' | 'verifikasi' | 'lembur' | 'kesiapan' | 'kiosk'>('regu');
 	let gayaMap = $state<Record<number, { profil: string; tip: string }>>({});
+	let filterGaya = $state<'semua' | 'D' | 'I' | 'S' | 'C'>('semua');
+
+	const anggotaFiltered = $derived.by(() => {
+		if (filterGaya === 'semua') return anggota;
+		return anggota.filter((a: any) => {
+			const g = gayaMap[Number(mpIdOf(a.manpower_id))];
+			const letter = String(g?.profil || '').charAt(0).toUpperCase();
+			return letter === filterGaya;
+		});
+	});
+
+	const countGaya = $derived.by(() => {
+		const res: Record<string, number> = { D: 0, I: 0, S: 0, C: 0 };
+		for (const a of anggota) {
+			const g = gayaMap[Number(mpIdOf(a.manpower_id))];
+			const letter = String(g?.profil || '').charAt(0).toUpperCase();
+			if (res[letter] !== undefined) res[letter]++;
+		}
+		return res;
+	});
 
 	let proyek = $state<ProyekDipimpin[]>([]);
 	// PDP-25: status NIK/KTP anggota + dialog unggah (pintu di luar PA, supaya KTP terkumpul sebelum mengajukan).
 	let identitasMap = $state<Record<number, StatusIdentitas>>({});
 	let ktpDialog = $state<{ open: boolean; manpowerId: number; manpowerName: string }>({ open: false, manpowerId: 0, manpowerName: '' });
+	let anggota = $state<any[]>([]);
 	const jumlahIdentitasBelum = $derived(
 		anggota.filter((a: any) => identitasMap[Number(mpIdOf(a.manpower_id))] && !identitasLengkap(identitasMap[Number(mpIdOf(a.manpower_id))])).length
 	);
@@ -63,7 +84,6 @@
 		identitasMap = await getStatusIdentitasRegu(anggota.map((a: any) => Number(mpIdOf(a.manpower_id))));
 	}
 	let selectedProjectId = $state<number | null>(null);
-	let anggota = $state<any[]>([]);
 	let absensiHariIni = $state<Record<number, any>>({}); // assignmentId → baris absensi
 	let antrian = $state<any[]>([]);
 	let antrianLembur = $state<any[]>([]);
@@ -100,7 +120,7 @@
 	let massalBusy = $state(false);
 	const antrianTerurut = $derived([...antrian].sort((a, b) => Number(absensiNormal(a)) - Number(absensiNormal(b))));
 	const normalIds = $derived(
-		antrian.filter((r) => absensiNormal(r) && bolehVerifikasi(manpowerId, Number(mpIdOf(r.manpower_id)))).map((r) => r.id)
+		antrian.filter((r) => absensiNormal(r) && bolehVerifikasi(manpowerId as number, Number(mpIdOf(r.manpower_id)))).map((r) => r.id)
 	);
 	const jumlahAnomali = $derived(antrian.filter((r) => !absensiNormal(r)).length);
 
@@ -241,7 +261,7 @@
 				massalMin = Number(m['manpower.absen_regu_massal.min_anggota']) || 5;
 			})
 			.catch((e) => console.warn('[regu] gagal memuat setelan absen massal (pakai default):', e));
-		getManpowerSetting('backfill_absensi_max_hari').then((v) => (maxBackfillHari = v)).catch(() => {});
+		getManpowerSetting('backfill_absensi_max_hari').then((v: any) => (maxBackfillHari = v)).catch(() => {});
 		if (!manpowerId) { loading = false; return; }
 		proyek = await getProyekDipimpin(manpowerId);
 		if (proyek.length > 0) {
@@ -720,8 +740,48 @@
 					</div>
 				{/if}
 
+				<!-- Filter Gaya Kerja Regu (DISC) -->
+				<div class="flex items-center gap-1.5 flex-wrap pb-1 text-xs">
+					<span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1">Gaya Kerja:</span>
+					<button
+						type="button"
+						onclick={() => (filterGaya = 'semua')}
+						class="px-2 py-0.5 rounded-full text-[10px] font-semibold transition cursor-pointer border {filterGaya === 'semua' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'}"
+					>
+						Semua ({anggota.length})
+					</button>
+					<button
+						type="button"
+						onclick={() => (filterGaya = 'D')}
+						class="px-2 py-0.5 rounded-full text-[10px] font-semibold transition cursor-pointer border {filterGaya === 'D' ? 'bg-rose-700 text-white border-rose-700' : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'}"
+					>
+						D - Tegas ({countGaya.D})
+					</button>
+					<button
+						type="button"
+						onclick={() => (filterGaya = 'I')}
+						class="px-2 py-0.5 rounded-full text-[10px] font-semibold transition cursor-pointer border {filterGaya === 'I' ? 'bg-amber-700 text-white border-amber-700' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}"
+					>
+						I - Komunikatif ({countGaya.I})
+					</button>
+					<button
+						type="button"
+						onclick={() => (filterGaya = 'S')}
+						class="px-2 py-0.5 rounded-full text-[10px] font-semibold transition cursor-pointer border {filterGaya === 'S' ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}"
+					>
+						S - Stabil ({countGaya.S})
+					</button>
+					<button
+						type="button"
+						onclick={() => (filterGaya = 'C')}
+						class="px-2 py-0.5 rounded-full text-[10px] font-semibold transition cursor-pointer border {filterGaya === 'C' ? 'bg-indigo-700 text-white border-indigo-700' : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'}"
+					>
+						C - Teliti ({countGaya.C})
+					</button>
+				</div>
+
 				<div class="space-y-2">
-					{#each anggota as a (a.id)}
+					{#each anggotaFiltered as a (a.id)}
 						{@const sudah = absensiHariIni[a.id]}
 						{@const diriSendiri = Number(mpIdOf(a.manpower_id)) === Number(manpowerId)}
 						<div class="p-3 rounded-lg border {sudah ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-200 bg-white'}">
@@ -758,8 +818,24 @@
 									{/if}
 										{#if gayaMap[Number(mpIdOf(a.manpower_id))]}
 											{@const g = gayaMap[Number(mpIdOf(a.manpower_id))]}
-											<div class="mt-1 text-[10px] text-indigo-700 bg-indigo-50 rounded px-1.5 py-1" title="Berdasarkan tes gaya kerja DISC. Hanya panduan komunikasi, bukan penilaian pribadi.">
-												💬 Gaya kerja <b>{g.profil}</b>: {g.tip}
+											{@const p = String(g.profil || '').charAt(0).toUpperCase()}
+											{@const badgeCls = p === 'D' ? 'bg-rose-100 text-rose-800 border-rose-300' :
+																p === 'I' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+																p === 'S' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+																'bg-indigo-100 text-indigo-800 border-indigo-300'}
+											<div class="mt-1.5 p-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[10px] space-y-1" title="Berdasarkan asesmen gaya kerja DISC. Panduan pembinaan & delegasi tugas Project Leader.">
+												<div class="flex items-center justify-between gap-1">
+													<div class="flex items-center gap-1.5">
+														<span class="text-xs">🧠</span>
+														<span class="px-1.5 py-0.2 rounded font-bold border text-[9.5px] {badgeCls}">
+															DISC: {g.profil}
+														</span>
+													</div>
+													<span class="text-[8.5px] text-slate-400 font-mono">Panduan Supervisi</span>
+												</div>
+												<p class="text-[10px] text-slate-700 leading-snug">
+													💡 <strong>Tip Leader:</strong> {g.tip}
+												</p>
 											</div>
 										{/if}
 										<!-- Emergency Medical Badge: golongan darah + alergi + telepon kontak darurat (K3) -->

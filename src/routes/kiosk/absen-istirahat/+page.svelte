@@ -57,7 +57,21 @@
 		}
 	}
 
+	// Budaya & Propaganda: satu kalimat setelah tap OK. Non-blocking — gagal/mati/kosong = tidak tampil. 1 GET per muat (cache server 60 dtk).
+	let cultureLine = $state('');
+	async function loadCultureLine() {
+		try {
+			const res = await fetch('/api/kiosk/culture-banner');
+			if (!res.ok) return;
+			const b = (await res.json())?.banner;
+			cultureLine = String(b?.isi_pesan ?? '').slice(0, 140);
+		} catch (e) {
+			console.warn('[kiosk/absen-istirahat] pesan budaya gagal dimuat:', e);
+		}
+	}
+
 	onMount(async () => {
+		void loadCultureLine();
 		workstationId = localStorage.getItem(STORAGE_KEY);
 		try {
 			const res = await fetch('/api/kiosk/workstations');
@@ -270,6 +284,10 @@
 			<div class="result result--{resultState}">
 				<div class="result-text">{resultText}</div>
 				<div class="result-sub">{resultSub}</div>
+				<!-- Pesan budaya singkat (tanpa tombol/kuis; layar tetap reset 3 detik agar antrean tidak macet) -->
+				{#if resultState === 'ok' && cultureLine}
+					<div class="result-sub" style="margin-top: 0.75rem; opacity: 0.9">📢 {cultureLine}</div>
+				{/if}
 			</div>
 		{/if}
 	{/if}

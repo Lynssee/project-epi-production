@@ -27,7 +27,7 @@
 	let { data } = $props();
 	const wajibScanFisik = data.wajibScanFisik;
 
-	const id = page.params.id;
+	const id = page.params.id as string;
 	const persist = createFormPersist<{ step: number; rows: Record<string, { condition: GRCondition; qty: string }> }>(`terima_barang_${id}`);
 
 	let loading = $state(true);

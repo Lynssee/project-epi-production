@@ -341,6 +341,8 @@ export interface ProjectInspectionSummary {
 	airTemp?: number | null;
 	surfaceProfile?: string | null;
 	holdPointFlag: boolean | null;
+	/** Rata-rata DFT — BELUM diisi getLatestProjectInspectionSummary (selalu undefined); UI laporan menampilkannya bila ada. */
+	avgDft?: number | null;
 }
 
 /**
