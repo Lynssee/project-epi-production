@@ -33,7 +33,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	const sjs = (await directusServerJson<{ data: Array<{ id: number; nomor_sj: string; status: string; security_verified_at: string | null; date_created: string | null; gr_enabled: boolean | null }> }>(
 		`/items/surat_jalan?filter[id][_in]=${sjIds.join(',')}&filter[status][_eq]=shipped&fields=id,nomor_sj,status,security_verified_at,date_created,gr_enabled&limit=-1`
 	))?.data || [];
-	const lewat = sjMelewatiBatas(sjs, batasHari).slice(0, MAKS_SJ_PER_JALAN);
+	const lewat = (sjMelewatiBatas(sjs, batasHari) as typeof sjs).slice(0, MAKS_SJ_PER_JALAN);
 
 	const hasil: Array<Record<string, unknown>> = [];
 	for (const s of lewat) {

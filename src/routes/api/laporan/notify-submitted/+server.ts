@@ -79,7 +79,7 @@ export const POST: RequestHandler = async (event) => {
 			totalAmount: 0,
 			pengajuId: karyawan.id,
 			departmentKey: (karyawan as any).divisi || null,
-			projectId: String(projectId),
+			projectId: Number(projectId) || undefined,
 			detailRefCollection: 'reports',
 			detailRefId: String(reportId),
 			approvalRequestId: null,

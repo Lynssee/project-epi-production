@@ -6,7 +6,7 @@
 	import KonfirmasiPengajuanView from '$lib/components/konfirmasi/KonfirmasiPengajuanView.svelte';
 	import { IconLoader2, IconAlertTriangle, IconShieldLock } from '@tabler/icons-svelte';
 
-	const jenis = $page.params.jenis;
+	const jenis = $page.params.jenis as string;
 	const id = Number($page.params.id);
 	const token = $page.url.searchParams.get('t') || '';
 	const jenisLabel = jenis === 'pr' ? 'Pengajuan Pembelian (PR)' : 'Pengajuan Anggaran';

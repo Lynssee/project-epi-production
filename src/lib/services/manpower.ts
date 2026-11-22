@@ -21,13 +21,14 @@ export interface Manpower {
 	total_mangkir_count?: number | null;
 	penjamin_mandor_id?: number | { id: number; nama: string } | null;
 	blacklist_alasan?: string | null;
+	status_pekerja?: 'calon' | 'terverifikasi' | 'sedang_bekerja' | 'daftar_hitam' | string | null;
 }
 
 export const MANPOWER_FIELDS = [
 	'id', 'nama', 'posisi', 'domisili', 'NIK', 'no_telpon', 'breakdown', 'total_jasa',
 	'id_reference', 'nama_kontak_darurat', 'kontak_darurat_telp', 'ktp', 'foto_ktp',
 	'status_komitmen', 'reliability_score', 'total_kabur_count', 'total_mangkir_count',
-	'penjamin_mandor_id', 'blacklist_alasan'
+	'penjamin_mandor_id', 'blacklist_alasan', 'status_pekerja'
 ];
 
 /**

@@ -183,3 +183,113 @@ export async function flattenLaporanHarianFotoForField(
 	}
 	return out;
 }
+
+/* ------------------------------------------- Fase 6 (Export PDF + Laporan Keuangan): status & mingguan */
+// Tanpa angka uang sama sekali (§5.4 P2): hanya progres, kehadiran laporan, dan kualitas. Nilai kontrak, termin
+// bernominal, RAP dalam Rupiah, dan margin TIDAK ada di sini — Project Leader melihat sisi biaya lewat RAP vs Aktual.
+
+const num = (v: unknown): number => {
+	const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+	return Number.isFinite(n) ? n : 0;
+};
+const ymd = (v: unknown): string => String(v ?? '').slice(0, 10);
+const cut = (s: unknown, n: number): string => {
+	const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+	return t.length > n ? t.slice(0, n - 1) + '…' : t;
+};
+
+/** Senin (YYYY-MM-DD, UTC) dari minggu yang memuat tanggal `d`; '' bila tanggal tidak valid. */
+export function mingguMulai(d: string): string {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+	const t = new Date(d + 'T00:00:00Z');
+	if (Number.isNaN(t.getTime())) return '';
+	const dow = (t.getUTCDay() + 6) % 7; // Senin=0
+	t.setUTCDate(t.getUTCDate() - dow);
+	return t.toISOString().slice(0, 10);
+}
+
+/** Rekap laporan harian per minggu (Senin–Minggu) — bahan Laporan Mingguan untuk customer. Terbaru di atas. */
+export function rekapMingguan(rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+	const weeks = new Map<string, Array<Record<string, unknown>>>();
+	for (const r of Array.isArray(rows) ? rows : []) {
+		const w = mingguMulai(ymd(r.tanggal ?? r.date));
+		if (!w) continue;
+		if (!weeks.has(w)) weeks.set(w, []);
+		weeks.get(w)!.push(r);
+	}
+	return [...weeks.entries()]
+		.sort((a, b) => (a[0] < b[0] ? 1 : -1))
+		.map(([minggu, list]) => {
+			const sorted = [...list].sort((a, b) => (ymd(a.tanggal ?? a.date) < ymd(b.tanggal ?? b.date) ? -1 : 1));
+			const kendala = [...new Set(sorted.map((r) => cut(r.kendala, 120)).filter(Boolean))];
+			const pekerja = sorted.map((r) => num(r.jumlah_pekerja)).filter((n) => n > 0);
+			return {
+				minggu_mulai: minggu,
+				jumlah_laporan: sorted.length,
+				rata_pekerja: pekerja.length ? Math.round((pekerja.reduce((s, n) => s + n, 0) / pekerja.length) * 10) / 10 : 0,
+				progress_akhir: num(sorted[sorted.length - 1]?.progress),
+				hari_ada_kendala: sorted.filter((r) => cut(r.kendala, 5)).length,
+				kendala_utama: kendala.slice(0, 2).join(' | ')
+			};
+		});
+}
+
+const SELESAI = /^(selesai|done|completed|closed|tercapai|100)/i;
+const PUNCH_TUTUP = /^(closed|selesai|done|resolved|ditutup|lulus|verified)/i;
+const PUNCH_BERAT = /^(critical|kritis|major|high|tinggi|berat)/i;
+
+/** Ringkasan status proyek (indikator | nilai | keterangan). Murni: menerima hasil flattener yang sudah ada. */
+export function ringkasStatusProyek(input: {
+	timeline: Array<Record<string, unknown>>;
+	laporan: Array<Record<string, unknown>>;
+	punch: Array<Record<string, unknown>>;
+}): Array<Record<string, unknown>> {
+	const tl = Array.isArray(input.timeline) ? input.timeline : [];
+	const lp = Array.isArray(input.laporan) ? input.laporan : [];
+	const pu = Array.isArray(input.punch) ? input.punch : [];
+	const out: Array<Record<string, unknown>> = [];
+
+	const level1 = tl.filter((r) => num(r.level) <= 1);
+	const basis = level1.length ? level1 : tl;
+	const bobot = basis.reduce((s, r) => s + Math.max(0, num(r.weight_pct)), 0);
+	const progress = basis.length
+		? bobot > 0
+			? basis.reduce((s, r) => s + num(r.completion_pct) * Math.max(0, num(r.weight_pct)), 0) / bobot
+			: basis.reduce((s, r) => s + num(r.completion_pct), 0) / basis.length
+		: null;
+	out.push({ indikator: 'Progress keseluruhan (%)', nilai: progress == null ? 'n/a' : (Math.round(progress * 10) / 10).toString(), keterangan: bobot > 0 ? 'Rata-rata berbobot pekerjaan level 1' : 'Rata-rata sederhana (bobot belum diisi)' });
+	const selesai = tl.filter((r) => num(r.completion_pct) >= 100 || SELESAI.test(String(r.status ?? ''))).length;
+	out.push({ indikator: 'Pekerjaan selesai', nilai: `${selesai} dari ${tl.length}`, keterangan: 'Semua level WBS' });
+
+	const tgl = lp.map((r) => ymd(r.tanggal ?? r.date)).filter(Boolean).sort();
+	out.push({ indikator: 'Laporan harian', nilai: String(lp.length), keterangan: tgl.length ? `Terakhir ${tgl[tgl.length - 1]}` : 'Belum ada laporan' });
+	out.push({ indikator: 'Laporan dengan kendala', nilai: String(lp.filter((r) => cut(r.kendala, 5)).length), keterangan: 'Kolom Kendala terisi' });
+
+	const terbuka = pu.filter((r) => !PUNCH_TUTUP.test(String(r.status ?? '')));
+	out.push({ indikator: 'Punch list terbuka', nilai: `${terbuka.length} dari ${pu.length}`, keterangan: 'Temuan kualitas belum ditutup' });
+	out.push({ indikator: 'Punch list berat terbuka', nilai: String(terbuka.filter((r) => PUNCH_BERAT.test(String(r.severity ?? ''))).length), keterangan: 'Severity kritis/mayor/tinggi' });
+	return out;
+}
+
+export async function flattenStatusProyekForField(projectId: number): Promise<Array<Record<string, unknown>>> {
+	// Tiga sumber dimuat paralel; satu yang gagal tidak membuang seluruh ringkasan (ditandai di baris terkait).
+	const [tl, lp, pu] = await Promise.allSettled([
+		flattenTimelineForField(projectId),
+		flattenLaporanHarianForField(projectId),
+		flattenPunchListForField(projectId)
+	]);
+	const gagal = [tl, lp, pu].filter((r) => r.status === 'rejected');
+	for (const g of gagal) console.error('[fieldExport] sumber status proyek gagal:', (g as PromiseRejectedResult).reason);
+	if (gagal.length === 3) throw new Error('Gagal memuat data status proyek');
+	const val = <T,>(r: PromiseSettledResult<T>, fb: T): T => (r.status === 'fulfilled' ? r.value : fb);
+	const rows = ringkasStatusProyek({ timeline: val(tl, []), laporan: val(lp, []), punch: val(pu, []) });
+	if (gagal.length) rows.push({ indikator: 'Catatan', nilai: `${gagal.length} sumber tidak termuat`, keterangan: 'Sebagian indikator di atas bernilai kosong/0 karena sumbernya gagal dimuat — jangan dibaca sebagai nol sungguhan.' });
+	return rows;
+}
+
+export async function flattenLaporanMingguanForField(
+	projectId: number,
+	opts: FieldExportOpts = {}
+): Promise<Array<Record<string, unknown>>> {
+	return rekapMingguan(await flattenLaporanHarianForField(projectId, opts));
+}

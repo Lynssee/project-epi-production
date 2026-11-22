@@ -9,7 +9,7 @@
 	import { getIdToken } from '$lib/services/secureDirectus';
 	import { IconLoader2, IconAlertTriangle, IconArrowLeft } from '@tabler/icons-svelte';
 
-	const jenis = $page.params.jenis;
+	const jenis = $page.params.jenis as string;
 	const id = Number($page.params.id);
 	const jenisLabel = jenis === 'pr' ? 'Pengajuan Pembelian (PR)' : 'Pengajuan Anggaran';
 

@@ -47,7 +47,8 @@ export const POST: RequestHandler = async (event) => {
 	const kantor = await getKantorPusat();
 	if (kantor) {
 		const jarakDariKantorM = haversineMeters(lat, lng, kantor.lat, kantor.lng);
-		if (jarakDariKantorM <= JARAK_MIN_DARI_KANTOR_M) {
+		// null = koordinat kantor tak valid → pemeriksaan dilewati (sebelumnya `null <= batas` bernilai benar dan menolak keliru).
+		if (jarakDariKantorM != null && jarakDariKantorM <= JARAK_MIN_DARI_KANTOR_M) {
 			throw error(422, 'Titik ini terlalu dekat dengan kantor. Petakan saat Anda berada di lokasi proyek.');
 		}
 	}

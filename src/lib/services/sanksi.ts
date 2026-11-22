@@ -9,6 +9,8 @@ export interface SanksiKaryawan {
 	karyawan_name: string;
 	nik?: string;
 	posisi?: string;
+	/** Nomor surat sanksi (bila sudah diterbitkan). */
+	nomor_surat?: string | null;
 	jenis_sanksi: string;
 	kategori_pelanggaran: string;
 	deskripsi_pelanggaran: string;

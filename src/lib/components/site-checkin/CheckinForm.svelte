@@ -4,6 +4,7 @@
 <script lang="ts">
 	import { susunBarisPemilih } from '$lib/utils/siteGroupList';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
+	import GoldenRulesPledge from '$lib/components/site-checkin/GoldenRulesPledge.svelte';
 	import { watchPositionUntilAccurate, type DevicePosition } from '$lib/utils/geoClient';
 	import { watermarkPhoto } from '$lib/utils/photoWatermark';
 	import { compressPhoto } from '$lib/utils/photoCompress';
@@ -87,6 +88,8 @@
 	let loadingProjects = $state(true);
 	let assignedCount = $state(0);
 	let selectedProjectId = $state<number | null>(null);
+	// Budaya Fase 5: true bila Golden Rules wajib & belum berikrar di proyek terpilih (setelan culture.golden_rules_wajib; bawaan: tidak wajib).
+	let goldenBlokir = $state(false);
 	let settings = $state<SiteCheckinSettings | null>(null);
 	// Paket 02 §3.11 (SVR-04) — daftar proyek dari cache lokal (offline total), bukan server.
 	let daftarDariCacheLabel = $state<string | null>(null);
@@ -269,7 +272,10 @@
 		akurasi_mode: null,
 		akurasi_enforce_from: null,
 		visit_picker_hari: 7,
-		maks_selisih_hari_klaim: 3
+		maks_selisih_hari_klaim: 3,
+		// Dua field berikut belum ada di default lama (undefined = falsy); dibuat eksplisit agar sesuai tipe tanpa mengubah perilaku.
+		tipe_maintenance_aktif: false,
+		pengingat_checkout_jam: null
 	};
 
 	// Paket 07 §3.3 (SVR-14) — race fix: +page.svelte memuat booking secara ASYNC dan bisa
@@ -589,6 +595,10 @@
 
 	async function handleSubmit() {
 		if (!canSubmit || !selectedReferensiId || !position) return;
+		if (goldenBlokir) {
+			errorMsg = 'Centang ikrar Golden Rules EPI terlebih dahulu sebelum check-in.';
+			return;
+		}
 		submitting = true;
 		errorMsg = '';
 		hasil = null;
@@ -1390,6 +1400,8 @@
 			<span>{errorMsg}</span>
 		</div>
 	{/if}
+
+	<GoldenRulesPledge projectId={tipeKeperluan === 'proyek' ? selectedProjectId : null} bind:blokir={goldenBlokir} />
 
 	<!-- 5. ACTION SUBMIT BUTTON -->
 	<div class="flex flex-col gap-1.5">

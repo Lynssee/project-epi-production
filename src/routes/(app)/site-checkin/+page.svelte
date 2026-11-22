@@ -130,6 +130,9 @@
 					(b.status === 'aktif' || (b.status === 'disetujui' && b.butuh_kendaraan === false)) &&
 					b.tipe_keperluan === 'site_visit'
 			);
+			// Booking yang dibahas: yang tanggalnya mencakup hari ini (WIB) lebih dulu, lalu yang pertama (mis. aktif tapi sudah basi).
+			// Hanya dijadikan TAWARAN/peringatan di bawah — tidak pernah otomatis menempel ke check-in tanpa persetujuan pengguna.
+			const active = cocok.find((b) => tanggalMencakupHariIniWib(b.tanggal_mulai, b.tanggal_selesai_rencana)) ?? cocok[0];
 			if (!active) return;
 
 			if (tanggalMencakupHariIniWib(active.tanggal_mulai, active.tanggal_selesai_rencana)) {

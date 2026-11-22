@@ -268,6 +268,7 @@
 		!!budget && !!$authStore.user?.email &&
 		String(budget.created_by_email || '').toLowerCase() === String($authStore.user.email).toLowerCase()
 	);
+	let isDisbursed = $derived(budget && (isBudgetPaid(budget.status) || budget.finance_processed));
 	let canSubmitSpj = $derived(
 		!!budget && isDisbursed && isPengaju &&
 		!SPJ_DONE.includes(String(budget.status_pertanggungjawaban || '').toLowerCase())
@@ -472,7 +473,6 @@
 	// tetap muncul untuk pengajuan yang sebenarnya sudah dibayar.
 	let isPfApproved = $derived(budget && (isBudgetFinanceApproved(budget.status) || !!budget.project_finance_approved_by));
 	let isPfRejected = $derived(budget && isBudgetRejected(budget.status));
-	let isDisbursed = $derived(budget && (isBudgetPaid(budget.status) || budget.finance_processed));
 	let isDiproses = $derived(budget && getBudgetStatusLabel(budget.status) === 'Diproses');
 
 	// Fase 2 (Lifecycle Bukti Bayar) — bukti transfer dari supplier_payments (admin), dijahit

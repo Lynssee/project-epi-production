@@ -13,6 +13,8 @@
 	} from '$lib/services/sjiApi';
 	import { IconArrowLeft, IconLoader2, IconCircleCheck, IconAlertTriangle, IconSearch, IconTrash, IconPlus } from '@tabler/icons-svelte';
 	import TunggakanFisikWidget from '$lib/components/TunggakanFisikWidget.svelte';
+	import { getIdToken } from '$lib/services/secureDirectus';
+	import { evaluateEquipmentSets } from '$lib/shared/plSet';
 
 	let meta = $state<SjiMeta | null>(null);
 	let metaError = $state('');
@@ -87,6 +89,40 @@
 
 	function removeFromCart(itemId: number) {
 		cart = cart.filter((c) => c.itemId !== itemId);
+	}
+
+	// Set Equipment (Product Pairing Fase 3): alat induk di keranjang → aksesoris set yang belum ikut (mis. Belalai pada Vacuum Cleaner).
+	// Aturan dimuat sekali (1 panggilan); gagal => saran tidak tampil, pengajuan tetap berjalan. Hanya petunjuk; penegakan oleh gate ERP.
+	let equipRules = $state<any[]>([]);
+	let setNotice = $state('');
+	onMount(async () => {
+		try {
+			const token = await getIdToken();
+			const res = await fetch('/api/packing-list/set-rules', { headers: { Authorization: `Bearer ${token}` } });
+			const j = res.ok ? await res.json() : null;
+			if (j?.success) equipRules = j.equipment || [];
+		} catch (e) {
+			console.warn('[sji/ajukan] aturan set equipment tidak dimuat (saran disembunyikan):', e);
+		}
+	});
+	let setEval = $derived(equipRules.length ? evaluateEquipmentSets(equipRules, { request: cart.map((c) => c.nama) }) : null);
+	let setSuggestions = $derived(
+		(setEval?.rules || []).flatMap((r: any) => r.components.filter((c: any) => !c.found).map((c: any) => ({ ...c, rule_label: r.rule_label })))
+	);
+
+	async function addSetComponent(c: any) {
+		setNotice = '';
+		try {
+			const kw = c.keywords?.[0] || c.label;
+			const hits = await searchSjiItems(kw);
+			const hit = hits.find((h) => !cart.some((x) => x.itemId === h.id));
+			if (!hit) { setNotice = `"${c.label}" tidak ditemukan di katalog gudang — minta admin gudang menambahkannya atau ketik manual di kolom cari.`; return; }
+			addToCart(hit);
+			const line = cart.find((x) => x.itemId === hit.id);
+			if (line) line.quantity = Math.max(1, Number(c.qty_per_unit) || 1);
+		} catch (e: any) {
+			setNotice = e?.message || 'Gagal mencari aksesoris di katalog.';
+		}
 	}
 
 	let canSubmit = $derived(!!gudangId && cart.length > 0 && cart.every((c) => c.quantity > 0) && !submitting);
@@ -212,6 +248,21 @@
 					</div>
 				{/if}
 			</div>
+
+			{#if setSuggestions.length > 0}
+				<div class="rounded-lg border p-3 mb-2 text-[12px]" style="border-color: var(--sys-sep)" data-testid="sji-set-suggestion">
+					<p class="font-semibold" style="color: var(--sys-label)">🧰 Kelengkapan alat yang dipinjam</p>
+					<p class="mt-0.5 mb-2" style="color: var(--sys-label3)">Alat ini biasanya dibawa bersama aksesorinya. Tekan untuk menambahkan ke daftar (cek stoknya di item); wajib dikembalikan lengkap.</p>
+					<div class="flex flex-wrap gap-1.5">
+						{#each setSuggestions as c (c.rule_label + c.label)}
+							<button type="button" class="px-2 py-1 rounded-md border text-[11px] font-semibold" style="border-color: var(--sys-sep); color: var(--sys-label)" onclick={() => addSetComponent(c)}>
+								+ {c.label}{c.mandatory_out ? ' (wajib)' : ''}
+							</button>
+						{/each}
+					</div>
+					{#if setNotice}<p class="mt-2 text-amber-700">{setNotice}</p>{/if}
+				</div>
+			{/if}
 
 			{#if cart.length > 0}
 				<div class="flex flex-col gap-2">

@@ -12,6 +12,7 @@
 	import { readItems } from '@directus/sdk';
 	import { page } from '$app/stores';
 	import SmartReplacementModal from '$lib/components/project/SmartReplacementModal.svelte';
+	import { getBudayaHarian, type BudayaHarianItem } from '$lib/services/ess/budaya';
 
 	interface WorkerRow {
 		assignment_id: number;
@@ -32,6 +33,27 @@
 	let selectedProjectId = $state<number | null>(null);
 	let tanggal = $state<string>(new Date().toISOString().split('T')[0]);
 	let topicTbm = $state<string>('');
+	// Budaya & Propaganda Fase 2 — pesan budaya harian untuk dibacakan saat apel pagi (non-blocking; gagal/mati = tidak tampil).
+	let budayaTbm = $state<BudayaHarianItem | null>(null);
+	let budayaTbmOpen = $state(true);
+	// Gate G_TBM_CULTURE_BRIEF (Fase 4): centang "sudah dibacakan" & alasan pengecualian (hanya diminta server pada mode soft).
+	let budayaDibacakan = $state(false);
+	let butuhAlasan = $state(false);
+	let alasanBudaya = $state('');
+	let gateWarning = $state('');
+	onMount(async () => {
+		try {
+			const b = await getBudayaHarian();
+			budayaTbm = b.tbm_enabled ? b.item : null;
+		} catch (e) {
+			console.warn('[tbm-rollcall] pesan budaya gagal dimuat:', e);
+		}
+	});
+	function pakaiBudayaDiTopik() {
+		if (!budayaTbm) return;
+		const teks = budayaTbm.isi_pesan.trim();
+		if (!topicTbm.includes(teks)) topicTbm = topicTbm.trim() ? topicTbm.trim() + ' | ' + teks : teks;
+	}
 	let workers = $state<WorkerRow[]>([]);
 	let successMsg = $state<string>('');
 	let errorMsg = $state<string>('');
@@ -167,6 +189,7 @@
 		saving = true;
 		errorMsg = '';
 		successMsg = '';
+		gateWarning = '';
 		try {
 			const res = await fetch('/api/tbm-rollcall/submit', {
 				method: 'POST',
@@ -176,6 +199,8 @@
 					project_name: selectedProject?.name || `Proyek #${selectedProjectId}`,
 					tanggal,
 					topic_tbm: topicTbm.trim(),
+					budaya_dibacakan: budayaDibacakan,
+					alasan_lewati_budaya: alasanBudaya.trim(),
 					records: workers.map(w => ({
 						assignment_id: w.assignment_id,
 						manpower_id: w.manpower_id,
@@ -189,11 +214,14 @@
 			const result = await res.json();
 			if (result.success) {
 				successMsg = result.message || 'Presensi TBM berhasil disimpan.';
+				gateWarning = result.gate_warning || '';
+				butuhAlasan = false;
 				if (typeof window !== 'undefined' && (window as any).__showToast) {
 					(window as any).__showToast(successMsg, 'success');
 				}
 			} else {
-				errorMsg = result.error || 'Gagal menyimpan presensi TBM.';
+				butuhAlasan = !!result.needs_reason;
+				errorMsg = result.needs_reason ? `${result.error} Isi alasan pengecualian (min. 10 karakter) di bawah, lalu simpan lagi.` : result.error || 'Gagal menyimpan presensi TBM.';
 			}
 		} catch (err: any) {
 			errorMsg = err?.message || 'Terjadi kesalahan sistem';
@@ -263,6 +291,19 @@
 		</div>
 
 		<!-- Topik K3 / Briefing Pagi -->
+		{#if budayaTbm}
+			<div class="rounded-xl border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50 dark:bg-indigo-950/30 p-3">
+				<button type="button" class="w-full flex items-center justify-between text-left" onclick={() => (budayaTbmOpen = !budayaTbmOpen)}>
+					<span class="text-xs font-bold text-indigo-700 dark:text-indigo-300 uppercase">📢 Pesan Budaya Hari Ini — bacakan saat apel</span>
+					<span class="text-xs text-indigo-500">{budayaTbmOpen ? '▲' : '▼'}</span>
+				</button>
+				{#if budayaTbmOpen}
+					<p class="text-sm text-gray-800 dark:text-gray-100 mt-1.5 whitespace-pre-wrap">{budayaTbm.isi_pesan}</p>
+					<button type="button" class="mt-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold" onclick={pakaiBudayaDiTopik}>Gunakan di Topik TBM</button>
+					<label class="mt-2 flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200"><input type="checkbox" bind:checked={budayaDibacakan} /> Pesan budaya sudah dibacakan saat apel</label>
+				{/if}
+			</div>
+		{/if}
 		<div>
 			<label class="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">Topik Briefing K3 / TBM Hari Ini (Opsional)</label>
 			<input
@@ -303,6 +344,18 @@
 		<div class="p-3 rounded-xl bg-red-500/10 border border-red-500/25 text-red-600 dark:text-red-400 text-xs font-semibold flex items-center gap-2">
 			<IconAlertTriangle size={16} />
 			<span>{errorMsg}</span>
+		</div>
+	{/if}
+	{#if butuhAlasan}
+		<div class="p-3 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 space-y-1.5">
+			<label class="block text-xs font-bold text-amber-800 dark:text-amber-300 uppercase" for="alasan-budaya">Alasan pesan budaya tidak disampaikan</label>
+			<input id="alasan-budaya" type="text" bind:value={alasanBudaya} placeholder="Min. 10 karakter, mis. Apel dibatalkan karena hujan deras" class="w-full px-3 py-2 border border-amber-300 rounded-xl text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-white outline-none" />
+		</div>
+	{/if}
+	{#if gateWarning}
+		<div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center gap-2">
+			<IconInfoCircle size={16} />
+			<span>{gateWarning}</span>
 		</div>
 	{/if}
 	{#if successMsg}

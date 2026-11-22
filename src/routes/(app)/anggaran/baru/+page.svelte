@@ -33,7 +33,7 @@
 	import BbmSplitAllocator from '$lib/components/anggaran/BbmSplitAllocator.svelte';
 	import ProjectSelect from '$lib/components/anggaran/ProjectSelect.svelte';
 	import AttachmentChecklist from '$lib/components/anggaran/AttachmentChecklist.svelte';
-	import { getBudgetCategories, getCategoryFields, type BudgetCategory, type BudgetCategoryField } from '$lib/services/budgetCategory';
+	import { getBudgetCategories, getCategoryFields, getBudgetCategoryPoSettings, getNamaAkunCoa, PO_ARAH_DEFAULT, type BudgetCategory, type BudgetCategoryField, type BudgetCategoryPo } from '$lib/services/budgetCategory';
 	import { getCostBehaviorByKategoriBelanja, COST_BEHAVIOR_BADGE, getProjectCostPosition } from '$lib/services/projectCostBehaviorApi';
 	import { guessKategoriBelanja } from '$lib/services/kategoriGuess';
 	import { getCategoryClue } from '$lib/data/budgetCategoryClues';
@@ -113,6 +113,7 @@
 		}, 400);
 		return () => clearTimeout(katMatchTimer);
 	});
+	let categories = $state<BudgetCategory[]>([]);
 	let katMatchCat = $derived(katMatch ? categories.find((c) => c.kode === katMatch!.kode) || null : null);
 
 	// === PRJ-24: Pos RAP per item (aktif hanya bila setelan project.pa.rab_link_enabled = true) ===
@@ -133,9 +134,22 @@
 	// Fase 3 (Pengajuan Anggaran v3, 22 Agu 2026): CategoryPicker WAJIB (Checkpoint 3) —
 	// menggantikan dropdown Operasional/Jasa lama. `kategori` (legacy) tetap terisi
 	// otomatis dari legacy_kategori kategori terpilih (K3, nol downtime laporan lama).
-	let categories = $state<BudgetCategory[]>([]);
 	let selectedCategoryKode = $state<string | null>(null);
 	let selectedCategory = $derived(categories.find((c) => c.kode === selectedCategoryKode) || null);
+
+	// FIN-23: akun pembukuan otomatis per kategori (read-only; diperiksa Finance) + penanda wajib PR/PO. Keduanya fail-soft.
+	let poByKode = $state<Record<string, BudgetCategoryPo>>({});
+	let namaAkun = $state<Record<string, string>>({});
+	let poInfo = $derived(selectedCategoryKode ? poByKode[selectedCategoryKode] || null : null);
+	let akunRekomendasi = $derived(selectedCategory?.coa_debit || null);
+	$effect(() => {
+		if (!categories.length || Object.keys(poByKode).length) return;
+		getBudgetCategoryPoSettings().then((m) => { poByKode = m; });
+	});
+	$effect(() => {
+		const k = akunRekomendasi;
+		if (k && !namaAkun[k]) getNamaAkunCoa([k]).then((m) => { namaAkun = { ...namaAkun, ...m }; });
+	});
 
 	// PC3-08 (FLD-11) — kategori Petty Cash = isi ulang dana: wajib memilih dana yang saldonya ditambah.
 	let pettyCashFundId = $state('');
@@ -376,6 +390,7 @@
 	const cutoffCountdown = $derived(
 		getCutoffCountdown(localCycleInfo.cutoffThisWeek, new Date())
 	);
+	let preflightResult = $state<any>(null);
 	const activeBatchTarget = $derived(
 		preflightResult?.pa_batch?.batch_rilis_target || localCycleInfo.batchRilisTarget
 	);
@@ -387,7 +402,6 @@
 	);
 
 	// Fase 3 Bagian C: panel pra-terbang (pre-flight gate check, warning-only)
-	let preflightResult = $state<any>(null);
 	let checkingPreflight = $state(false);
 	// Fase 2 (Rencana v2 Shift-Left Gate Anggaran, 25 Sep 2026) — hasil preflight
 	// terakhir yang gagal dikirim (blocking, bukan warning-only) supaya kartu di bawah
@@ -1747,6 +1761,18 @@
 						(mis. mengisi kas kecil, tarik tunai dari bank), pilih kategori <strong>“Pemindahan Kas (Non-Beban)”</strong>
 						agar tidak tercatat sebagai beban proyek.
 					</div>
+				{/if}
+
+				{#if selectedCategoryKode && poInfo?.wajib_po}
+					<div class="mt-3 p-3 rounded-xl border border-amber-300 bg-amber-50 text-xs text-amber-900" data-testid="banner-wajib-po">
+						<b>Kategori ini wajib melalui PR/PO.</b> {poInfo.po_arah_hint || PO_ARAH_DEFAULT}
+						<a href="/procurement/ajukan" class="underline font-semibold ml-1">Buka Pengadaan (buat PR)</a>
+					</div>
+				{/if}
+				{#if selectedCategoryKode && akunRekomendasi}
+					<p class="mt-2 text-[11px] text-gray-500" data-testid="akun-rekomendasi">
+						Akun pembukuan (otomatis): <span class="font-mono font-semibold text-gray-700">{akunRekomendasi}</span>{#if namaAkun[akunRekomendasi]} — {namaAkun[akunRekomendasi]}{/if}. Ditentukan dari kategori dan diperiksa Finance; Anda tidak perlu memilih akun.
+					</p>
 				{/if}
 
 				{#if selectedCategoryKode && activeClue}

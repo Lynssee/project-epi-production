@@ -10,6 +10,7 @@ import { requireUser } from '$lib/server/firebaseAuth';
 import { directusServerJson, directusServerFetch } from '$lib/server/directus';
 import { htmlToPdf } from '$lib/server/gotenbergClient';
 import { buildLaporanHarianLapanganHtml } from '$lib/pdf-templates/laporanHarianLapangan';
+import { forwardReportEvent } from '$lib/server/reportEventForward';
 
 export async function GET(event: RequestEvent) {
 	await requireUser(event);
@@ -353,6 +354,7 @@ export async function GET(event: RequestEvent) {
 		const buffer = await htmlToPdf(html, { filename: `laporan-harian-${id}.pdf` });
 		const dateLabel = reportDate || (report.date || '').split('T')[0] || id;
 
+		forwardReportEvent(event, { catalog_key: 'laporan-harian-pdf', format: 'pdf', entity_id: event.params?.id }); // Report Center: catat unduhan
 		return new Response(Uint8Array.from(buffer), {
 			headers: {
 				'Content-Type': 'application/pdf',

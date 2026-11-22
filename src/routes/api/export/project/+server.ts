@@ -20,6 +20,7 @@ import { directusServerJson, directusServerFetch } from '$lib/server/directus';
 import { htmlToPdf } from '$lib/server/gotenbergClient';
 import { FIELD_EXPORT_SECTION_KEYS } from '$lib/config/fieldExportRegistry';
 import QRCode from 'qrcode';
+import { forwardReportEvent } from '$lib/server/reportEventForward';
 
 const MAX_ROWS = 5000;
 const MAX_PHOTOS = 60;
@@ -248,6 +249,7 @@ export async function POST(event: RequestEvent) {
 	}
 
 	const safeName = `${section}-${projectId}-${new Date().toISOString().slice(0, 10)}.pdf`;
+	forwardReportEvent(event, { catalog_key: 'export-project', format: 'pdf' }); // Report Center: catat unduhan
 	return new Response(Uint8Array.from(pdf), {
 		headers: {
 			'Content-Type': 'application/pdf',

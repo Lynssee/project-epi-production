@@ -370,7 +370,7 @@ export interface ProjectHseCompleteness {
 	ptwAktif: boolean;
 	toolboxHariIni: boolean;
 	insidenBelumSelesai: number;
-	jsaBerlaku: boolean;
+	jsaBerlaku: boolean | null; // null = belum diketahui (jsa_project belum ada) — lihat catatan di atas
 }
 
 // ---------------------------------------------------------------------------

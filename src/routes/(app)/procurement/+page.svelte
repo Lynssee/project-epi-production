@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import SopSayaWidget from '$lib/components/ess/SopSayaWidget.svelte';
 	import { authStore } from '$lib/stores/auth';
 	import { rolesStore } from '$lib/stores/roles';
 	import { hasPermission } from '$lib/constants/permissions';
@@ -101,6 +102,7 @@
 				steps={h('menu.page').sectionGuide?.steps ?? []}
 			/>
 		</div>
+		<div class="max-w-5xl mx-auto w-full"><SopSayaWidget /></div>
 		<div class="max-w-5xl mx-auto w-full grid grid-cols-1 sm:grid-cols-2 gap-4">
 			{#each menuItems as item}
 				<button

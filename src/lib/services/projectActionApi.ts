@@ -10,8 +10,11 @@ export interface ProjectActionItem {
 	id: number;
 	project_id: number;
 	nomor_dokumen: string;
+	/** Diperkaya oleh sebagian endpoint daftar lintas proyek (opsional; UI memeriksanya sebelum menampilkan). */
+	nama_proyek?: string | null;
 	kategori: 'instruksi_manajemen' | 'kendala_lapangan' | 'komplain_klien';
-	tingkat_urgensi: 'normal' | 'tinggi' | 'kritis_darurat';
+	// 'kritis' = nilai lama yang masih bisa ada di data (dikueri & ditangani komponen lapangan); yang baru ditulis: kritis_darurat.
+	tingkat_urgensi: 'normal' | 'tinggi' | 'kritis' | 'kritis_darurat';
 	dampak: 'tidak_signifikan' | 'risiko_delay' | 'risiko_kualitas' | 'risiko_hse' | 'pekerjaan_terhenti';
 	judul: string;
 	deskripsi: string;
@@ -20,7 +23,8 @@ export interface ProjectActionItem {
 	pic_pelaksana_nama: string | null;
 	pembuat_id: string | null;
 	pembuat_nama: string | null;
-	status: 'open' | 'acknowledged' | 'in_progress' | 'pending_verification' | 'closed' | 'cancelled';
+	// 'resolved' & 'rejected' = status yang ditangani defensif oleh UI lapangan (bisa berasal dari sisi admin/data lama).
+	status: 'open' | 'acknowledged' | 'in_progress' | 'pending_verification' | 'resolved' | 'closed' | 'rejected' | 'cancelled';
 	is_gate_blocker: boolean;
 	scope_lock?: 'seluruh_proyek' | 'unit_spesifik';
 	target_unit_id?: number | null;

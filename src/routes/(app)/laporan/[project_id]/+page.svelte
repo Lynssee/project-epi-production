@@ -1,4 +1,5 @@
 <script lang="ts">
+	import RadarChip from '$lib/components/strategy/RadarChip.svelte';
 	import StepChecklistBanner from '$lib/components/help/StepChecklistBanner.svelte';
 	import CircularProgressGauge from '$lib/components/shared/CircularProgressGauge.svelte';
 	import { page } from '$app/stores';
@@ -193,8 +194,8 @@
 		calculateCumulativeProjectProgress,
 		calculateProjectPlannedPercentage,
 		calculateProjectDeviation
-	} from '$lib/utils/projectProgress.ts';
-	import { computeDailyTarget } from '$lib/utils/dailyTarget.ts';
+	} from '$lib/utils/projectProgress';
+	import { computeDailyTarget } from '$lib/utils/dailyTarget';
 	import { FIELD_SERVICE_TYPES, fieldServiceTypeLabel } from '$lib/utils/fieldServiceTypes';
 	import { vibrateTap } from '$lib/utils/haptic';
 	import { getProjectEquipmentP2hStatus, type ProjectEquipmentP2hStatus } from '$lib/services/preventive';
@@ -256,6 +257,9 @@
 	let projectId = $derived($page.params.project_id as string);
 	let project = $state<any>(null);
 	let isDemisioner = $derived(isDemisionerLeader(project));
+	let reportStatus = $state('draft');
+	let savedReportId = $state<number | null>(null);
+	let priorReportStatus = $state('draft');
 	// Leader lama diizinkan merevisi laporannya sendiri bila statusnya revision_requested
 	let canReviseOwnReport = $derived(
 		isDemisioner && 
@@ -305,11 +309,8 @@
 	let previousSpentMap = $state<Record<string | number, number>>({});
 	let budgetReceiptFile = $state<{ file: File; name: string; url: string; uploadedId?: string | null } | null>(null);
 	let isLocked = $state(false);
-	let reportStatus = $state('draft');
-	let savedReportId = $state<number | null>(null);
 	// Fase 3 (Loop Perbaikan) — status & revisi_count SAAT laporan dimuat untuk diedit,
 	// dipakai sendReport() mendeteksi resubmit atas laporan revision_requested.
-	let priorReportStatus = $state('draft');
 	let priorRevisiCount = $state(0);
 	// Snapshot of material_used as loaded from the server, used to compute a delta
 	// against the edited values so re-saving a report doesn't double-deduct RAB stock.
@@ -621,7 +622,6 @@
 
 	// R2-08: alasan keterlambatan (disimpan di reports.alasan_input_admin). Wajib bila laporan diisi lebih dari H-2 (ambang resmi di server/Setelan Project).
 	let alasanTerlambat = $state('');
-	const hariTerlambat = $derived(hariMundur(reportData.date, new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)) ?? 0);
 
 	let reportData = $state({
 		date: new Date(Date.now() - (new Date()).getTimezoneOffset() * 60000).toISOString().split('T')[0],
@@ -661,6 +661,8 @@
 			notes: string;
 			category: string;
 			target_volume: number;
+			/** Target harian hasil kalkulasi saat render (opsional; dipakai badge "Target Hari Ini"). */
+			daily_target?: number;
 			service_type: string;
 			is_custom: boolean;
 			category_only?: boolean;
@@ -687,7 +689,7 @@
 		material_stock: [] as { type: string, amount: number, unit: string }[],
 		material_needs: [{ type: '', amount: 0, unit: 'kg', notes: '', urgency: 'normal', description: '', date_needed: '', expense_id: '', identitas_barang_id: null, is_manual: false }],
 		tomorrow_plan: [{ activity: '', notes: '', description: '' }],
-		issues: [{ description: '', existing_foto_kendala: [] as string[], foto_kendala: [] as { file: File; name: string; url: string; uploadedId?: string | null }[] }],
+		issues: [{ description: '', existing_foto_kendala: [] as string[], foto_kendala: [] as { file: File; name: string; url: string; uploadedId?: string | null }[] }] as { description: string; kategori_defect?: string; tindakan_perbaikan?: string; existing_foto_kendala: string[]; foto_kendala: { file: File; name: string; url: string; uploadedId?: string | null }[] }[],
 		manpower: [freshManpowerGroup('BORONGAN')],
 		attendance_photos: [] as { file: File; name: string; url: string; uploadedId?: string | null }[],
 		progress_photos: [] as { file: File; name: string; url: string; uploadedId?: string | null }[],
@@ -729,15 +731,18 @@
 		qc_ambient: {
 			applicable: false,
 			filled_today: false,
-			steel_temp: null as number | null,
-			dew_point: null as number | null,
-			relative_humidity: null as number | null,
-			air_temp: null as number | null,
+			// Input kosong bisa menghasilkan '' (bukan hanya null/angka) — UI sudah memeriksa keduanya.
+			steel_temp: null as number | string | null,
+			dew_point: null as number | string | null,
+			relative_humidity: null as number | string | null,
+			air_temp: null as number | string | null,
+			concrete_moisture: null as number | string | null,
 			catatan: ''
 		},
 		material_variance_note: '',
 		client_instructions: [] as { pengawas_klien: string; isi_instruksi: string; berpotensi_vo: boolean }[]
 	});
+	const hariTerlambat = $derived(hariMundur(reportData.date, new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)) ?? 0);
 
 	const DOWNTIME_CAUSE_OPTIONS = [
 		{ value: 'cuaca', label: 'Cuaca Buruk / Hujan Deras' },
@@ -787,6 +792,8 @@
 	}
 
 	let isHold = $derived(reportData.activity_status === 'hold');
+	let isStandby = $derived(reportData.activity_status === 'standby');
+	let isNonPhysical = $derived(isHold || isStandby);
 	let liveProductivity = $derived(computeDailyProductivity(reportData.progress, reportData.manpower));
 
 	// Metrik finansial real-time
@@ -804,6 +811,13 @@
 		if (val === 'hold') {
 			reportData.manpower = [STANDBY_MANPOWER_ROW()];
 			reportData.manpower_count = 0;
+		} else if (val === 'standby') {
+			if (reportData.manpower.length === 0 || (reportData.manpower.length === 1 && reportData.manpower[0].role === 'STANDBY')) {
+				reportData.manpower = [freshManpowerGroup('BORONGAN', 'Standby Lapangan / Menunggu BAST')];
+			}
+			if (!reportData.general_notes) {
+				reportData.general_notes = 'Standby manpower menunggu BAST / instruksi klien';
+			}
 		} else if (reportData.manpower.length === 1 && reportData.manpower[0].role === 'STANDBY') {
 			reportData.manpower = [freshManpowerGroup('BORONGAN')];
 			reportData.manpower_count = 0;
@@ -1672,7 +1686,7 @@
 					status: item.status || 'pending'
 				}));
 
-			// SPL-05 / PAKET-2: Wajibkan subtask_id untuk setiap baris progres yang diisi
+			// SPL-05 / PAKET-2: Wajibkan subtask_id untuk setiap baris progres yang diisi (jika bukan Hold/Standby)
 			const invalidProgressRow = reportData.progress.find((item: any) => {
 				const hasProgressValue = (Number(item.progress_value) || 0) > 0;
 				const hasActivity = !!(item.activity && item.activity.trim());
@@ -1680,7 +1694,7 @@
 				return isFilled && (!item.subtask_id || !String(item.subtask_id).trim());
 			});
 
-			if (invalidProgressRow) {
+			if (invalidProgressRow && !isHold && !isStandby) {
 				alert('Pilih pekerjaan (subtask) dari Timeline supaya progres terhitung di grafik proyek.');
 				activeTab = 'progress';
 				submitting = false;
@@ -1798,7 +1812,7 @@
 
 			// SPL-05 (opsi B) — draft lama bisa masih membawa baris "kategori saja" (tanpa subtask_id).
 			// Cegat dengan pesan spesifik sebelum gate generik "Progress tanpa subtask".
-			if (!isHold) {
+			if (!isHold && !isStandby) {
 				const barisKategoriSaja = reportData.progress.filter((p: any) => p.category_only && !p.subtask_id);
 				if (barisKategoriSaja.length > 0) {
 					activeTab = 'progress';
@@ -2351,6 +2365,8 @@
 				hse_daily: {
 					apd_compliance: reportData.hse_daily?.apd_compliance || '',
 					catatan_k3: reportData.hse_daily?.catatan_k3 || '',
+					toolbox_jam: reportData.hse_daily?.toolbox_jam || '',
+					toolbox_topik: reportData.hse_daily?.toolbox_topik || '',
 					snapshot: hseSummary ? {
 						ptw_aktif: hseSummary.ptwAktif,
 						toolbox_hari_ini: hseSummary.toolboxHariIni,
@@ -2370,7 +2386,15 @@
 						hold_point_flag: inspectionSummary.holdPointFlag,
 						avg_dft: inspectionSummary.avgDft,
 						measured_at: inspectionSummary.measuredAt
-					} : null
+					} : null,
+					// Isian manual Leader (dulu satu-satunya sumber snapshot di blok duplikat yang menimpa blok ini).
+					input_leader: {
+						steel_temp: reportData.qc_ambient.steel_temp,
+						dew_point: reportData.qc_ambient.dew_point,
+						relative_humidity: reportData.qc_ambient.relative_humidity,
+						air_temp: reportData.qc_ambient.air_temp,
+						catatan: reportData.qc_ambient.catatan
+					}
 				},
 				material_variance: {
 					flagged: materialVarianceCheck.flagged,
@@ -2407,29 +2431,6 @@
 				...fieldBuktiSusulan(),
 				budget_receipt,
 				budget_items: finalBudgetItems,
-				// Fase 2 Paritas Field Lengkap (reports.* JSON fields)
-				hse_daily: {
-					apd_compliance: reportData.hse_daily?.apd_compliance || '',
-					catatan_k3: reportData.hse_daily?.catatan_k3 || '',
-					toolbox_jam: reportData.hse_daily?.toolbox_jam || '',
-					toolbox_topik: reportData.hse_daily?.toolbox_topik || ''
-				},
-				downtime_log: (reportData.downtime_log || []).filter((d: any) => Number(d.durasi_jam) > 0),
-				qc_ambient: {
-					applicable: reportData.qc_ambient.applicable,
-					filled_today: !!(reportData.qc_ambient.steel_temp !== null || reportData.qc_ambient.air_temp !== null || reportData.qc_ambient.relative_humidity !== null),
-					snapshot: {
-						steel_temp: reportData.qc_ambient.steel_temp,
-						dew_point: reportData.qc_ambient.dew_point,
-						relative_humidity: reportData.qc_ambient.relative_humidity,
-						air_temp: reportData.qc_ambient.air_temp,
-						catatan: reportData.qc_ambient.catatan
-					}
-				},
-				material_variance: {
-					note: reportData.material_variance_note || ''
-				},
-				client_instructions: reportData.client_instructions || []
 			};
 
 			// Mirror ke Universal Approval Engine SENGAJA DINONAKTIFKAN dulu — approval_matrix
@@ -5015,24 +5016,34 @@
 								<div>
 									<label class="f-label">Status Aktivitas <span style="color: var(--re)">*</span></label>
 									{#if isLocked}
-										<span class="badge {isHold ? 'warn' : 'info'}" style="font-size: 11px">{isHold ? 'Hold' : 'On Progress'}</span>
+										<span class="badge {isHold ? 'warn' : isStandby ? 'info' : 'ok'}" style="font-size: 11px">
+											{isHold ? 'Hold' : isStandby ? 'Standby / BAST' : 'On Progress'}
+										</span>
 									{:else}
-										<div class="flex gap-2">
+										<div class="grid grid-cols-3 gap-1.5">
 											<button
 												type="button"
-												class="flex-1 py-2 rounded-lg text-[12px] font-semibold border transition-colors cursor-pointer"
-												style={!isHold ? 'background: var(--g); color: #fff; border-color: var(--g)' : 'background: var(--sys-fill); color: var(--sys-label3); border-color: var(--sys-sep)'}
+												class="py-2 px-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer text-center truncate"
+												style={reportData.activity_status === 'on_progress' ? 'background: var(--g); color: #fff; border-color: var(--g)' : 'background: var(--sys-fill); color: var(--sys-label3); border-color: var(--sys-sep)'}
 												onclick={() => handleActivityStatusChange('on_progress')}
-											>On Progress</button>
+											>🚀 On Progress</button>
 											<button
 												type="button"
-												class="flex-1 py-2 rounded-lg text-[12px] font-semibold border transition-colors cursor-pointer"
-												style={isHold ? 'background: var(--am); color: #fff; border-color: var(--am)' : 'background: var(--sys-fill); color: var(--sys-label3); border-color: var(--sys-sep)'}
+												class="py-2 px-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer text-center truncate"
+												style={reportData.activity_status === 'standby' ? 'background: #0284c7; color: #fff; border-color: #0284c7' : 'background: var(--sys-fill); color: var(--sys-label3); border-color: var(--sys-sep)'}
+												onclick={() => handleActivityStatusChange('standby')}
+											>⏳ Standby / BAST</button>
+											<button
+												type="button"
+												class="py-2 px-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer text-center truncate"
+												style={reportData.activity_status === 'hold' ? 'background: var(--am); color: #fff; border-color: var(--am)' : 'background: var(--sys-fill); color: var(--sys-label3); border-color: var(--sys-sep)'}
 												onclick={() => handleActivityStatusChange('hold')}
-											>Hold</button>
+											>⏸️ Hold</button>
 										</div>
-										{#if isHold}
-											<p class="text-[11px] mt-1.5" style="color: var(--sys-label3)">Hold: detail aktivitas hari ini tidak perlu diisi, manpower otomatis standby.</p>
+										{#if isStandby}
+											<p class="text-[11px] mt-1.5 text-sky-600 dark:text-sky-400 font-medium">⏳ Standby: Proyek selesai / menunggu BAST atau instruksi klien. Progres fisik opsional (tidak wajib 0.01 m²), cukup pastikan presensi tenaga kerja & catatan umum terisi.</p>
+										{:else if isHold}
+											<p class="text-[11px] mt-1.5" style="color: var(--sys-label3)">Hold: Detail aktivitas hari ini tidak perlu diisi, manpower otomatis standby.</p>
 										{/if}
 									{/if}
 								</div>
@@ -9728,6 +9739,9 @@
 						<p class="text-[12px] text-gray-400 text-center py-3">Tidak ada foto yang dilampirkan.</p>
 					{/if}
 				</div>
+
+				<!-- Strategic Suite v2 Fase 6: chip radar opsional (berdiri sendiri, tidak ikut kirim laporan) -->
+				<div class="mb-4"><RadarChip sourceForm="laporan_harian" {projectId} /></div>
 			{/if}
 
 			{#if activeTab === 'weekend' && isFriday}

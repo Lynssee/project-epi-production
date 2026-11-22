@@ -15,8 +15,12 @@
 		title: string;
 		filename?: string;
 		onClose: () => void;
+		/** Dipanggil setelah PDF berhasil diunduh dari server (mis. untuk menyimpan salinan offline). Galat di dalamnya tidak memengaruhi tampilan. */
+		onLoaded?: (blob: Blob) => void;
+		/** Bila ada, ditampilkan langsung TANPA mengunduh dari server (salinan offline). */
+		initialBlob?: Blob | null;
 	}
-	let { open, url, title, filename = 'dokumen', onClose }: Props = $props();
+	let { open, url, title, filename = 'dokumen', onClose, onLoaded, initialBlob = null }: Props = $props();
 
 	let busy = $state(false);
 	let msg = $state('');
@@ -39,6 +43,11 @@
 				throw new Error(err?.message || `Gagal membuat PDF (HTTP ${res.status}).`);
 			}
 			blob = await res.blob();
+			try {
+				onLoaded?.(blob);
+			} catch (e) {
+				console.warn('[PdfFetchSheet] onLoaded gagal (diabaikan):', e);
+			}
 		} catch (e: any) {
 			msg = e?.message || 'Gagal membuat PDF.';
 		} finally {
@@ -50,7 +59,10 @@
 	$effect(() => {
 		if (open && url && url !== lastUrl) {
 			lastUrl = url;
-			untrack(() => muat());
+			untrack(() => {
+				if (initialBlob) blob = initialBlob;
+				else muat();
+			});
 		}
 		if (!open) {
 			lastUrl = '';

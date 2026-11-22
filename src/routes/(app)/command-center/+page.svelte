@@ -10,6 +10,7 @@
 	import { hasPermission } from '$lib/constants/permissions';
 	import { getFieldCommandCenterSnapshot, type CcSnapshot } from '$lib/services/commandCenter';
 	import { getKapasitasSummary, type KapasitasSummary } from '$lib/services/kapasitasSummary';
+	import TargetProyeksiWidget from '$lib/components/command-center/TargetProyeksiWidget.svelte';
 	import { goto } from '$app/navigation';
 	import { IconMenu2, IconRefresh, IconWifiOff, IconArrowUpRight } from '@tabler/icons-svelte';
 
@@ -187,6 +188,10 @@
 					{/if}
 				{/if}
 			</div>
+		{/if}
+
+		{#if kapasitasVisible}
+			<TargetProyeksiWidget />
 		{/if}
 
 		{#if loading && !snapshot}

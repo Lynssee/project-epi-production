@@ -74,6 +74,9 @@ export const PROJECT_SETTINGS_DEFAULTS: ProjectSettingsMap = {
 	// Biaya Belum Terealisasi di Dashboard Lapangan (chip "dana tertahan di pusat" + Safe-Spend + skenario terburuk di kartu BEP).
 	// PERSEN saja. Sinkron dengan admin (erp-epi) projectSettings.js; false = disembunyikan dan server admin tidak memuat komitmen.
 	'project.field_finance.show_unrealized': true,
+	// Fase 4 SOP Finance: alur panduan yang dibuka dari kartu Safe-Spend saat dana tertahan / butuh dana darurat (flow_key di Peta Alur Bisnis; ubah di admin tanpa deploy).
+	'project.field_finance.help_flow': 'project_financial_rap_vs_actual_monitoring_and_freeze',
+	'project.field_finance.emergency_flow': 'app_project_finance_emergency_site_cash_advance_and_disbursement_flow',
 
 	// --- Forecast Keuangan Global Fase 4 (Visibilitas AR Lapangan) ---
 	// Status penagihan termin proyek untuk Project Leader. Sama pola dgn field_bep:
@@ -239,6 +242,14 @@ export const PROJECT_SETTINGS_DEFAULTS: ProjectSettingsMap = {
 	'project.field_birokrasi.sla_reimbursement_hours': 48, // Klaim Reimbursement menunggu review
 	'project.field_birokrasi.yellow_ratio': 0.5, // umur/SLA >= ini kuning; >= 1 merah
 	'project.field_dossier.lpj_grace_days': 7, // hari sejak dana cair sebelum LPJ yang belum masuk dihitung "lewat masa tenggang"
+	// Kartu Kendali Harian Leader (Fase 4 Penajaman KPI & Drilldown) — TAMPILAN saja, bukan gate. Dibaca server (system_settings).
+	'project.field_kendali.enabled': true,
+	'project.field_kendali.calendar_days': 28, // rentang kalender kepatuhan laporan harian (7–62 hari)
+	'project.field_kendali.off_weekdays': [0], // libur mingguan kalender & hitung hari kerja tersisa; 0 = Minggu
+	'project.field_kendali.scurve_tolerance_pct': 5, // selisih (poin %) yang masih dianggap "sesuai rencana"
+	'project.field_kendali.show_calendar': true,
+	'project.field_kendali.show_lpj': true,
+	'project.field_kendali.show_scurve': true,
 	'project.wizard.phases': [
 		{
 			phase_key: 'inisiasi', phase_order: 1, phase_label: 'Inisiasi', phase_icon: '🚀', phase_color: '#3B82F6',

@@ -12,6 +12,8 @@
 		IconPhoneCall, IconBadge
 	} from '@tabler/icons-svelte';
 	import { getAllManpower, getManpowerByIds, type Manpower } from '$lib/services/manpower';
+	import { fetchStatusK3, type K3Ringkasan } from '$lib/services/manpowerK3';
+	import ManpowerK3Chip from '$lib/components/manpower/ManpowerK3Chip.svelte';
 	import { getProjects } from '$lib/services/projects';
 	import { getProjectsForCurrentUser, getProjectScope } from '$lib/services/projectScope';
 	import { getBatchedReports } from '$lib/services/reports';
@@ -50,6 +52,21 @@
 	let copiedKey = $state<string | null>(null);
 
 	let allManpower = $state<Manpower[]>([]);
+
+	// Tes K3 dasar calon manpower: 1 permintaan untuk semua calon yang tampil (bukan per kartu). Gagal → daftar tampil tanpa badge K3.
+	let k3 = $state<K3Ringkasan | null>(null);
+	let k3Key = '';
+	async function loadK3(force = false) {
+		const ids = (allManpower || []).filter((m) => m && m.status_pekerja === 'calon').map((m) => m.id);
+		const key = ids.join(',');
+		if (!force && key === k3Key) return;
+		k3Key = key;
+		k3 = ids.length ? await fetchStatusK3(ids) : null;
+	}
+	$effect(() => {
+		void allManpower;
+		loadK3();
+	});
 	let rateTipeByManpower = $state<Record<number, string>>({});
 	let groupedManpower = $state<ProjectGroup[]>([]);
 	let unassignedManpower = $state<Manpower[]>([]);
@@ -621,6 +638,14 @@
 							<IconStar size={16} />
 							<span>Nilai Pekerja</span>
 						</button>
+						<button
+							onclick={() => goto('/manpower/rekap-tim')}
+							class="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] bg-[var(--gl)] text-[var(--g)] border border-[var(--g)]/20 shadow-sm"
+							title="Rekap kehadiran & nilai tim per bulan; lihat siapa yang belum dinilai"
+						>
+							<IconStar size={16} />
+							<span>Rekap Tim</span>
+						</button>
 					</div>
 				</div>
 			</div>
@@ -880,6 +905,11 @@
 						</p>
 					{/if}
 				</div>
+				{#if mp.status_pekerja === 'calon' && k3?.konfigurasi}
+					<div class="mt-1.5">
+						<ManpowerK3Chip manpowerId={mp.id} nama={mp.nama} noHp={mp.no_telpon} status={k3.map[String(mp.id)]} kuisJudul={k3.quiz?.judul ?? null} onChanged={() => loadK3(true)} />
+					</div>
+				{/if}
 			</div>
 
 			<!-- Right Status Badge & Toggle -->
@@ -1001,6 +1031,39 @@
 						</div>
 					{/if}
 
+				</div>
+
+				<!-- Kartu Kesiapan Syarat Kualifikasi & Jobdesc Jabatan (Fase 5) -->
+				<div class="p-3 rounded-xl border space-y-2" style="background: var(--sys-bg2); border-color: var(--sys-sep)">
+					<div class="flex items-center justify-between">
+						<p class="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--sys-label3)">
+							<span>📋</span>
+							<span>Kesiapan Syarat Jabatan ({mp.posisi || 'Umum'})</span>
+						</p>
+						<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold {mp.NIK ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'}">
+							{mp.NIK ? '✓ Identitas Terverifikasi' : '⚠️ Butuh Dokumen KTP'}
+						</span>
+					</div>
+					<div class="grid grid-cols-3 gap-2 pt-1 text-center text-xs">
+						<div class="p-2 rounded-lg" style="background: var(--sys-fill2)">
+							<p class="text-[9px] font-bold uppercase" style="color: var(--sys-label4)">KTP / Identitas</p>
+							<p class="text-[11px] font-bold mt-0.5 {mp.NIK ? 'text-emerald-500' : 'text-amber-500'}">
+								{mp.NIK ? 'Terdata' : 'Belum Ada'}
+							</p>
+						</div>
+						<div class="p-2 rounded-lg" style="background: var(--sys-fill2)">
+							<p class="text-[9px] font-bold uppercase" style="color: var(--sys-label4)">Kontak Darurat</p>
+							<p class="text-[11px] font-bold mt-0.5 {mp.no_telpon ? 'text-emerald-500' : 'text-amber-500'}">
+								{mp.no_telpon ? 'Tercatat' : 'Belum Ada'}
+							</p>
+						</div>
+						<div class="p-2 rounded-lg" style="background: var(--sys-fill2)">
+							<p class="text-[9px] font-bold uppercase" style="color: var(--sys-label4)">Status Gate</p>
+							<p class="text-[11px] font-bold mt-0.5 text-blue-400">
+								G_HRD (Warn)
+							</p>
+						</div>
+					</div>
 				</div>
 
 				<!-- Kartu Kepatuhan & Reliabilitas Komitmen (Fase 1) -->

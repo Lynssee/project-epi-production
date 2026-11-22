@@ -93,6 +93,33 @@ export async function fetchWorkshopRoster(workshopId: number) {
 	}
 }
 
+// ── Rekap bulanan tim (Laporan Periodik Outsource, Fase 4) ─────────────────
+// Dua query terpisah (absensi, rating) per bulan untuk daftar pekerja tim — tanpa relasi bersarang.
+// Gagal = lempar error (halaman menampilkan pesan), bukan senyap seolah "tidak ada data".
+export async function fetchRekapBulanan(manpowerIds: number[], from: string, to: string) {
+	if (!manpowerIds.length) return { absensi: [], ratings: [] };
+	const [absensi, ratings] = await Promise.all([
+		directus.request(
+			readItems('manpower_absensi', {
+				fields: ['manpower_id', 'status'],
+				filter: { _and: [{ manpower_id: { _in: manpowerIds } }, { tanggal: { _between: [from, to] } }] },
+				limit: -1
+			})
+		),
+		directus.request(
+			readItems('worker_performance_rating', {
+				fields: ['manpower_id', 'kualitas', 'safety', 'ketepatan'],
+				filter: { _and: [{ manpower_id: { _in: manpowerIds } }, { tanggal: { _between: [from, to] } }] },
+				limit: -1
+			})
+		)
+	]);
+	return {
+		absensi: absensi as { manpower_id: number; status: string }[],
+		ratings: ratings as { manpower_id: number; kualitas: number; safety: number; ketepatan: number }[]
+	};
+}
+
 /** Pekerja aktif di satu proyek: assignment → nama manpower, diambil terpisah (bukan nested), unik per pekerja. */
 export async function fetchProjectRoster(projectId: number): Promise<{ manpowerId: number; nama: string; jabatan: string }[]> {
 	try {
