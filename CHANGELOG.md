@@ -6,7 +6,7 @@ Seluruh perubahan dan riwayat integrasi dari repository hulu (`project-epi`) ke 
 
 ## [2026.11.23] — Sinkronisasi Modul Hulu (`8665e5d7..0eabfb7d`) & Stabilisasi Produksi
 
-Sinkronisasi **31 commit non-merge** dari hulu `project-epi` (`8665e5d7` s/d `0eabfb7d`, 586 file: 307 baru, 279 modifikasi) di atas `origin/main` produksi (`a9633029` / `f11cb24f` Kiosk hitung fisik & barang baru) pada branch `sync/upstream-2026-11-20`.
+Sinkronisasi **31 commit non-merge** dari hulu `project-epi` (`8665e5d7` s/d `0eabfb7d`, **586 file**: 307 baru, 279 modifikasi, 11 halaman baru, 58+ API endpoint baru) yang telah di-merge bersih ke `main` (commit `a410a796`) di atas rilis Kiosk `2026.11.15` (`a9633029`).
 
 ### 🚀 Fitur Baru & Peningkatan Modul (Migrasi 7 Fase)
 
@@ -65,11 +65,27 @@ Sinkronisasi **31 commit non-merge** dari hulu `project-epi` (`8665e5d7` s/d `0e
 
 ---
 
-### 🧪 Hasil Verifikasi Kode & Build
+### 🧪 Hasil Verifikasi Kode, Directus & Build
 
+- **Audit Directus Live (Anti-403)**: 38/38 koleksi baru tersedia, **72 koleksi / 324 referensi field & filter** terverifikasi 100% cocok dengan skema Directus live (**0 missing field**, **0 nested dot-field**).
+- **Keamanan Jalur Absen**: `/ess/absen`, `/site-checkin`, `/kiosk/absen-istirahat`, `/tbm-rollcall`, dan `/proyek/[id]/absen-regu` terverifikasi aman dan bebas dari blokir guard global (`DEFAULT_ESCAPE_PATHS` / fail-open).
 - **Suite Kiosk Produksi**: 6/6 file unit test (48/48 test) + `RakDetailPanel.dom.test.ts` (13/13 test) lulus 100%.
 - **DOM Tests (`vitest.dom.config.ts`)**: `field-hierarchy.dom.test.ts` lulus setelah fix `SopKnowledgeCard.svelte`; 48/50 file DOM test lulus (2 file DOM lama `/panduan/alur` hanya mengalami drift teks assertion dari hulu).
-- **Production Build (`npm run build`)**: Lolos 100% tanpa error (bundle SSR & Client, PWA service worker, dan output `@sveltejs/adapter-node`).
+- **Production Build (`npm run build`)**: Lolos 100% tanpa error (bundle SSR & Client, PWA `900 entries`, dan output `@sveltejs/adapter-node`).
+
+---
+
+## [2026.11.15] — Peningkatan Kiosk Gudang & Login Cepat (`f11cb24f` / `a9633029`)
+
+### ⚡ Login Kiosk Lebih Cepat
+- **Caching Setelan Kiosk (`src/lib/server/kioskSettings.ts`)**: Pembacaan setelan diringkas menjadi 1 query `_in` dengan cache 60 detik; layout tidak lagi dimuat ulang setiap pindah halaman (`goto(..., { invalidateAll: true })` hanya untuk keluar/masuk sesi).
+- **Pemisahan Endpoint Beranda (`/api/kiosk/home`)**: Memisahkan beban beranda (3 query + cache pengumuman 60 detik) dari `?bagian=produksi` untuk Input Produksi, serta penambahan header `Server-Timing` di endpoint login & home.
+- **Verifikasi PIN Non-Blocking (`src/lib/server/kioskAuth.ts`)**: `verifyPin` kini memakai `scrypt` asynchronous agar tidak memblokir event loop Node.js (format hash tetap kompatibel).
+
+### 📦 Hitung Fisik Saat Tambah Item & Pendaftaran Barang Baru dari Rak
+- **Hitung Fisik Terintegrasi (`src/lib/server/kioskHitungFisik.ts`, `RakDetailPanel.svelte`)**: Kolom kanan saat tambah item ke rak langsung mencatat Hitung Fisik ke stok; izin (PIC rak / akses Hitung Stok) dicek server-side dan kolom dikunci di UI bila tidak berhak.
+- **Daftar Barang Baru Langsung dari Rak (`src/lib/server/kioskBarangBaru.ts`, `/api/kiosk/stok/master-barang`, `/api/kiosk/stok/rak/[gudangId]/barang-baru`)**: Mendukung pendaftaran produk baru (nama produk, warna, satuan, hitung fisik) dengan saran master & deteksi duplikat ("Pakai barang ini"), ditandai `perlu_verifikasi_pendaftaran=true` dengan badge "Menunggu verifikasi" di kartu rak.
+- **Pengujian**: Dilengkapi unit & DOM test (`kioskSettings`, `kioskHitungFisik`, `kioskBarangBaru`, `RakDetailPanel.dom.test.ts`).
 
 ---
 
