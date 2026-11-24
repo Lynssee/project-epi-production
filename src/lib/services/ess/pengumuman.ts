@@ -28,11 +28,40 @@ async function parseErrorMessage(res: Response): Promise<string> {
 	}
 }
 
-export async function getPengumumanList(): Promise<{ pengumuman: PengumumanItem[]; unreadCount: number }> {
-	const idToken = await getIdToken();
-	const res = await fetch('/api/ess/pengumuman', { headers: { Authorization: `Bearer ${idToken}` } });
-	if (!res.ok) throw new Error(await parseErrorMessage(res));
-	return res.json();
+type PengumumanListResult = { pengumuman: PengumumanItem[]; unreadCount: number };
+
+const CACHE_TTL_MS = 30_000;
+let listCache: { uid: string; at: number; data: PengumumanListResult } | null = null;
+let listInflight: { uid: string; promise: Promise<PengumumanListResult> } | null = null;
+
+export function clearPengumumanClientCache() {
+	listCache = null;
+	listInflight = null;
+}
+
+export async function getPengumumanList(opts?: { force?: boolean }): Promise<PengumumanListResult> {
+	const uid = auth.currentUser?.uid || '';
+	const now = Date.now();
+	if (!opts?.force && uid && listCache && listCache.uid === uid && now - listCache.at < CACHE_TTL_MS) {
+		return listCache.data;
+	}
+	if (!opts?.force && uid && listInflight && listInflight.uid === uid) {
+		return listInflight.promise;
+	}
+
+	const pending = (async (): Promise<PengumumanListResult> => {
+		const idToken = await getIdToken();
+		const res = await fetch('/api/ess/pengumuman', { headers: { Authorization: `Bearer ${idToken}` } });
+		if (!res.ok) throw new Error(await parseErrorMessage(res));
+		const data: PengumumanListResult = await res.json();
+		if (uid) listCache = { uid, at: Date.now(), data };
+		return data;
+	})().finally(() => {
+		if (listInflight?.promise === pending) listInflight = null;
+	});
+
+	if (uid) listInflight = { uid, promise: pending };
+	return pending;
 }
 
 export async function markPengumumanRead(id: string): Promise<void> {
@@ -42,4 +71,5 @@ export async function markPengumumanRead(id: string): Promise<void> {
 		headers: { Authorization: `Bearer ${idToken}` }
 	});
 	if (!res.ok) throw new Error(await parseErrorMessage(res));
+	clearPengumumanClientCache();
 }

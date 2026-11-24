@@ -113,6 +113,7 @@ export async function submitCheckin(params: CheckinParams): Promise<{ record: Si
 		30_000
 	);
 	if (!res.ok) await throwHttpError(res);
+	clearActiveCheckinClientCache();
 	return res.json();
 }
 
@@ -193,18 +194,46 @@ export async function submitCheckout(params: CheckoutParams): Promise<{ record: 
 		30_000
 	);
 	if (!res.ok) await throwHttpError(res);
+	clearActiveCheckinClientCache();
 	return res.json();
 }
 
-export async function getActiveCheckin(): Promise<{ record: SiteCheckinRecord | null }> {
-	const idToken = await getIdToken();
-	const res = await fetchWithTimeout(
-		'/api/site-checkin/active',
-		{ headers: { Authorization: `Bearer ${idToken}` } },
-		15_000
-	);
-	if (!res.ok) await throwHttpError(res);
-	return res.json();
+const ACTIVE_CHECKIN_TTL_MS = 15_000;
+let activeCheckinCache: { uid: string; at: number; data: { record: SiteCheckinRecord | null } } | null = null;
+let activeCheckinInflight: { uid: string; promise: Promise<{ record: SiteCheckinRecord | null }> } | null = null;
+
+export function clearActiveCheckinClientCache() {
+	activeCheckinCache = null;
+	activeCheckinInflight = null;
+}
+
+export async function getActiveCheckin(opts?: { force?: boolean }): Promise<{ record: SiteCheckinRecord | null }> {
+	const uid = auth.currentUser?.uid || '';
+	const now = Date.now();
+	if (!opts?.force && uid && activeCheckinCache && activeCheckinCache.uid === uid && now - activeCheckinCache.at < ACTIVE_CHECKIN_TTL_MS) {
+		return activeCheckinCache.data;
+	}
+	if (!opts?.force && uid && activeCheckinInflight && activeCheckinInflight.uid === uid) {
+		return activeCheckinInflight.promise;
+	}
+
+	const pending = (async (): Promise<{ record: SiteCheckinRecord | null }> => {
+		const idToken = await getIdToken();
+		const res = await fetchWithTimeout(
+			'/api/site-checkin/active',
+			{ headers: { Authorization: `Bearer ${idToken}` } },
+			15_000
+		);
+		if (!res.ok) await throwHttpError(res);
+		const data: { record: SiteCheckinRecord | null } = await res.json();
+		if (uid) activeCheckinCache = { uid, at: Date.now(), data };
+		return data;
+	})().finally(() => {
+		if (activeCheckinInflight?.promise === pending) activeCheckinInflight = null;
+	});
+
+	if (uid) activeCheckinInflight = { uid, promise: pending };
+	return pending;
 }
 
 export interface SiteCheckinProjectOption {
@@ -407,6 +436,7 @@ export async function triggerAutoCheckout(reportId?: number | string | null, pro
 			},
 			15_000
 		);
+		clearActiveCheckinClientCache();
 	} catch {
 		// diam-diam — lihat catatan fail-safe di atas
 	}

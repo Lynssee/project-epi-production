@@ -1,5 +1,6 @@
 // src/lib/services/ess/targetSaya.ts
 // Klien "Target & Proyeksi Saya". Cache memori 2 menit (hemat kuota lapangan). Tidak pernah melempar: gagal -> { available:false }.
+import { auth } from '$lib/firebase';
 import { getIdToken } from '$lib/services/secureDirectus';
 
 export type TargetStatus = 'on_track' | 'at_risk' | 'off_track' | 'unknown';
@@ -36,19 +37,37 @@ export interface TargetSaya {
 }
 
 const TTL_MS = 2 * 60 * 1000;
-let cache: { at: number; data: TargetSaya } | null = null;
+let cache: { uid: string; at: number; data: TargetSaya } | null = null;
+let inflight: { uid: string; promise: Promise<TargetSaya> } | null = null;
+
+export function clearTargetSayaCache() {
+	cache = null;
+	inflight = null;
+}
 
 export async function getTargetSaya(force = false): Promise<TargetSaya> {
-	if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.data;
-	try {
-		const res = await fetch('/api/ess/target-saya', { headers: { Authorization: `Bearer ${await getIdToken()}` } });
-		const data = (await res.json().catch(() => null)) as TargetSaya | null;
-		if (!res.ok || !data) return { available: false, reason: `HTTP ${res.status}` };
-		if (data.available) cache = { at: Date.now(), data };
-		return data;
-	} catch (e: any) {
-		return { available: false, reason: e?.message || 'Gagal memuat' };
-	}
+	const uid = auth.currentUser?.uid || '';
+	if (!force && cache && cache.uid === uid && Date.now() - cache.at < TTL_MS) return cache.data;
+	if (!force && inflight && inflight.uid === uid) return inflight.promise;
+
+	const pending = (async (): Promise<TargetSaya> => {
+		try {
+			const res = await fetch('/api/ess/target-saya', { headers: { Authorization: `Bearer ${await getIdToken()}` } });
+			const data = (await res.json().catch(() => null)) as TargetSaya | null;
+			const result: TargetSaya = !res.ok || !data ? { available: false, reason: `HTTP ${res.status}` } : data;
+			cache = { uid, at: Date.now(), data: result };
+			return result;
+		} catch (e: any) {
+			const result: TargetSaya = { available: false, reason: e?.message || 'Gagal memuat' };
+			cache = { uid, at: Date.now(), data: result };
+			return result;
+		}
+	})().finally(() => {
+		if (inflight?.promise === pending) inflight = null;
+	});
+
+	inflight = { uid, promise: pending };
+	return pending;
 }
 
 export const HORIZON_LABEL: Record<string, string> = { weekly: 'Minggu ini', monthly: 'Bulan ini', quarterly: 'Kuartal ini', yearly: 'Tahun ini' };

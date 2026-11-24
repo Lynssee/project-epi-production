@@ -42,6 +42,7 @@
 	];
 
 	let status = $state<DataLengkapStatus | null>(null);
+	let loadedFor = '';
 
 	onMount(() => {
 		let active = true;
@@ -49,7 +50,14 @@
 			if (!auth.checked) return;
 			const isSuper = auth.roleId === 'super_admin' || (auth.roleIds?.includes('super_admin') ?? false);
 			const can = !!auth.karyawanId || isSuper;
-			if (!can) return;
+			if (!can) {
+				loadedFor = '';
+				status = null;
+				return;
+			}
+			const key = String(auth.karyawanId ?? auth.user?.uid ?? 'super');
+			if (loadedFor === key) return;
+			loadedFor = key;
 			try {
 				const res = await getDataLengkapStatus();
 				if (active) status = res;

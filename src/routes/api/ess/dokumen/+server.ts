@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
+import { clearDataLengkapCache } from '$lib/server/ess/dataKelengkapan';
 import { directusServerJson, directusServerUpload } from '$lib/server/directus';
 
 const DOKUMEN_FIELDS = [
@@ -84,6 +85,7 @@ export const POST: RequestHandler = async (event) => {
 		} catch (_) {}
 		throw error(502, (e as Error).message || 'Gagal menyimpan data dokumen.');
 	}
+	clearDataLengkapCache(karyawan.id);
 
 	// Notifikasi in-app ke HRD supaya dokumen mandiri ini diverifikasi. Non-fatal.
 	try {

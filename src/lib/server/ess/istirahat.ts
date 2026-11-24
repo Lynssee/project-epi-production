@@ -105,16 +105,23 @@ interface IstirahatConfigCacheEntry {
 }
 
 interface JadwalKerjaDetail {
+	jam_masuk_normal: string | null;
+	toleransi_telat_menit: number | null;
 	jam_istirahat_mulai: string | null;
 	jam_istirahat_selesai: string | null;
 	jam_keluar_normal: string | null;
 }
 
+interface KaryawanJadwalMeta {
+	jadwalId: string | null;
+	polaKerja: string | null;
+}
+
 let configCache: IstirahatConfigCacheEntry | null = null;
 let configInflight: Promise<IstirahatConfigCacheEntry> | null = null;
 
-const karyawanJadwalIdCache = new Map<string, { at: number; jadwalId: string | null }>();
-const karyawanJadwalIdInflight = new Map<string, Promise<string | null>>();
+const karyawanJadwalCache = new Map<string, { at: number; meta: KaryawanJadwalMeta }>();
+const karyawanJadwalInflight = new Map<string, Promise<KaryawanJadwalMeta>>();
 const jadwalDetailCache = new Map<string, { at: number; detail: JadwalKerjaDetail }>();
 const jadwalDetailInflight = new Map<string, Promise<JadwalKerjaDetail>>();
 
@@ -122,8 +129,8 @@ const jadwalDetailInflight = new Map<string, Promise<JadwalKerjaDetail>>();
 export function clearIstirahatCache() {
 	configCache = null;
 	configInflight = null;
-	karyawanJadwalIdCache.clear();
-	karyawanJadwalIdInflight.clear();
+	karyawanJadwalCache.clear();
+	karyawanJadwalInflight.clear();
 	jadwalDetailCache.clear();
 	jadwalDetailInflight.clear();
 }
@@ -204,28 +211,36 @@ export async function loadIstirahatConfig(): Promise<IstirahatConfig> {
 	return entry.config;
 }
 
-async function getKaryawanJadwalId(karyawanId: number): Promise<string | null> {
+async function getKaryawanJadwalMeta(karyawanId: number): Promise<KaryawanJadwalMeta> {
 	const key = String(karyawanId);
 	const now = Date.now();
-	const cached = karyawanJadwalIdCache.get(key);
-	if (cached && now - cached.at < JADWAL_CACHE_TTL_MS) return cached.jadwalId;
-	const running = karyawanJadwalIdInflight.get(key);
+	const cached = karyawanJadwalCache.get(key);
+	if (cached && now - cached.at < JADWAL_CACHE_TTL_MS) return cached.meta;
+	const running = karyawanJadwalInflight.get(key);
 	if (running) return running;
 
-	const pending = (async (): Promise<string | null> => {
-		const karyawanRes = await directusServerJson<{ data: { jadwal_kerja_id: string | null } }>(
-			`/items/karyawan/${karyawanId}?fields=jadwal_kerja_id`
+	const pending = (async (): Promise<KaryawanJadwalMeta> => {
+		const karyawanRes = await directusServerJson<{ data: { jadwal_kerja_id?: string | null; pola_kerja?: string | null } }>(
+			`/items/karyawan/${karyawanId}?fields=jadwal_kerja_id,pola_kerja`
 		);
-		const jadwalId = karyawanRes?.data?.jadwal_kerja_id || null;
-		pruneMapIfNeeded(karyawanJadwalIdCache, MAX_JADWAL_CACHE);
-		karyawanJadwalIdCache.set(key, { at: Date.now(), jadwalId });
-		return jadwalId;
+		const meta: KaryawanJadwalMeta = {
+			jadwalId: karyawanRes?.data?.jadwal_kerja_id || null,
+			polaKerja: karyawanRes?.data?.pola_kerja || null
+		};
+		pruneMapIfNeeded(karyawanJadwalCache, MAX_JADWAL_CACHE);
+		karyawanJadwalCache.set(key, { at: Date.now(), meta });
+		return meta;
 	})().finally(() => {
-		if (karyawanJadwalIdInflight.get(key) === pending) karyawanJadwalIdInflight.delete(key);
+		if (karyawanJadwalInflight.get(key) === pending) karyawanJadwalInflight.delete(key);
 	});
 
-	karyawanJadwalIdInflight.set(key, pending);
+	karyawanJadwalInflight.set(key, pending);
 	return pending;
+}
+
+async function getKaryawanJadwalId(karyawanId: number): Promise<string | null> {
+	const meta = await getKaryawanJadwalMeta(karyawanId);
+	return meta.jadwalId;
 }
 
 async function getJadwalKerjaDetail(jadwalId: string): Promise<JadwalKerjaDetail> {
@@ -239,12 +254,18 @@ async function getJadwalKerjaDetail(jadwalId: string): Promise<JadwalKerjaDetail
 	const pending = (async (): Promise<JadwalKerjaDetail> => {
 		const jadwalRes = await directusServerJson<{
 			data: {
+				jam_masuk_normal?: string | null;
+				toleransi_telat_menit?: number | null;
 				jam_istirahat_mulai?: string | null;
 				jam_istirahat_selesai?: string | null;
 				jam_keluar_normal?: string | null;
 			};
-		}>(`/items/jadwal_kerja/${jadwalId}?fields=jam_istirahat_mulai,jam_istirahat_selesai,jam_keluar_normal`);
+		}>(
+			`/items/jadwal_kerja/${jadwalId}?fields=jam_masuk_normal,toleransi_telat_menit,jam_istirahat_mulai,jam_istirahat_selesai,jam_keluar_normal`
+		);
 		const detail: JadwalKerjaDetail = {
+			jam_masuk_normal: jadwalRes?.data?.jam_masuk_normal || null,
+			toleransi_telat_menit: jadwalRes?.data?.toleransi_telat_menit ?? null,
 			jam_istirahat_mulai: jadwalRes?.data?.jam_istirahat_mulai || null,
 			jam_istirahat_selesai: jadwalRes?.data?.jam_istirahat_selesai || null,
 			jam_keluar_normal: jadwalRes?.data?.jam_keluar_normal || null
@@ -258,6 +279,23 @@ async function getJadwalKerjaDetail(jadwalId: string): Promise<JadwalKerjaDetail
 
 	jadwalDetailInflight.set(key, pending);
 	return pending;
+}
+
+/** Jadwal kerja + pola_kerja karyawan dari cache 5 menit bersama (dipakai disiplin-status). */
+export async function getKaryawanJadwalDisiplin(karyawanId: number): Promise<{
+	polaKerja: string | null;
+	jadwal: { jam_masuk_normal?: string | null; toleransi_telat_menit?: number | null } | null;
+}> {
+	const meta = await getKaryawanJadwalMeta(karyawanId);
+	if (!meta.jadwalId) return { polaKerja: meta.polaKerja, jadwal: null };
+	const detail = await getJadwalKerjaDetail(meta.jadwalId);
+	return {
+		polaKerja: meta.polaKerja,
+		jadwal: {
+			jam_masuk_normal: detail.jam_masuk_normal,
+			toleransi_telat_menit: detail.toleransi_telat_menit
+		}
+	};
 }
 
 /** Jendela istirahat shift karyawan (jam_istirahat_mulai/selesai dari jadwal_kerja, di-cache 5 menit). */

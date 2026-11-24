@@ -17,6 +17,9 @@
 	let pesanSelesai = $state(''); // Paket 10 §2.1 — pengganti error "sudah ditutup" (netral, bukan error)
 	let jamPengingat = $state<string[]>(['17:30', '21:00']); // site_checkin_settings.pengingat_checkout_jam
 	let intervalId: ReturnType<typeof setInterval> | undefined;
+	const VISIBILITY_COOLDOWN_MS = 60_000;
+	let lastLoadedAt = 0;
+	let settingsLoaded = false;
 
 	// Paket 10 §2.1 (SVR-22) — halaman /site-checkin sendiri sudah menampilkan status kunjungan
 	// aktif secara penuh; bar ini di sana cuma duplikat informasi tanpa nilai tambah.
@@ -39,10 +42,11 @@
 		return jamPengingat.some((j) => jamStr >= j);
 	});
 
-	async function load() {
+	async function load(force = false) {
 		if (!auth.currentUser) return;
+		lastLoadedAt = Date.now();
 		try {
-			const res = await getActiveCheckin();
+			const res = await getActiveCheckin({ force });
 			activeCheckin = res.record;
 			if (activeCheckin) elapsedLabel = formatElapsed(activeCheckin.check_in_at);
 		} catch {
@@ -51,6 +55,8 @@
 	}
 
 	async function loadSettings() {
+		if (settingsLoaded || !auth.currentUser) return;
+		settingsLoaded = true;
 		try {
 			const { settings } = await getSiteCheckinSettings();
 			const csv = (settings as any)?.pengingat_checkout_jam;
@@ -58,6 +64,7 @@
 				jamPengingat = csv.split(',').map((s) => s.trim()).filter(Boolean);
 			}
 		} catch {
+			settingsLoaded = false;
 			// pakai default di atas
 		}
 	}
@@ -66,19 +73,27 @@
 	// cuma /site-checkin), supaya bar tidak pernah basi (SEBELUMNYA: hanya dimuat sekali saat
 	// mount, jadi check-in/checkout di halaman lain tidak pernah terlihat di sini sampai reload).
 	function handleChanged() {
-		load();
+		load(true);
+	}
+
+	function handleVisibility() {
+		if (document.visibilityState === 'visible' && Date.now() - lastLoadedAt >= VISIBILITY_COOLDOWN_MS) {
+			load();
+		}
 	}
 
 	onMount(() => {
-		loadSettings();
 		const unsubAuth = onAuthStateChanged(auth, (user) => {
-			if (user) load();
-			else activeCheckin = null;
+			if (user) {
+				load();
+				loadSettings();
+			} else {
+				activeCheckin = null;
+				settingsLoaded = false;
+			}
 		});
 		window.addEventListener('site-checkin:changed', handleChanged);
-		document.addEventListener('visibilitychange', () => {
-			if (document.visibilityState === 'visible') load();
-		});
+		document.addEventListener('visibilitychange', handleVisibility);
 		intervalId = setInterval(() => {
 			if (activeCheckin) elapsedLabel = formatElapsed(activeCheckin.check_in_at);
 		}, 30000);
@@ -86,6 +101,7 @@
 			clearInterval(intervalId);
 			unsubAuth();
 			window.removeEventListener('site-checkin:changed', handleChanged);
+			document.removeEventListener('visibilitychange', handleVisibility);
 		};
 	});
 
