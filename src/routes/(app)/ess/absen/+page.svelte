@@ -6,7 +6,16 @@
 	import { getCurrentPosition, type DevicePosition } from '$lib/utils/geoClient';
 	import QrCameraScanner from '$lib/components/ui/QrCameraScanner.svelte';
 	import { parseEpiQr } from '$lib/utils/qrParse';
-	import { clockIn, clockOut, breakOut, breakIn, getTodayStatus, previewKonteksLokasi, type TodayStatus } from '$lib/services/ess/attendance';
+	import {
+		clockIn,
+		clockOut,
+		breakOut,
+		breakIn,
+		getTodayStatus,
+		previewKonteksLokasi,
+		AttendanceRequestError,
+		type TodayStatus
+	} from '$lib/services/ess/attendance';
 	import { IconArrowLeft, IconLoader2, IconCircleCheck, IconX, IconMapPin, IconAlertTriangle, IconClock } from '@tabler/icons-svelte';
 	import { createFormPersist, registerFormPersistSaveTriggers } from '$lib/utils/formPersist';
 	import DraftIndicator from '$lib/components/shared/DraftIndicator.svelte';
@@ -51,21 +60,24 @@
 	}
 
 	let photoFile = $state<File | null>(null);
+	let photoCapturedAt = $state<string | null>(null);
 	let photoPreview = $state<string | null>(null);
 	let livenessPassed = $state(false);
 
+	// Simpan foto mentah saat capture (tanpa watermark dulu) agar watermarkPhoto() hanya
+	// dijalankan TEPAT 1x saat submit — menghapus 3-4x download tile peta & encode JPEG berulang.
 	async function handleCapture(file: File, passed: boolean) {
-		const gps = position ? { lat: position.lat, lng: position.lng, accuracy: position.accuracy } : null;
-		const stampedFile = await watermarkPhoto(file, gps);
-		photoFile = stampedFile;
+		photoFile = file;
+		photoCapturedAt = new Date().toISOString();
 		livenessPassed = passed;
 		photoPreview = null; // LivenessCamera merender preview-nya sendiri
-		await absenPersist.savePhoto(PHOTO_KEY, stampedFile);
+		await absenPersist.savePhoto(PHOTO_KEY, file);
 		persistNow();
 	}
 
 	function retakePhoto() {
 		photoFile = null;
+		photoCapturedAt = null;
 		photoPreview = null;
 		livenessPassed = false;
 	}
@@ -149,6 +161,7 @@
 	let lewatBatas = $derived(hitungKuota && kuotaMenit != null && menitBerjalan != null && menitBerjalan > kuotaMenit);
 
 	let submitting = $state(false);
+	let submitStage = $state<'idle' | 'photo' | 'upload' | 'verifying'>('idle');
 	let errorMsg = $state('');
 	let success = $state(false);
 	// Fase 2 — chip konteks lokasi & label kualitas bukti (hanya terisi utk pola kerja mobile,
@@ -206,14 +219,28 @@
 	// langsung ke penggajian — sayang kalau harus diulang gara-gara tab ter-refresh saat
 	// membuka kamera native. TTL sengaja pendek (20 menit) karena posisi GPS lama tidak
 	// boleh dipakai diam-diam sebagai bukti absen saat ini.
-	interface AbsenDraft { mode: string; lat: number; lng: number; accuracy: number; kategoriId?: string | null }
+	interface AbsenDraft {
+		mode: string;
+		lat: number;
+		lng: number;
+		accuracy: number;
+		kategoriId?: string | null;
+		photoCapturedAt?: string | null;
+	}
 	const absenPersist = createFormPersist<AbsenDraft>('ess_absen', { ttlMenit: 20 });
 	let draftSavedAt = $state<Date | null>(null);
 	const PHOTO_KEY = 'selfie';
 
 	function persistNow() {
 		if (!position) return;
-		absenPersist.flushNow({ mode, lat: position.lat, lng: position.lng, accuracy: position.accuracy, kategoriId: selectedKategoriId });
+		absenPersist.flushNow({
+			mode,
+			lat: position.lat,
+			lng: position.lng,
+			accuracy: position.accuracy,
+			kategoriId: selectedKategoriId,
+			photoCapturedAt
+		});
 		draftSavedAt = new Date();
 	}
 
@@ -223,6 +250,7 @@
 			if (draft && draft.mode === mode) {
 				position = { lat: draft.lat, lng: draft.lng, accuracy: draft.accuracy } as DevicePosition;
 				if (draft.kategoriId) selectedKategoriId = draft.kategoriId;
+				if (draft.photoCapturedAt) photoCapturedAt = draft.photoCapturedAt;
 				const blob = await absenPersist.restorePhoto(PHOTO_KEY);
 				if (blob) {
 					photoFile = new File([blob], 'selfie.jpg', { type: blob.type || 'image/jpeg' });
@@ -239,8 +267,15 @@
 		}
 
 		return registerFormPersistSaveTriggers(absenPersist, () => {
-			if (!position) return { mode, lat: 0, lng: 0, accuracy: 0, kategoriId: selectedKategoriId };
-			return { mode, lat: position.lat, lng: position.lng, accuracy: position.accuracy, kategoriId: selectedKategoriId };
+			if (!position) return { mode, lat: 0, lng: 0, accuracy: 0, kategoriId: selectedKategoriId, photoCapturedAt };
+			return {
+				mode,
+				lat: position.lat,
+				lng: position.lng,
+				accuracy: position.accuracy,
+				kategoriId: selectedKategoriId,
+				photoCapturedAt
+			};
 		});
 	});
 
@@ -252,25 +287,27 @@
 	// berarti punch yang sama sudah tercatat sebelumnya (lihat catatan idempotency di
 	// offlineAttendanceQueue.ts), bukan kegagalan yang perlu diulang terus.
 	async function sendQueuedPunch(entry: QueuedAttendanceSubmission) {
-		const photoFile =
+		const queuedFile =
 			entry.photoBlob.size > 0 ? new File([entry.photoBlob], entry.photoName, { type: entry.photoBlob.type || 'image/jpeg' }) : null;
 		const params = {
 			lat: entry.lat,
 			lng: entry.lng,
 			accuracy: entry.accuracy,
 			lokasiAbsensiId: entry.lokasiAbsensiId,
-			photoFile,
+			photoFile: queuedFile,
 			livenessPassed: entry.livenessPassed,
 			kategoriId: entry.kategoriId,
 			perjalanan: entry.perjalanan ?? false,
 			wstnPayload: entry.wstnPayload ?? null,
-			konteksOverride: entry.konteksOverride ?? null
+			konteksOverride: entry.konteksOverride ?? null,
+			// Foto di antrian offline sudah di-watermark saat submit awal — jangan watermark ulang.
+			skipWatermark: true
 		};
 		try {
-			if (entry.type === 'clock_in') await clockIn({ ...params, photoFile: photoFile as File });
-			else if (entry.type === 'clock_out') await clockOut({ ...params, photoFile: photoFile as File });
+			if (entry.type === 'clock_in') await clockIn({ ...params, photoFile: queuedFile as File });
+			else if (entry.type === 'clock_out') await clockOut({ ...params, photoFile: queuedFile as File });
 			else if (entry.type === 'break_out') await breakOut(params);
-			else await breakIn({ ...params, photoFile: photoFile as File });
+			else await breakIn({ ...params, photoFile: queuedFile as File });
 		} catch (err: any) {
 			const msg = String(err?.message || '').toLowerCase();
 			if (msg.includes('sudah absen')) return;
@@ -283,11 +320,6 @@
 		locationError = '';
 		try {
 			position = await getCurrentPosition();
-			if (photoFile) {
-				const stampedFile = await watermarkPhoto(photoFile, { lat: position.lat, lng: position.lng, accuracy: position.accuracy });
-				photoFile = stampedFile;
-				await absenPersist.savePhoto(PHOTO_KEY, stampedFile);
-			}
 			persistNow();
 			loadKonteksPreview();
 		} catch (err: any) {
@@ -319,15 +351,55 @@
 		}
 	});
 
+	function isFilledTime(v: string | null | undefined): boolean {
+		return Boolean(v && v.trim() !== '' && v.trim() !== '-');
+	}
+
+	async function checkRecordedAfterAmbiguousError(): Promise<boolean> {
+		try {
+			const status = await getTodayStatus();
+			if (mode === 'in') return isFilledTime(status.record?.jam_masuk);
+			if (mode === 'out') return isFilledTime(status.record?.jam_keluar);
+			if (mode === 'break-out') return Boolean(status.istirahat?.jedaTerbuka);
+			if (mode === 'break-in') {
+				return !status.istirahat?.jedaTerbuka && (status.istirahat?.jedaHariIni?.length ?? 0) > 0;
+			}
+			return false;
+		} catch {
+			return false;
+		}
+	}
+
 	async function handleSubmit() {
 		if (!canSubmit || !position) return;
 		vibrateTap();
 		submitting = true;
+		submitStage = photoFile ? 'photo' : 'upload';
 		errorMsg = '';
 		queuedOffline = false;
+		let finalPhoto: File | null = null;
 		try {
-			const finalPhoto = photoFile ? await watermarkPhoto(photoFile, { lat: position.lat, lng: position.lng, accuracy: position.accuracy }) : null;
-			const params = { lat: position.lat, lng: position.lng, accuracy: position.accuracy, livenessPassed, kategoriId: selectedKategoriId, perjalanan: perjalananMode, konteksOverride };
+			if (photoFile) {
+				finalPhoto = await watermarkPhoto(
+					photoFile,
+					{ lat: position.lat, lng: position.lng, accuracy: position.accuracy },
+					photoCapturedAt || new Date().toISOString()
+				);
+			}
+			const onStage = (stage: 'photo' | 'upload') => {
+				submitStage = stage;
+			};
+			const params = {
+				lat: position.lat,
+				lng: position.lng,
+				accuracy: position.accuracy,
+				livenessPassed,
+				kategoriId: selectedKategoriId,
+				perjalanan: perjalananMode,
+				konteksOverride,
+				skipWatermark: true,
+				onStage
+			};
 			if (mode === 'in') {
 				await clockIn({ ...params, photoFile: finalPhoto as File });
 			} else if (mode === 'out') {
@@ -345,8 +417,32 @@
 			absenPersist.clear();
 			await absenPersist.clearPhotos();
 			draftSavedAt = null;
+			photoCapturedAt = null;
 			picuPopup('after');
 		} catch (err: any) {
+			const isTimeoutOrGateway =
+				(err instanceof AttendanceRequestError &&
+					(err.code === 'ATTENDANCE_TIMEOUT' || err.status === 502 || err.status === 503 || err.status === 504)) ||
+				err?.code === 'ATTENDANCE_TIMEOUT';
+
+			// Recovery idempoten: bila timeout / 502 / 504, cek dulu ke server apakah absensi
+			// sebenarnya sudah berhasil tersimpan agar tidak memunculkan error palsu & klik ulang.
+			if (isTimeoutOrGateway) {
+				submitStage = 'verifying';
+				const alreadyRecorded = await checkRecordedAfterAmbiguousError();
+				if (alreadyRecorded) {
+					success = true;
+					absenPersist.clear();
+					await absenPersist.clearPhotos();
+					draftSavedAt = null;
+					photoCapturedAt = null;
+					picuPopup('after');
+					return;
+				}
+				errorMsg = 'Koneksi ke server terlalu lama dan absensi belum tercatat. Silakan ketuk Kirim lagi.';
+				return;
+			}
+
 			// L-02 fix: `err instanceof TypeError` terlalu luas — bisa match bug kode biasa (mis. akses
 			// properti undefined), bukan hanya kegagalan fetch jaringan. Cek juga pesan khas fetch gagal
 			// (berbeda per browser: Chrome "Failed to fetch", Firefox "NetworkError...", Safari "Load failed").
@@ -355,14 +451,16 @@
 			if (isNetworkError) {
 				// Gagal jaringan (bukan error HTTP dari server) — simpan ke antrian offline,
 				// dikirim ulang otomatis saat koneksi kembali (registerAttendanceAutoFlush).
-				// Catatan risiko: berbeda dari clock-in/out (upsert per hari), break-out/break-in
-				// menulis baris baru tanpa unique key — retry ganda secara teori bisa membuat 2
-				// baris. Risiko rendah (network loss persis saat submit break jarang) dan diterima
-				// sesuai rencana Fase 2; HRD bisa koreksi manual bila terjadi.
 				try {
-					const finalPhoto = photoFile
-						? await watermarkPhoto(photoFile, { lat: position.lat, lng: position.lng, accuracy: position.accuracy })
-						: null;
+					const photoToQueue =
+						finalPhoto ||
+						(photoFile
+							? await watermarkPhoto(
+									photoFile,
+									{ lat: position.lat, lng: position.lng, accuracy: position.accuracy },
+									photoCapturedAt || new Date().toISOString()
+								)
+							: null);
 					await enqueueAttendanceSubmission({
 						client_txn_id: crypto.randomUUID(),
 						type: mode === 'in' ? 'clock_in' : mode === 'out' ? 'clock_out' : mode === 'break-out' ? 'break_out' : 'break_in',
@@ -370,8 +468,8 @@
 						lng: position.lng,
 						accuracy: position.accuracy,
 						lokasiAbsensiId: null,
-						photoBlob: finalPhoto || new Blob([], { type: 'image/jpeg' }),
-						photoName: finalPhoto?.name || 'selfie.jpg',
+						photoBlob: photoToQueue || new Blob([], { type: 'image/jpeg' }),
+						photoName: photoToQueue?.name || 'selfie.jpg',
 						livenessPassed,
 						kategoriId: selectedKategoriId,
 						perjalanan: perjalananMode,
@@ -384,6 +482,7 @@
 					absenPersist.clear();
 					await absenPersist.clearPhotos();
 					draftSavedAt = null;
+					photoCapturedAt = null;
 					picuPopup('after'); // offline: popup memakai payload cache; microquiz otomatis dilewati
 				} catch (queueErr: any) {
 					errorMsg = queueErr?.message || 'Gagal menyimpan absensi offline.';
@@ -393,6 +492,7 @@
 			}
 		} finally {
 			submitting = false;
+			submitStage = 'idle';
 		}
 	}
 </script>
@@ -632,7 +732,15 @@
 				onclick={handleSubmit}
 			>
 				{#if submitting}<IconLoader2 size={16} class="animate-spin" />{/if}
-				Kirim {MODE_TITLE[mode]}
+				{#if submitting}
+					{submitStage === 'photo'
+						? 'Memproses foto...'
+						: submitStage === 'verifying'
+							? 'Memeriksa status absensi...'
+							: 'Mengirim absensi...'}
+				{:else}
+					Kirim {MODE_TITLE[mode]}
+				{/if}
 			</button>
 		</div>
 	{/if}

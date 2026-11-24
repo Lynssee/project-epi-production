@@ -11,6 +11,17 @@ export interface LokasiAbsensi {
 	lng: number;
 	radius_m: number;
 	aktif: boolean;
+	face_match_threshold?: number | null;
+}
+
+const LOKASI_CACHE_TTL_MS = 5 * 60 * 1000;
+let activeLokasiCache: { at: number; value: LokasiAbsensi[] } | null = null;
+let activeLokasiInflight: Promise<LokasiAbsensi[]> | null = null;
+
+/** Untuk tes / invalidasi saat admin mengubah lokasi_absensi. */
+export function clearLokasiCache() {
+	activeLokasiCache = null;
+	activeLokasiInflight = null;
 }
 
 export interface AbsensiHarianRecord {
@@ -104,16 +115,39 @@ export async function listRiwayatAbsensi(
 }
 
 export async function listActiveLokasi(): Promise<LokasiAbsensi[]> {
-	const query = new URLSearchParams({
-		'filter[aktif][_eq]': 'true',
-		fields: 'id,nama,lat,lng,radius_m,aktif'
+	const now = Date.now();
+	if (activeLokasiCache && now - activeLokasiCache.at < LOKASI_CACHE_TTL_MS) {
+		return activeLokasiCache.value;
+	}
+	if (activeLokasiInflight) return activeLokasiInflight;
+
+	const pending = (async (): Promise<LokasiAbsensi[]> => {
+		const query = new URLSearchParams({
+			'filter[aktif][_eq]': 'true',
+			fields: 'id,nama,lat,lng,radius_m,aktif,face_match_threshold'
+		});
+		const result = await directusServerJson<{ data: LokasiAbsensi[] }>(`/items/lokasi_absensi?${query.toString()}`);
+		const rows = result?.data || [];
+		activeLokasiCache = { at: Date.now(), value: rows };
+		return rows;
+	})().finally(() => {
+		if (activeLokasiInflight === pending) activeLokasiInflight = null;
 	});
-	const result = await directusServerJson<{ data: LokasiAbsensi[] }>(`/items/lokasi_absensi?${query.toString()}`);
-	return result?.data || [];
+
+	activeLokasiInflight = pending;
+	return pending;
 }
 
 export async function getLokasiById(id: string): Promise<LokasiAbsensi | null> {
-	const query = new URLSearchParams({ fields: 'id,nama,lat,lng,radius_m,aktif' });
+	// Cek daftar lokasi aktif yang sudah di-cache terlebih dahulu (0 query tambahan untuk lokasi aktif).
+	try {
+		const active = await listActiveLokasi();
+		const hit = active.find((l) => String(l.id) === String(id));
+		if (hit) return hit;
+	} catch {
+		/* fallback langsung ke item tunggal */
+	}
+	const query = new URLSearchParams({ fields: 'id,nama,lat,lng,radius_m,aktif,face_match_threshold' });
 	try {
 		const result = await directusServerJson<{ data: LokasiAbsensi }>(`/items/lokasi_absensi/${id}?${query.toString()}`);
 		return result?.data || null;

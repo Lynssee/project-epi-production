@@ -10,8 +10,11 @@ export async function authenticateEss(
 	event: RequestEvent
 ): Promise<{ user: Awaited<ReturnType<typeof requireUser>>; karyawan: ServerKaryawan }> {
 	const user = await requireUser(event);
-	// PC3-18: berlapis firebase_uid → email → email_company (dulu hanya email_company)
-	const karyawan = await resolveKaryawanForUser({ uid: (user as any).uid, email: user.email });
+	// PC3-18: berlapis firebase_uid → email → email_company (dulu hanya email_company).
+	// Google Identity Toolkit (verifyFirebaseToken) mengembalikan `localId`, bukan `uid` —
+	// fallback ke `uid` hanya untuk kompatibilitas mock/caller lama.
+	const uid = user.localId || (user as any).uid || null;
+	const karyawan = await resolveKaryawanForUser({ uid, email: user.email });
 	if (!karyawan) {
 		// Tampilkan email login supaya HR/atasan bisa menautkan tanpa menebak (lokasi proyek tak punya HRD).
 		throw error(

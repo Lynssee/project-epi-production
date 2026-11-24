@@ -70,4 +70,30 @@ describe('resolveKaryawanForUser', () => {
 		expect(f).toHaveBeenCalledTimes(2);
 		vi.useRealTimers();
 	});
+	it('panggilan paralel (in-flight coalescing) hanya memicu 1 fetch ke Directus', async () => {
+		let resolveFetch!: (rows: any[]) => void;
+		const f = vi.fn(
+			() =>
+				new Promise<any[]>((res) => {
+					resolveFetch = res;
+				})
+		);
+		const p1 = resolveKaryawanForUser({ uid: 'u-burst', email: 'burst@eltama.com' }, f);
+		const p2 = resolveKaryawanForUser({ uid: 'u-burst', email: 'burst@eltama.com' }, f);
+		const p3 = resolveKaryawanForUser({ uid: 'u-burst', email: 'burst@eltama.com' }, f);
+		expect(f).toHaveBeenCalledTimes(1);
+		resolveFetch([K({ id: 42 })]);
+		const [r1, r2, r3] = await Promise.all([p1, p2, p3]);
+		expect(r1?.id).toBe(42);
+		expect(r2?.id).toBe(42);
+		expect(r3?.id).toBe(42);
+	});
+	it('tanpa uid tetapi ada email → tetap di-cache berdasarkan email', async () => {
+		const f = fetcher({ email_company: [K({ id: 15 })] });
+		const r1 = await resolveKaryawanForUser({ uid: null, email: 'Staff@Eltama.com' }, f);
+		const r2 = await resolveKaryawanForUser({ uid: null, email: 'staff@eltama.com' }, f);
+		expect(r1?.id).toBe(15);
+		expect(r2?.id).toBe(15);
+		expect(f).toHaveBeenCalledTimes(2); // 1x filter[email] miss + 1x filter[email_company] hit, panggilan ke-2 0 fetch
+	});
 });

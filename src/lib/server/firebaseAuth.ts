@@ -15,7 +15,30 @@ export interface FirebaseVerifiedUser {
 }
 
 const CACHE_TTL_MS = 60_000;
+const VERIFY_TIMEOUT_MS = 8_000;
+const MAX_VERIFY_CACHE = 1_000;
 const verifyCache = new Map<string, { user: FirebaseVerifiedUser; exp: number }>();
+const verifyInflight = new Map<string, Promise<FirebaseVerifiedUser | null>>();
+
+/** Untuk tes: kosongkan cache verifikasi token & antrean in-flight. */
+export function clearFirebaseVerifyCache() {
+	verifyCache.clear();
+	verifyInflight.clear();
+}
+
+function setVerifyCache(idToken: string, user: FirebaseVerifiedUser) {
+	const now = Date.now();
+	if (verifyCache.size >= MAX_VERIFY_CACHE) {
+		for (const [k, entry] of verifyCache) {
+			if (entry.exp <= now) verifyCache.delete(k);
+		}
+		if (verifyCache.size >= MAX_VERIFY_CACHE) {
+			const oldestKey = verifyCache.keys().next().value;
+			if (oldestKey !== undefined) verifyCache.delete(oldestKey);
+		}
+	}
+	verifyCache.set(idToken, { user, exp: now + CACHE_TTL_MS });
+}
 
 function decodeFirebaseJwt(token: string): FirebaseVerifiedUser | null {
 	if (!token || typeof token !== 'string') return null;
@@ -54,8 +77,15 @@ function decodeFirebaseJwt(token: string): FirebaseVerifiedUser | null {
 export async function verifyFirebaseToken(idToken: string | null): Promise<FirebaseVerifiedUser | null> {
 	if (!idToken) return null;
 
+	const now = Date.now();
 	const cached = verifyCache.get(idToken);
-	if (cached && cached.exp > Date.now()) return cached.user;
+	if (cached) {
+		if (cached.exp > now) return cached.user;
+		verifyCache.delete(idToken);
+	}
+
+	const running = verifyInflight.get(idToken);
+	if (running) return running;
 
 	const apiKey = env.FIREBASE_API_KEY || env.VITE_FIREBASE_API_KEY;
 	if (!apiKey) {
@@ -63,30 +93,41 @@ export async function verifyFirebaseToken(idToken: string | null): Promise<Fireb
 		throw error(500, 'Server auth not configured');
 	}
 
-	let res: Response;
-	try {
-		res = await fetch(`${LOOKUP_URL}?key=${apiKey}`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ idToken })
-		});
-	} catch (e) {
-		console.error('[firebaseAuth] gagal menghubungi Identity Toolkit:', e);
-		const fallbackUser = decodeFirebaseJwt(idToken);
-		if (fallbackUser) {
-			console.warn('[firebaseAuth] Menggunakan local JWT fallback karena Identity Toolkit tidak dapat dijangkau');
-			verifyCache.set(idToken, { user: fallbackUser, exp: Date.now() + CACHE_TTL_MS });
-			return fallbackUser;
+	const pending = (async (): Promise<FirebaseVerifiedUser | null> => {
+		let res: Response;
+		try {
+			res = await fetch(`${LOOKUP_URL}?key=${apiKey}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ idToken }),
+				signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS)
+			});
+			if (res.status >= 500) {
+				throw new Error(`Identity Toolkit HTTP ${res.status}`);
+			}
+		} catch (e) {
+			console.error('[firebaseAuth] gagal menghubungi Identity Toolkit:', e);
+			const fallbackUser = decodeFirebaseJwt(idToken);
+			if (fallbackUser) {
+				console.warn('[firebaseAuth] Menggunakan local JWT fallback karena Identity Toolkit tidak dapat dijangkau/timeout');
+				setVerifyCache(idToken, fallbackUser);
+				return fallbackUser;
+			}
+			throw error(503, 'Auth provider unreachable');
 		}
-		throw error(503, 'Auth provider unreachable');
-	}
 
-	if (!res.ok) return null;
+		if (!res.ok) return null;
 
-	const data = await res.json().catch(() => null);
-	const user = data?.users?.[0] || null;
-	if (user) verifyCache.set(idToken, { user, exp: Date.now() + CACHE_TTL_MS });
-	return user;
+		const data = await res.json().catch(() => null);
+		const user = data?.users?.[0] || null;
+		if (user) setVerifyCache(idToken, user);
+		return user;
+	})().finally(() => {
+		if (verifyInflight.get(idToken) === pending) verifyInflight.delete(idToken);
+	});
+
+	verifyInflight.set(idToken, pending);
+	return pending;
 }
 
 /** Pastikan request membawa Bearer Firebase ID token yang valid. Lempar 401 jika tidak. */
