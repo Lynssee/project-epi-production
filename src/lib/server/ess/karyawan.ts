@@ -70,11 +70,25 @@ export async function fetchKaryawanMapByIds(ids: (number | string)[]): Promise<M
 
 const IDENTITY_FIELDS = 'id,nama_karyawan,email_company,email,divisi,divisi_id,posisi,jabatan_id,status,firebase_uid';
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_IDENTITY_CACHE = 500;
 const identityCache = new Map<string, { at: number; value: ServerKaryawan }>();
+const identityInflight = new Map<string, Promise<ServerKaryawan | null>>();
 
-/** Untuk tes: kosongkan cache identitas. */
+/** Untuk tes: kosongkan cache identitas & antrean in-flight. */
 export function clearKaryawanIdentityCache() {
 	identityCache.clear();
+	identityInflight.clear();
+}
+
+function pruneIdentityCache(now: number) {
+	if (identityCache.size < MAX_IDENTITY_CACHE) return;
+	for (const [k, entry] of identityCache) {
+		if (now - entry.at >= CACHE_TTL_MS) identityCache.delete(k);
+	}
+	if (identityCache.size >= MAX_IDENTITY_CACHE) {
+		const oldestKey = identityCache.keys().next().value;
+		if (oldestKey !== undefined) identityCache.delete(oldestKey);
+	}
 }
 
 /** Murni. Baris kandidat aktif (status bukan "Off"), duplikat id dibuang. */
@@ -97,7 +111,7 @@ function toServerKaryawan(row: any): ServerKaryawan {
 
 /**
  * Cari karyawan dari akun login. Tepat 1 kandidat aktif → dipakai; >1 pada satu jalur → 409 (tak menebak identitas);
- * tak ada → null. Hasil di-cache 5 menit per uid (authenticateEss dipanggil tiap request — hemat API).
+ * tak ada → null. Hasil di-cache 5 menit per uid/email dan di-coalesce untuk request paralel (hemat API).
  */
 export async function resolveKaryawanForUser(
 	user: { uid?: string | null; email?: string | null },
@@ -106,27 +120,47 @@ export async function resolveKaryawanForUser(
 		return r?.data || [];
 	}
 ): Promise<ServerKaryawan | null> {
-	const uid = user.uid ? String(user.uid) : '';
-	const cached = uid ? identityCache.get(uid) : null;
-	if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
+	const uid = user.uid ? String(user.uid).trim() : '';
+	const emailLower = user.email ? String(user.email).trim().toLowerCase() : '';
+	const cacheKey = uid ? `uid:${uid}` : emailLower ? `email:${emailLower}` : '';
+	if (!cacheKey) return null;
 
-	const tries: string[] = [];
-	if (uid) tries.push(`filter[firebase_uid][_eq]=${encodeURIComponent(uid)}`);
-	if (user.email) {
-		const e = encodeURIComponent(user.email.toLowerCase());
-		tries.push(`filter[email][_eq]=${e}`, `filter[email_company][_eq]=${e}`);
+	const now = Date.now();
+	const cached = identityCache.get(cacheKey);
+	if (cached) {
+		if (now - cached.at < CACHE_TTL_MS) return cached.value;
+		identityCache.delete(cacheKey);
 	}
-	for (const f of tries) {
-		const rows = activeCandidates(await fetchRows(f));
-		if (rows.length === 1) {
-			const value = toServerKaryawan(rows[0]);
-			if (uid) identityCache.set(uid, { at: Date.now(), value });
-			return value;
+
+	const running = identityInflight.get(cacheKey);
+	if (running) return running;
+
+	const run = (async (): Promise<ServerKaryawan | null> => {
+		const tries: string[] = [];
+		if (uid) tries.push(`filter[firebase_uid][_eq]=${encodeURIComponent(uid)}`);
+		if (emailLower) {
+			const e = encodeURIComponent(emailLower);
+			tries.push(`filter[email][_eq]=${e}`, `filter[email_company][_eq]=${e}`);
 		}
-		if (rows.length > 1) {
-			console.error('[ess] identitas ambigu untuk', f);
-			throw error(409, 'Akun Anda cocok dengan lebih dari satu data karyawan. Hubungi HRD.');
+		for (const f of tries) {
+			const rows = activeCandidates(await fetchRows(f));
+			if (rows.length === 1) {
+				const value = toServerKaryawan(rows[0]);
+				const ts = Date.now();
+				pruneIdentityCache(ts);
+				identityCache.set(cacheKey, { at: ts, value });
+				return value;
+			}
+			if (rows.length > 1) {
+				console.error('[ess] identitas ambigu untuk', f);
+				throw error(409, 'Akun Anda cocok dengan lebih dari satu data karyawan. Hubungi HRD.');
+			}
 		}
-	}
-	return null;
+		return null;
+	})().finally(() => {
+		if (identityInflight.get(cacheKey) === run) identityInflight.delete(cacheKey);
+	});
+
+	identityInflight.set(cacheKey, run);
+	return run;
 }

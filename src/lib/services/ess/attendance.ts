@@ -90,11 +90,43 @@ async function parseErrorMessage(res: Response): Promise<string> {
 	return `Gagal memuat data (${res.status})`;
 }
 
+const STATUS_TIMEOUT_MS = 15_000;
+const PUNCH_TIMEOUT_MS = 45_000;
+
+export class AttendanceRequestError extends Error {
+	status?: number;
+	code?: 'ATTENDANCE_TIMEOUT' | 'HTTP_ERROR';
+	constructor(message: string, opts?: { status?: number; code?: 'ATTENDANCE_TIMEOUT' | 'HTTP_ERROR' }) {
+		super(message);
+		this.name = 'AttendanceRequestError';
+		this.status = opts?.status;
+		this.code = opts?.code;
+	}
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	try {
+		return await fetch(url, { ...init, signal: controller.signal });
+	} catch (err: any) {
+		if (err?.name === 'AbortError' || controller.signal.aborted) {
+			throw new AttendanceRequestError(
+				'Koneksi ke server terlalu lama. Memeriksa apakah absensi sudah tercatat...',
+				{ code: 'ATTENDANCE_TIMEOUT' }
+			);
+		}
+		throw err;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 async function fetchWithRetry(url: string, init: RequestInit, maxRetries = 1): Promise<Response> {
 	let lastError: any = null;
 	for (let attempt = 0; attempt <= maxRetries; attempt++) {
 		try {
-			return await fetch(url, init);
+			return await fetchWithTimeout(url, init, STATUS_TIMEOUT_MS);
 		} catch (err: any) {
 			lastError = err;
 			if (attempt < maxRetries) {
@@ -146,12 +178,17 @@ interface PunchParams {
 	lokasiAbsensiId?: string | null;
 	photoFile: File;
 	livenessPassed?: boolean;
+	/** Lewati watermarkPhoto bila pemanggil sudah men-watermark foto 1x (hindari watermark ganda). */
+	skipWatermark?: boolean;
+	/** Callback opsional untuk menampilkan progres proses foto -> kirim server di UI. */
+	onStage?: (stage: 'photo' | 'upload') => void;
 }
 
 async function submitPunch(endpoint: string, params: PunchParams): Promise<any> {
 	const idToken = await getIdToken();
+	params.onStage?.('photo');
 	const gps = { lat: params.lat, lng: params.lng, accuracy: params.accuracy ?? 0 };
-	const watermarked = await watermarkPhoto(params.photoFile, gps);
+	const watermarked = params.skipWatermark ? params.photoFile : await watermarkPhoto(params.photoFile, gps);
 	const compressed = await compressPhoto(watermarked);
 
 	const formData = new FormData();
@@ -162,12 +199,19 @@ async function submitPunch(endpoint: string, params: PunchParams): Promise<any> 
 	formData.append('foto', compressed, compressed.name || 'selfie.jpg');
 	formData.append('liveness_passed', params.livenessPassed ? 'true' : 'false');
 
-	const res = await fetch(endpoint, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${idToken}` },
-		body: formData
-	});
-	if (!res.ok) throw new Error(await parseErrorMessage(res));
+	params.onStage?.('upload');
+	const res = await fetchWithTimeout(
+		endpoint,
+		{
+			method: 'POST',
+			headers: { Authorization: `Bearer ${idToken}` },
+			body: formData
+		},
+		PUNCH_TIMEOUT_MS
+	);
+	if (!res.ok) {
+		throw new AttendanceRequestError(await parseErrorMessage(res), { status: res.status, code: 'HTTP_ERROR' });
+	}
 	return res.json();
 }
 
@@ -197,6 +241,10 @@ interface BreakPunchParams {
 	// Fase 2 §5 — tombol "Ubah lokasi": karyawan mengoreksi chip konteks otomatis sebelum
 	// kirim. Hanya dipakai break-in, hanya berlaku utk pola kerja mobile di sisi server.
 	konteksOverride?: string | null;
+	/** Lewati watermarkPhoto bila pemanggil sudah men-watermark foto 1x (hindari watermark ganda). */
+	skipWatermark?: boolean;
+	/** Callback opsional untuk menampilkan progres proses foto -> kirim server di UI. */
+	onStage?: (stage: 'photo' | 'upload') => void;
 }
 
 async function submitBreakPunch(endpoint: string, params: BreakPunchParams): Promise<any> {
@@ -213,18 +261,26 @@ async function submitBreakPunch(endpoint: string, params: BreakPunchParams): Pro
 	if (params.konteksOverride) formData.append('konteks_override', params.konteksOverride);
 
 	if (params.photoFile) {
+		params.onStage?.('photo');
 		const gps = { lat: params.lat, lng: params.lng, accuracy: params.accuracy ?? 0 };
-		const watermarked = await watermarkPhoto(params.photoFile, gps);
+		const watermarked = params.skipWatermark ? params.photoFile : await watermarkPhoto(params.photoFile, gps);
 		const compressed = await compressPhoto(watermarked);
 		formData.append('foto', compressed, compressed.name || 'selfie.jpg');
 	}
 
-	const res = await fetch(endpoint, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${idToken}` },
-		body: formData
-	});
-	if (!res.ok) throw new Error(await parseErrorMessage(res));
+	params.onStage?.('upload');
+	const res = await fetchWithTimeout(
+		endpoint,
+		{
+			method: 'POST',
+			headers: { Authorization: `Bearer ${idToken}` },
+			body: formData
+		},
+		PUNCH_TIMEOUT_MS
+	);
+	if (!res.ok) {
+		throw new AttendanceRequestError(await parseErrorMessage(res), { status: res.status, code: 'HTTP_ERROR' });
+	}
 	return res.json();
 }
 

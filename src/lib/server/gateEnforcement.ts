@@ -70,6 +70,7 @@ const FIELD_GATE_KEYS: FieldGateKey[] = [
 ];
 
 let cache: { at: number; byGateKey: Map<string, GateEnforcementRow> } | null = null;
+let allInflight: Promise<Map<string, GateEnforcementRow>> | null = null;
 
 // Revisi 4 (Aturan #11): gate BARU berikut juga mengikuti MODE UTAMA di /settings/gates (gate_definitions.default_mode)
 // bila belum ada baris override gate_enforcement '*'. Gate lama SENGAJA tidak ikut (nol perubahan perilaku — Aturan #3).
@@ -81,44 +82,62 @@ const FALLBACK_DEFINISI = new Set<string>([
 	'G_ESS_CLOCKOUT_COMPLETE'
 ]);
 let defCache: { at: number; byGateKey: Map<string, { mode: GateMode; enforce_from: string | null }> } | null = null;
+let defInflight: Promise<Map<string, { mode: GateMode; enforce_from: string | null }>> | null = null;
 
 async function loadDefinisi(): Promise<Map<string, { mode: GateMode; enforce_from: string | null }>> {
 	if (defCache && Date.now() - defCache.at < CACHE_TTL_MS) return defCache.byGateKey;
-	const byGateKey = new Map<string, { mode: GateMode; enforce_from: string | null }>();
-	try {
-		const res = await directusServerJson<{ data: Array<{ gate_key: string; default_mode: string; enforce_from: string | null; is_active: boolean | null }> }>(
-			`/items/gate_definitions?filter[gate_key][_in]=${[...FALLBACK_DEFINISI].join(',')}&fields=gate_key,default_mode,enforce_from,is_active&limit=-1`
-		);
-		for (const r of res?.data || []) {
-			if (r.is_active === false) continue;
-			// 'warn' tidak dikenal di sisi lapangan: tidak pernah memblokir → diperlakukan shadow.
-			const mode: GateMode = r.default_mode === 'hard' || r.default_mode === 'soft' ? r.default_mode : 'shadow';
-			byGateKey.set(r.gate_key, { mode, enforce_from: r.enforce_from ? String(r.enforce_from).slice(0, 10) : null });
+	if (defInflight) return defInflight;
+
+	const pending = (async () => {
+		const byGateKey = new Map<string, { mode: GateMode; enforce_from: string | null }>();
+		try {
+			const res = await directusServerJson<{ data: Array<{ gate_key: string; default_mode: string; enforce_from: string | null; is_active: boolean | null }> }>(
+				`/items/gate_definitions?filter[gate_key][_in]=${[...FALLBACK_DEFINISI].join(',')}&fields=gate_key,default_mode,enforce_from,is_active&limit=-1`
+			);
+			for (const r of res?.data || []) {
+				if (r.is_active === false) continue;
+				// 'warn' tidak dikenal di sisi lapangan: tidak pernah memblokir → diperlakukan shadow.
+				const mode: GateMode = r.default_mode === 'hard' || r.default_mode === 'soft' ? r.default_mode : 'shadow';
+				byGateKey.set(r.gate_key, { mode, enforce_from: r.enforce_from ? String(r.enforce_from).slice(0, 10) : null });
+			}
+		} catch (e) {
+			// Gagal baca ≠ tak terdaftar: dicatat jelas; mode aman = shadow, dan TIDAK di-cache agar pulih begitu Directus kembali.
+			console.error('[gateEnforcement] gate_definitions tak terbaca — gate Revisi 4 dianggap shadow:', e instanceof Error ? e.message : e);
+			return byGateKey;
 		}
-	} catch (e) {
-		// Gagal baca ≠ tak terdaftar: dicatat jelas; mode aman = shadow, dan TIDAK di-cache agar pulih begitu Directus kembali.
-		console.error('[gateEnforcement] gate_definitions tak terbaca — gate Revisi 4 dianggap shadow:', e instanceof Error ? e.message : e);
+		defCache = { at: Date.now(), byGateKey };
 		return byGateKey;
-	}
-	defCache = { at: Date.now(), byGateKey };
-	return byGateKey;
+	})().finally(() => {
+		if (defInflight === pending) defInflight = null;
+	});
+
+	defInflight = pending;
+	return pending;
 }
 
 async function loadAll(): Promise<Map<string, GateEnforcementRow>> {
 	if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.byGateKey;
+	if (allInflight) return allInflight;
 
-	const keysParam = FIELD_GATE_KEYS.join(',');
-	const res = await directusServerJson<{ data: Array<{ gate_key: string; mode: GateMode; enforce_from: string | null }> }>(
-		`/items/gate_enforcement?filter[gate_key][_in]=${keysParam}&filter[jenis_pengajuan][_eq]=*&fields=gate_key,mode,enforce_from&limit=-1`
-	).catch(() => null);
+	const pending = (async () => {
+		const keysParam = FIELD_GATE_KEYS.join(',');
+		const res = await directusServerJson<{ data: Array<{ gate_key: string; mode: GateMode; enforce_from: string | null }> }>(
+			`/items/gate_enforcement?filter[gate_key][_in]=${keysParam}&filter[jenis_pengajuan][_eq]=*&fields=gate_key,mode,enforce_from&limit=-1`
+		).catch(() => null);
 
-	const byGateKey = new Map<string, GateEnforcementRow>();
-	for (const row of res?.data || []) {
-		byGateKey.set(row.gate_key, { mode: row.mode, enforce_from: row.enforce_from || null });
-	}
+		const byGateKey = new Map<string, GateEnforcementRow>();
+		for (const row of res?.data || []) {
+			byGateKey.set(row.gate_key, { mode: row.mode, enforce_from: row.enforce_from || null });
+		}
 
-	cache = { at: Date.now(), byGateKey };
-	return byGateKey;
+		cache = { at: Date.now(), byGateKey };
+		return byGateKey;
+	})().finally(() => {
+		if (allInflight === pending) allInflight = null;
+	});
+
+	allInflight = pending;
+	return pending;
 }
 
 /**
@@ -149,5 +168,7 @@ export async function getFieldGateMode(gateKey: FieldGateKey): Promise<GateMode>
 /** Buang cache — dipakai setelah admin menaikkan/menurunkan mode lewat Directus/UI. */
 export function invalidateFieldGateEnforcementCache(): void {
 	cache = null;
+	allInflight = null;
 	defCache = null;
+	defInflight = null;
 }

@@ -3,7 +3,13 @@ import type { RequestHandler } from './$types';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { findTodayRecord, listActiveLokasi } from '$lib/server/ess/absensi';
 import { todayJakarta } from '$lib/server/ess/time';
-import { loadIstirahatConfig, getJendelaIstirahat, findJedaTerbuka, listJedaHariIni } from '$lib/server/ess/istirahat';
+import {
+	loadIstirahatConfig,
+	getJendelaIstirahat,
+	listJedaHariIni,
+	listJedaHariIniRaw,
+	type AbsensiIstirahatLogRow
+} from '$lib/server/ess/istirahat';
 
 export const GET: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
@@ -16,15 +22,26 @@ export const GET: RequestHandler = async (event) => {
 	]);
 
 	// Hanya panggil query tambahan bila fitur aktif untuk akun ini — hemat call (CLAUDE.md).
+	// Ambil absensi_istirahat_log 1x saja, lalu turunkan jedaTerbuka & jedaHariIni dari hasil yang sama.
 	let jendelaIstirahat: { mulai: string | null; selesai: string | null } | null = null;
-	let jedaTerbuka = null;
+	let jedaTerbuka: AbsensiIstirahatLogRow | null = null;
 	let jedaHariIni: Awaited<ReturnType<typeof listJedaHariIni>> = [];
 	if (istirahatConfig.aktif) {
-		[jendelaIstirahat, jedaTerbuka, jedaHariIni] = await Promise.all([
+		const [jendela, rawJeda] = await Promise.all([
 			getJendelaIstirahat(karyawan.id),
-			record ? findJedaTerbuka(record.id) : Promise.resolve(null),
-			record ? listJedaHariIni(record.id) : Promise.resolve([])
+			record ? listJedaHariIniRaw(record.id) : Promise.resolve([])
 		]);
+		jendelaIstirahat = jendela;
+		// rawJeda diurutkan ascending tanggal_dibuat; jedaTerbuka terbaru ada di belakang.
+		for (let i = rawJeda.length - 1; i >= 0; i--) {
+			if (rawJeda[i].jam_masuk == null) {
+				jedaTerbuka = rawJeda[i];
+				break;
+			}
+		}
+		if (record && rawJeda.length > 0) {
+			jedaHariIni = await listJedaHariIni(record.id, istirahatConfig.kategoriAktif, rawJeda);
+		}
 	}
 
 	return json({

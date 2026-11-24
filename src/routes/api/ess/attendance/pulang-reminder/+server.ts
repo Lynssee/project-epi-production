@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { findTodayRecord } from '$lib/server/ess/absensi';
-import { directusServerJson } from '$lib/server/directus';
+import { getJadwalPulangNormal } from '$lib/server/ess/istirahat';
 import { todayJakarta, nowTimeJakarta } from '$lib/server/ess/time';
 
 // GET /api/ess/attendance/pulang-reminder
@@ -34,17 +34,7 @@ export const GET: RequestHandler = async (event) => {
 			return json({ perluIngat: false, tanggal });
 		}
 
-		let jamPulangNormal = '17:00';
-		const karyawanRow = await directusServerJson<{ data: { jadwal_kerja_id: string | null } }>(
-			`/items/karyawan/${karyawan.id}?fields=jadwal_kerja_id`
-		).catch(() => null);
-		const jadwalId = karyawanRow?.data?.jadwal_kerja_id || null;
-		if (jadwalId) {
-			const jadwal = await directusServerJson<{ data: { jam_keluar_normal: string | null } }>(
-				`/items/jadwal_kerja/${jadwalId}?fields=jam_keluar_normal`
-			).catch(() => null);
-			if (jadwal?.data?.jam_keluar_normal) jamPulangNormal = String(jadwal.data.jam_keluar_normal).slice(0, 5);
-		}
+		const jamPulangNormal = await getJadwalPulangNormal(karyawan.id, '17:00');
 
 		const nowMin = toMin(nowTimeJakarta()) ?? 0;
 		const pulangMin = toMin(jamPulangNormal) ?? 17 * 60;
