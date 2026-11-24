@@ -21,24 +21,56 @@ const PENGUMUMAN_FIELDS = [
 	'id', 'judul', 'isi', 'kategori', 'target', 'target_divisi', 'tanggal_mulai', 'tanggal_selesai', 'lampiran'
 ].join(',');
 
+const PENGUMUMAN_CACHE_TTL_MS = 2 * 60 * 1000;
+let activePengumumanCache: { today: string; at: number; rows: PengumumanRecord[] } | null = null;
+let activePengumumanInflight: Promise<PengumumanRecord[]> | null = null;
+
+/** Untuk tes / invalidasi saat HRD mengubah pengumuman. */
+export function clearPengumumanCache() {
+	activePengumumanCache = null;
+	activePengumumanInflight = null;
+}
+
+async function loadAllActivePengumuman(today: string): Promise<PengumumanRecord[]> {
+	const now = Date.now();
+	if (activePengumumanCache && activePengumumanCache.today === today && now - activePengumumanCache.at < PENGUMUMAN_CACHE_TTL_MS) {
+		return activePengumumanCache.rows;
+	}
+	if (activePengumumanInflight) return activePengumumanInflight;
+
+	const pending = (async (): Promise<PengumumanRecord[]> => {
+		const filter = {
+			_and: [
+				{ aktif: { _eq: true } },
+				{ tanggal_mulai: { _lte: today } },
+				{ _or: [{ tanggal_selesai: { _null: true } }, { tanggal_selesai: { _gte: today } }] }
+			]
+		};
+		const query = new URLSearchParams({
+			filter: JSON.stringify(filter),
+			fields: PENGUMUMAN_FIELDS,
+			sort: '-tanggal_mulai',
+			limit: '100'
+		});
+		const result = await directusServerJson<{ data: PengumumanRecord[] }>(`/items/hr_pengumuman?${query.toString()}`);
+		const rows = result?.data || [];
+		activePengumumanCache = { today, at: Date.now(), rows };
+		return rows;
+	})().finally(() => {
+		if (activePengumumanInflight === pending) activePengumumanInflight = null;
+	});
+
+	activePengumumanInflight = pending;
+	return pending;
+}
+
 export async function listActivePengumuman(divisi: string | null): Promise<PengumumanRecord[]> {
 	const today = todayJakarta();
-	const filter = {
-		_and: [
-			{ aktif: { _eq: true } },
-			{ tanggal_mulai: { _lte: today } },
-			{ _or: [{ tanggal_selesai: { _null: true } }, { tanggal_selesai: { _gte: today } }] },
-			{ _or: [{ target: { _eq: 'all' } }, { _and: [{ target: { _eq: 'dept' } }, { target_divisi: { _eq: divisi || '' } }] }] }
-		]
-	};
-	const query = new URLSearchParams({
-		filter: JSON.stringify(filter),
-		fields: PENGUMUMAN_FIELDS,
-		sort: '-tanggal_mulai',
-		limit: '50'
-	});
-	const result = await directusServerJson<{ data: PengumumanRecord[] }>(`/items/hr_pengumuman?${query.toString()}`);
-	return result?.data || [];
+	const all = await loadAllActivePengumuman(today);
+	const div = divisi || '';
+	return all
+		.filter((item) => item.target === 'all' || (item.target === 'dept' && (item.target_divisi || '') === div))
+		.slice(0, 50);
 }
 
 export async function listReadIds(karyawanId: number, pengumumanIds: string[]): Promise<Set<string>> {

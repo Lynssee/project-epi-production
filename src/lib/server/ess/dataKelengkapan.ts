@@ -16,28 +16,71 @@
 // `mode` menentukan apakah layout ESS mengunci akses ('block') atau cuma memperingatkan ('warn').
 
 import { directusServerJson } from '$lib/server/directus';
+import { todayJakarta } from '$lib/server/ess/time';
 
 const DEFAULT_DEADLINE = '2026-10-08'; // dimundurkan 7 hari (1 Okt 2026) krn KK jadi wajib — sumber utama tetap app_settings
+const UNIVERSAL_CONFIG_TTL_MS = 5 * 60 * 1000;
+const STATUS_CACHE_TTL_MS = 2 * 60 * 1000;
+const MAX_STATUS_CACHE = 500;
+
+let universalConfigCache: { at: number; value: { enabled: boolean; deadline: string } } | null = null;
+let universalConfigInflight: Promise<{ enabled: boolean; deadline: string }> | null = null;
+
+const statusCache = new Map<string, { at: number; value: DataLengkapStatus }>();
+const statusInflight = new Map<string, Promise<DataLengkapStatus>>();
+
+/** Untuk tes & invalidasi setelah karyawan mengubah profil atau mengunggah dokumen wajib. */
+export function clearDataLengkapCache(karyawanId?: number) {
+	if (karyawanId != null) {
+		const suffix = `:${karyawanId}`;
+		for (const k of statusCache.keys()) {
+			if (k.endsWith(suffix)) statusCache.delete(k);
+		}
+		for (const k of statusInflight.keys()) {
+			if (k.endsWith(suffix)) statusInflight.delete(k);
+		}
+		return;
+	}
+	universalConfigCache = null;
+	universalConfigInflight = null;
+	statusCache.clear();
+	statusInflight.clear();
+}
 
 async function getKonfigGateUniversal(): Promise<{ enabled: boolean; deadline: string }> {
-	try {
-		const res = await directusServerJson<{ data: any[] }>(
-			`/items/app_settings?${new URLSearchParams({
-				filter: JSON.stringify({ module: { _eq: 'hrd' }, setting_key: { _eq: 'ess_dokumen_gate' } }),
-				limit: '1'
-			}).toString()}`
-		);
-		const row = res?.data?.[0];
-		let value: any = {};
-		try {
-			value = row?.setting_value ? JSON.parse(row.setting_value) : {};
-		} catch {
-			value = {};
-		}
-		return { enabled: value.enabled !== false, deadline: value.deadline || DEFAULT_DEADLINE };
-	} catch {
-		return { enabled: true, deadline: DEFAULT_DEADLINE };
+	const now = Date.now();
+	if (universalConfigCache && now - universalConfigCache.at < UNIVERSAL_CONFIG_TTL_MS) {
+		return universalConfigCache.value;
 	}
+	if (universalConfigInflight) return universalConfigInflight;
+
+	const pending = (async (): Promise<{ enabled: boolean; deadline: string }> => {
+		try {
+			const res = await directusServerJson<{ data: any[] }>(
+				`/items/app_settings?${new URLSearchParams({
+					filter: JSON.stringify({ module: { _eq: 'hrd' }, setting_key: { _eq: 'ess_dokumen_gate' } }),
+					limit: '1'
+				}).toString()}`
+			);
+			const row = res?.data?.[0];
+			let value: any = {};
+			try {
+				value = row?.setting_value ? JSON.parse(row.setting_value) : {};
+			} catch {
+				value = {};
+			}
+			const parsed = { enabled: value.enabled !== false, deadline: value.deadline || DEFAULT_DEADLINE };
+			universalConfigCache = { at: Date.now(), value: parsed };
+			return parsed;
+		} catch {
+			return { enabled: true, deadline: DEFAULT_DEADLINE };
+		}
+	})().finally(() => {
+		if (universalConfigInflight === pending) universalConfigInflight = null;
+	});
+
+	universalConfigInflight = pending;
+	return pending;
 }
 
 // Revisi: dokumen wajib = KTP (scan + alamat KTP), KK, Pas Foto.
@@ -121,52 +164,80 @@ const KARYAWAN_FIELDS = [...FIELD_DASAR_WAJIB, ...FIELD_OPSIONAL].map((f) => f.k
 
 /** Status kelengkapan data untuk karyawan yang sedang berjalan masa onboarding "baru". */
 export async function getDataLengkapStatus(karyawanId: number): Promise<DataLengkapStatus> {
-	// NB (26 Agu 2026): `jenis_onboarding` yang ditulis createCaseFromTemplate() di erp-epi-1
-	// TIDAK ADA di skema Directus (diam-diam dibuang saat create) — proxy yang benar-benar
-	// tersimpan untuk membedakan onboarding karyawan baru vs mutasi adalah `template_used`.
-	const caseFilter = new URLSearchParams({
-		'filter[karyawan_id][_eq]': String(karyawanId),
-		'filter[template_used][_neq]': 'Onboarding Mutasi Karyawan',
-		'filter[status][_in]': 'draft,in_progress',
-		fields: 'id,status,data_lengkap_deadline',
-		sort: '-id',
-		limit: '1'
-	});
-	const caseRes = await directusServerJson<{ data: any[] }>(`/items/onboarding_case?${caseFilter.toString()}`);
-	const kasus = caseRes?.data?.[0];
+	const today = todayJakarta();
+	const cacheKey = `${today}:${karyawanId}`;
+	const now = Date.now();
+	const cached = statusCache.get(cacheKey);
+	if (cached && now - cached.at < STATUS_CACHE_TTL_MS) return cached.value;
 
-	// Onboarding aktif -> deadline lifecycle onboarding (perilaku lama, tak berubah: cron
-	// erp-epi-1 tetap yang membuat draf teguran, bukan gate ini). Tanpa onboarding aktif ->
-	// gerbang universal (deadline app_settings global, sama seperti dashboard admin).
-	const sumber: 'onboarding' | 'universal' = kasus ? 'onboarding' : 'universal';
-	let deadline: string | null;
-	if (kasus) {
-		deadline = kasus.data_lengkap_deadline || null;
-	} else {
-		const konfigUniversal = await getKonfigGateUniversal();
-		if (!konfigUniversal.enabled) {
-			return { berlaku: false, lengkap: true, missing: [], opsional: [], persen: 100, deadline: null, sudahLewat: false, mode: 'ok', sumber };
+	const running = statusInflight.get(cacheKey);
+	if (running) return running;
+
+	const pending = (async (): Promise<DataLengkapStatus> => {
+		// NB (26 Agu 2026): `jenis_onboarding` yang ditulis createCaseFromTemplate() di erp-epi-1
+		// TIDAK ADA di skema Directus (diam-diam dibuang saat create) — proxy yang benar-benar
+		// tersimpan untuk membedakan onboarding karyawan baru vs mutasi adalah `template_used`.
+		const caseFilter = new URLSearchParams({
+			'filter[karyawan_id][_eq]': String(karyawanId),
+			'filter[template_used][_neq]': 'Onboarding Mutasi Karyawan',
+			'filter[status][_in]': 'draft,in_progress',
+			fields: 'id,status,data_lengkap_deadline',
+			sort: '-id',
+			limit: '1'
+		});
+		const caseRes = await directusServerJson<{ data: any[] }>(`/items/onboarding_case?${caseFilter.toString()}`);
+		const kasus = caseRes?.data?.[0];
+
+		// Onboarding aktif -> deadline lifecycle onboarding (perilaku lama, tak berubah: cron
+		// erp-epi-1 tetap yang membuat draf teguran, bukan gate ini). Tanpa onboarding aktif ->
+		// gerbang universal (deadline app_settings global, sama seperti dashboard admin).
+		const sumber: 'onboarding' | 'universal' = kasus ? 'onboarding' : 'universal';
+		let deadline: string | null;
+		let result: DataLengkapStatus;
+		if (kasus) {
+			deadline = kasus.data_lengkap_deadline || null;
+		} else {
+			const konfigUniversal = await getKonfigGateUniversal();
+			if (!konfigUniversal.enabled) {
+				result = { berlaku: false, lengkap: true, missing: [], opsional: [], persen: 100, deadline: null, sudahLewat: false, mode: 'ok', sumber };
+				if (statusCache.size >= MAX_STATUS_CACHE) {
+					const oldest = statusCache.keys().next().value;
+					if (oldest !== undefined) statusCache.delete(oldest);
+				}
+				statusCache.set(cacheKey, { at: Date.now(), value: result });
+				return result;
+			}
+			deadline = konfigUniversal.deadline;
 		}
-		deadline = konfigUniversal.deadline;
-	}
 
-	const [karyawanRes, dokRes] = await Promise.all([
-		directusServerJson<{ data: any }>(`/items/karyawan/${karyawanId}?fields=${KARYAWAN_FIELDS}`),
-		directusServerJson<{ data: any[] }>(
-			`/items/karyawan_dokumen?${new URLSearchParams({ 'filter[karyawan_id][_eq]': String(karyawanId), 'filter[status][_eq]': 'active', fields: 'tipe_dokumen,status', limit: '-1' }).toString()}`
-		)
-	]);
+		const [karyawanRes, dokRes] = await Promise.all([
+			directusServerJson<{ data: any }>(`/items/karyawan/${karyawanId}?fields=${KARYAWAN_FIELDS}`),
+			directusServerJson<{ data: any[] }>(
+				`/items/karyawan_dokumen?${new URLSearchParams({ 'filter[karyawan_id][_eq]': String(karyawanId), 'filter[status][_eq]': 'active', fields: 'tipe_dokumen,status', limit: '-1' }).toString()}`
+			)
+		]);
 
-	const { lengkap, missing, opsional, persen } = hitungKelengkapan(karyawanRes?.data || {}, dokRes?.data || []);
-	const today = new Date().toISOString().slice(0, 10);
-	const sudahLewat = Boolean(deadline && deadline < today);
-	// Aturan #3 (anti-lockdown retroaktif): kasus onboarding sudah berjalan sejak 26 Agu 2026
-	// TANPA pernah mengunci ESS (konsekuensinya cuma banner + cron draf teguran KPI) — sebagian
-	// besar kasus yang sudah lewat tenggat SEKARANG pasti ada, dan memaksanya jadi 'block'
-	// mendadak berarti mengunci retroaktif. Jadi 'block' HANYA berlaku untuk sumber 'universal'
-	// (deadline 30 Sep 2026, masih ada masa tenggang ke depan sejak keputusan ini 23 Sep 2026).
-	// Sumber 'onboarding' tetap 'warn' selamanya di sini — konsekuensinya tetap murni cron lama.
-	const mode: 'ok' | 'warn' | 'block' = lengkap ? 'ok' : sumber === 'universal' && sudahLewat ? 'block' : 'warn';
+		const { lengkap, missing, opsional, persen } = hitungKelengkapan(karyawanRes?.data || {}, dokRes?.data || []);
+		const sudahLewat = Boolean(deadline && deadline < today);
+		// Aturan #3 (anti-lockdown retroaktif): kasus onboarding sudah berjalan sejak 26 Agu 2026
+		// TANPA pernah mengunci ESS (konsekuensinya cuma banner + cron draf teguran KPI) — sebagian
+		// besar kasus yang sudah lewat tenggat SEKARANG pasti ada, dan memaksanya jadi 'block'
+		// mendadak berarti mengunci retroaktif. Jadi 'block' HANYA berlaku untuk sumber 'universal'
+		// (deadline 30 Sep 2026, masih ada masa tenggang ke depan sejak keputusan ini 23 Sep 2026).
+		// Sumber 'onboarding' tetap 'warn' selamanya di sini — konsekuensinya tetap murni cron lama.
+		const mode: 'ok' | 'warn' | 'block' = lengkap ? 'ok' : sumber === 'universal' && sudahLewat ? 'block' : 'warn';
 
-	return { berlaku: true, lengkap, missing, opsional, persen, deadline, sudahLewat, mode, sumber };
+		result = { berlaku: true, lengkap, missing, opsional, persen, deadline, sudahLewat, mode, sumber };
+		if (statusCache.size >= MAX_STATUS_CACHE) {
+			const oldest = statusCache.keys().next().value;
+			if (oldest !== undefined) statusCache.delete(oldest);
+		}
+		statusCache.set(cacheKey, { at: Date.now(), value: result });
+		return result;
+	})().finally(() => {
+		if (statusInflight.get(cacheKey) === pending) statusInflight.delete(cacheKey);
+	});
+
+	statusInflight.set(cacheKey, pending);
+	return pending;
 }

@@ -8,43 +8,19 @@ import type { RequestHandler } from './$types';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
 import { directusServerJson } from '$lib/server/directus';
 import { todayJakarta } from '$lib/server/ess/time';
-import { hitungStatusKehadiranBulanIni, type KonfigurasiDisiplin, type JadwalKerja, type AbsensiRecord } from '$lib/server/ess/disiplinCalc';
+import { loadIstirahatConfig, getKaryawanJadwalDisiplin } from '$lib/server/ess/istirahat';
+import { hitungStatusKehadiranBulanIni, type KonfigurasiDisiplin, type AbsensiRecord } from '$lib/server/ess/disiplinCalc';
 import { isLeaderKaryawan } from '$lib/utils/isLeaderKaryawan';
 import { hitungKuotaKerjaBulanIni, hitungKepatuhanLaporanBulanIni } from '$lib/server/ess/kuotaLaporanCalc';
 
 export const GET: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
 
-	const tahun = Number(todayJakarta().slice(0, 4));
-	const konfigQuery = new URLSearchParams({ sort: '-tahun_berlaku', limit: '-1' });
-	const konfigRes = await directusServerJson<{ data: KonfigurasiDisiplin[] }>(
-		`/items/konfigurasi_kebijakan_disiplin?${konfigQuery.toString()}`
-	);
-	const semuaKonfig = konfigRes?.data || [];
-	const konfig =
-		semuaKonfig.find((c: any) => Number(c.tahun_berlaku) === tahun) ||
-		semuaKonfig.filter((c: any) => Number(c.tahun_berlaku) < tahun)[0] ||
-		semuaKonfig[semuaKonfig.length - 1] ||
-		null;
+	const { konfig: rawKonfig } = await loadIstirahatConfig();
+	const konfig = rawKonfig as KonfigurasiDisiplin | null;
 
 	if (!konfig || konfig.status !== 'aktif') {
 		return json({ aktif: false });
-	}
-
-	const karyawanQuery = new URLSearchParams({ fields: 'jadwal_kerja_id,pola_kerja' });
-	const karyawanRes = await directusServerJson<{ data: { jadwal_kerja_id: string | null; pola_kerja: string | null } }>(
-		`/items/karyawan/${karyawan.id}?${karyawanQuery.toString()}`
-	);
-	const jadwalId = karyawanRes?.data?.jadwal_kerja_id || null;
-	// Memo HRD 018/MEMO/HRD/VIII/2026: Leader/Coordinator bebas denda jam masuk — kartu "Akumulasi
-	// Terlambat" tidak relevan bagi mereka, diganti "Kepatuhan Kuota 8 Jam & Laporan ERP" di frontend.
-	const isLeader = isLeaderKaryawan({ pola_kerja: karyawanRes?.data?.pola_kerja, posisi: karyawan.posisi });
-	let jadwal: JadwalKerja | null = null;
-	if (jadwalId) {
-		const jadwalRes = await directusServerJson<{ data: JadwalKerja }>(
-			`/items/jadwal_kerja/${jadwalId}?fields=jam_masuk_normal,toleransi_telat_menit`
-		);
-		jadwal = jadwalRes?.data || null;
 	}
 
 	const bulanIni = todayJakarta().slice(0, 7); // YYYY-MM
@@ -60,7 +36,15 @@ export const GET: RequestHandler = async (event) => {
 		fields: 'tanggal,status,jam_masuk',
 		limit: '-1'
 	});
-	const absensiRes = await directusServerJson<{ data: AbsensiRecord[] }>(`/items/absensi_harian?${absensiQuery.toString()}`);
+
+	const [{ polaKerja, jadwal }, absensiRes] = await Promise.all([
+		getKaryawanJadwalDisiplin(karyawan.id),
+		directusServerJson<{ data: AbsensiRecord[] }>(`/items/absensi_harian?${absensiQuery.toString()}`)
+	]);
+
+	// Memo HRD 018/MEMO/HRD/VIII/2026: Leader/Coordinator bebas denda jam masuk — kartu "Akumulasi
+	// Terlambat" tidak relevan bagi mereka, diganti "Kepatuhan Kuota 8 Jam & Laporan ERP" di frontend.
+	const isLeader = isLeaderKaryawan({ pola_kerja: polaKerja, posisi: karyawan.posisi });
 	const absensiList = absensiRes?.data || [];
 
 	const status = hitungStatusKehadiranBulanIni(absensiList, jadwal, konfig);

@@ -72,6 +72,9 @@
 	let istirahat = $state<TodayStatus['istirahat'] | null>(null);
 	let showIstirahatDetail = $state(false);
 	let activeSiteCheckin = $state<SiteCheckinRecord | null>(null);
+	// Fase 1 optimasi jam sibuk: dahulukan getTodayStatus() sebelum memicu widget & metrik sekunder
+	// agar puluhan karyawan yang langsung klik Absen Masuk/Pulang tidak membanjiri Directus.
+	let secondaryReady = $state(false);
 
 	// Personal Hub Stats
 	let sisaCuti = $state<number | null>(null);
@@ -169,68 +172,114 @@
 		}
 	}
 
-	// Non-blocking Parallel Loading
+	// Prioritaskan status absensi dulu; tunda 9 fetch sekunder + widget atas ke idle time
+	// (dibatalkan otomatis bila karyawan langsung mengetuk Absen Masuk/Pulang dan meninggalkan /ess).
 	onMount(() => {
-		loadAttendance();
+		let destroyed = false;
+		let secondaryStarted = false;
+		let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+		let idleId: number | null = null;
+		let deferTimer: ReturnType<typeof setTimeout> | null = null;
 
-		getMentees()
-			.then((res) => (jumlahMentee = res.mentees.length))
-			.catch(() => {});
+		function runSecondaryFetches() {
+			if (destroyed || secondaryStarted) return;
+			secondaryStarted = true;
+			secondaryReady = true;
 
-		getOnboardingStatus()
-			.then((res) => (onboarding = res))
-			.catch(() => {});
-
-		getPengumumanList()
-			.then((res) => (unreadPengumuman = res.unreadCount))
-			.catch(() => {});
-
-		getMyHrDocuments()
-			.then((res) => (pendingSignatures = res.pendingCount))
-			.catch(() => {});
-
-		// Load Personal Metrics
-		getCutiStatus()
-			.then((res) => {
-				sisaCuti = res?.sisaCuti?.sisa ?? null;
-			})
-			.catch(() => {});
-
-		getLemburStatus()
-			.then((res) => {
-				if (res?.riwayat) {
-					const today = new Date();
-					const monthStart = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-01`;
-					lemburBulanIniJam = res.riwayat
-						.filter((r) => r.status === 'Disetujui' && r.tanggal >= monthStart)
-						.reduce((sum, r) => sum + (r.durasi_jam || 0), 0);
-				}
-			})
-			.catch(() => {});
-
-		// 7 Hari Ke Depan
-		const today = new Date();
-		const in7 = new Date();
-		in7.setDate(in7.getDate() + 7);
-		getCalendarEvents(toISODate(today), toISODate(in7))
-			.then((events) => {
-				upcomingEvents = events.slice(0, 4);
-			})
-			.catch(() => {});
-
-		// Pinned Notes
-		getNotes({ status: 'active' })
-			.then((notes) => {
-				pinnedNotes = notes.filter((n) => n.is_pinned).slice(0, 3);
-			})
-			.catch(() => {});
-
-		// Active Site Check-in
-		if (canSiteCheckin) {
-			getActiveCheckin()
-				.then((res) => (activeSiteCheckin = res.record))
+			getMentees()
+				.then((res) => {
+					if (!destroyed) jumlahMentee = res.mentees.length;
+				})
 				.catch(() => {});
+
+			getOnboardingStatus()
+				.then((res) => {
+					if (!destroyed) onboarding = res;
+				})
+				.catch(() => {});
+
+			getPengumumanList()
+				.then((res) => {
+					if (!destroyed) unreadPengumuman = res.unreadCount;
+				})
+				.catch(() => {});
+
+			getMyHrDocuments()
+				.then((res) => {
+					if (!destroyed) pendingSignatures = res.pendingCount;
+				})
+				.catch(() => {});
+
+			// Load Personal Metrics
+			getCutiStatus()
+				.then((res) => {
+					if (!destroyed) sisaCuti = res?.sisaCuti?.sisa ?? null;
+				})
+				.catch(() => {});
+
+			getLemburStatus()
+				.then((res) => {
+					if (!destroyed && res?.riwayat) {
+						const today = new Date();
+						const monthStart = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-01`;
+						lemburBulanIniJam = res.riwayat
+							.filter((r) => r.status === 'Disetujui' && r.tanggal >= monthStart)
+							.reduce((sum, r) => sum + (r.durasi_jam || 0), 0);
+					}
+				})
+				.catch(() => {});
+
+			// 7 Hari Ke Depan
+			const today = new Date();
+			const in7 = new Date();
+			in7.setDate(in7.getDate() + 7);
+			getCalendarEvents(toISODate(today), toISODate(in7))
+				.then((events) => {
+					if (!destroyed) upcomingEvents = events.slice(0, 4);
+				})
+				.catch(() => {});
+
+			// Pinned Notes
+			getNotes({ status: 'active' })
+				.then((notes) => {
+					if (!destroyed) pinnedNotes = notes.filter((n) => n.is_pinned).slice(0, 3);
+				})
+				.catch(() => {});
+
+			// Active Site Check-in (memakai cache/coalescing bersama ActiveCheckinBar)
+			if (canSiteCheckin) {
+				getActiveCheckin()
+					.then((res) => {
+						if (!destroyed) activeSiteCheckin = res.record;
+					})
+					.catch(() => {});
+			}
 		}
+
+		function scheduleSecondary() {
+			if (destroyed || secondaryStarted) return;
+			if (fallbackTimer) {
+				clearTimeout(fallbackTimer);
+				fallbackTimer = null;
+			}
+			if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+				idleId = window.requestIdleCallback(runSecondaryFetches, { timeout: 400 });
+			} else {
+				deferTimer = setTimeout(runSecondaryFetches, 150);
+			}
+		}
+
+		void loadAttendance().finally(scheduleSecondary);
+		fallbackTimer = setTimeout(scheduleSecondary, 800);
+
+		return () => {
+			destroyed = true;
+			if (fallbackTimer) clearTimeout(fallbackTimer);
+			if (deferTimer) clearTimeout(deferTimer);
+			if (idleId !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+				window.cancelIdleCallback(idleId);
+			}
+		};
 	});
 
 	async function submitQuickLog() {
@@ -391,10 +440,12 @@
 
 <div class="w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6 pb-28">
 
-	<BudayaBanner />
-	<TargetMerahBanner />
-	<MotivasiWidget />
-	<BelongingWall />
+	{#if secondaryReady}
+		<BudayaBanner />
+		<TargetMerahBanner />
+		<MotivasiWidget />
+		<BelongingWall />
+	{/if}
 
 	<!-- ══════════════════════════════════════════════════════════════════════════
 	     1. HERO HEADER: Greeting, Live Clock & Profile Pill
@@ -467,7 +518,9 @@
 			steps={h('menu.page').sectionGuide?.steps ?? []}
 		/>
 
-		<BookmarkBar />
+		{#if secondaryReady}
+			<BookmarkBar />
+		{/if}
 	</div>
 
 	<!-- Onboarding Progress Banner (Refined Visual Polish) -->

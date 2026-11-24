@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
+import { clearDataLengkapCache } from '$lib/server/ess/dataKelengkapan';
 import { directusServerJson } from '$lib/server/directus';
 
 // Field data diri yang boleh dilengkapi/diedit mandiri oleh karyawan lewat ESS. Field
@@ -52,6 +53,7 @@ export const PATCH: RequestHandler = async (event) => {
 		method: 'PATCH',
 		body: JSON.stringify(payload)
 	});
+	clearDataLengkapCache(karyawan.id);
 
 	try {
 		await directusServerJson('/items/app_notifications', {

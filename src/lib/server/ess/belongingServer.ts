@@ -10,6 +10,16 @@ import { loadSpotlightTayang, type SpotlightItem } from '$lib/server/ess/spotlig
 
 export const WISH_EMOJI = ['💪', '🎉', '👏', '❤️'];
 const MAX_EVENTS = 12;
+const WALL_EVENTS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+let wallEventsCache: { key: string; at: number; rows: any[] } | null = null;
+let wallEventsInflight = new Map<string, Promise<any[]>>();
+
+/** Untuk tes / invalidasi cache Wall of Belonging. */
+export function clearBelongingWallCache() {
+	wallEventsCache = null;
+	wallEventsInflight.clear();
+}
 
 export interface WallEvent {
 	id: number;
@@ -36,17 +46,36 @@ function addDays(ymd: string, delta: number): string {
 }
 
 async function loadWallEvents(days: number, today: string): Promise<any[]> {
-	const cfg = await directusServerJson<{ data: any[] }>(
-		`/items/celebration_config?filter[aktif][_eq]=1&filter[show_wall_of_fame][_eq]=1&fields=tipe_milestone&limit=-1`
-	);
-	const tipes = (cfg?.data || []).map((c) => c.tipe_milestone).filter(Boolean);
-	if (!tipes.length) return [];
-	const res = await directusServerJson<{ data: any[] }>(
-		`/items/celebration_events?filter[tipe][_in]=${tipes.join(',')}&filter[status][_neq]=cancelled` +
-			`&filter[tanggal_event][_gte]=${addDays(today, -days)}&filter[tanggal_event][_lte]=${addDays(today, days)}` +
-			`&fields=id,karyawan_id,tipe,judul,tanggal_event,tahun_ke&sort=tanggal_event&limit=${MAX_EVENTS}`
-	);
-	return res?.data || [];
+	const key = `${today}:${days}`;
+	const now = Date.now();
+	if (wallEventsCache && wallEventsCache.key === key && now - wallEventsCache.at < WALL_EVENTS_CACHE_TTL_MS) {
+		return wallEventsCache.rows;
+	}
+	const running = wallEventsInflight.get(key);
+	if (running) return running;
+
+	const pending = (async (): Promise<any[]> => {
+		const cfg = await directusServerJson<{ data: any[] }>(
+			`/items/celebration_config?filter[aktif][_eq]=1&filter[show_wall_of_fame][_eq]=1&fields=tipe_milestone&limit=-1`
+		);
+		const tipes = (cfg?.data || []).map((c) => c.tipe_milestone).filter(Boolean);
+		let rows: any[] = [];
+		if (tipes.length > 0) {
+			const res = await directusServerJson<{ data: any[] }>(
+				`/items/celebration_events?filter[tipe][_in]=${tipes.join(',')}&filter[status][_neq]=cancelled` +
+					`&filter[tanggal_event][_gte]=${addDays(today, -days)}&filter[tanggal_event][_lte]=${addDays(today, days)}` +
+					`&fields=id,karyawan_id,tipe,judul,tanggal_event,tahun_ke&sort=tanggal_event&limit=${MAX_EVENTS}`
+			);
+			rows = res?.data || [];
+		}
+		wallEventsCache = { key, at: Date.now(), rows };
+		return rows;
+	})().finally(() => {
+		if (wallEventsInflight.get(key) === pending) wallEventsInflight.delete(key);
+	});
+
+	wallEventsInflight.set(key, pending);
+	return pending;
 }
 
 export async function getWall(karyawan: { id: number }): Promise<{ days: number; events: WallEvent[]; spotlight: SpotlightItem[] }> {

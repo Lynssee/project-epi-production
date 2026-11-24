@@ -98,7 +98,7 @@
 			<IconClockExclamation size={18} style="color: white; flex-shrink: 0" />
 			<button
 				class="flex-1 min-w-0 text-left"
-				onclick={() => goto('/ess/absen')}
+				onclick={() => goto('/ess/absen?mode=out')}
 			>
 				<p class="text-[12px] font-bold text-white">Anda belum absen pulang hari ini</p>
 				<p class="text-[10px] text-white/85">
@@ -107,7 +107,7 @@
 			</button>
 			<button
 				class="flex items-center gap-1 text-[11px] font-bold text-white bg-white/20 hover:bg-white/30 rounded-lg px-2.5 py-1.5 flex-shrink-0"
-				onclick={() => goto('/ess/absen')}
+				onclick={() => goto('/ess/absen?mode=out')}
 			>
 				Absen <IconChevronRight size={14} />
 			</button>
