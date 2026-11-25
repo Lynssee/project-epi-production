@@ -9,6 +9,7 @@
 		CULTURE_MOMENT_EVENT, decidePopup, loadDayState, saveDayState, loadCachedPayload, saveCachedPayload, recordShown, recordAnswered,
 		type Momen, type PopupDecision
 	} from '$lib/utils/culturePopupClient';
+	import { isAttendancePriorityPending, waitForAttendancePriority } from '$lib/utils/essPriority';
 
 	const TONES: Record<string, string> = {
 		indigo: 'linear-gradient(90deg,#4f46e5,#6366f1)', emerald: 'linear-gradient(90deg,#059669,#10b981)', amber: 'linear-gradient(90deg,#d97706,#f59e0b)',
@@ -127,12 +128,15 @@
 	}
 
 	onMount(() => {
+		let alive = true;
 		userKey = auth.currentUser?.uid || 'anon';
 		window.addEventListener(CULTURE_MOMENT_EVENT, onMomen);
 		window.addEventListener('keydown', onKey);
 		(async () => {
+			if (isAttendancePriorityPending()) await waitForAttendancePriority();
+			if (!alive) return;
 			payload = await muatPayload();
-			if (!payload?.enabled) return; // tidak aktif / skema belum ada → tanpa timer
+			if (!alive || !payload?.enabled) return; // tidak aktif / skema belum ada → tanpa timer
 			const { ymd } = wibNow();
 			const flag = `culturePopup:open:${userKey}:${ymd}`;
 			let sudahBuka = false;
@@ -143,9 +147,13 @@
 				/* storage diblokir → anggap belum */
 			}
 			if (!sudahBuka) await tampilkan('app_open');
+			if (!alive) return;
 			cekJam();
 			ticker = setInterval(cekJam, 60_000);
 		})();
+		return () => {
+			alive = false;
+		};
 	});
 	onDestroy(() => {
 		if (typeof window !== 'undefined') {

@@ -21,6 +21,7 @@
 	import NavigationProgressBar from './NavigationProgressBar.svelte';
 	import { page } from '$app/state';
 	import { registerAutoFlush, type QueuedRequest } from '$lib/utils/offlineQueue';
+	import { isAttendancePriorityRoute, waitForAttendancePriority } from '$lib/utils/essPriority';
 
 	let { children } = $props();
 	let authChecked = $state(false);
@@ -230,15 +231,47 @@
 				// Sistem Manpower Leader — petakan akun ini ke baris `manpower` (kalau ada),
 				// lalu ambil proyek tempat dia memegang kursi leader/wakil. Kursi inilah
 				// yang mengikat orang lapangan ke proyek; role saja tidak mengikat apa-apa.
-				try {
-					const mp = await resolveManpowerForAccount(user.email, karyawanId);
-					if (mp) {
-						manpowerId = mp.id;
-						manpowerNama = mp.nama;
-						manpowerLeaderProjectIds = (await getProyekDipimpin(mp.id)).map((p) => p.id);
+				// Pada rute absensi (/ess, /ess/absen), tunda lookup manpower secara non-blocking
+				// agar tidak menahan render halaman absen selama 2-3 query Directus tambahan.
+				const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+				const deferManpowerLookup = isAttendancePriorityRoute(currentPath);
+
+				if (!deferManpowerLookup) {
+					try {
+						const mp = await resolveManpowerForAccount(user.email, karyawanId);
+						if (mp) {
+							manpowerId = mp.id;
+							manpowerNama = mp.nama;
+							manpowerLeaderProjectIds = (await getProyekDipimpin(mp.id)).map((p) => p.id);
+						}
+					} catch (e) {
+						console.warn('[Auth] Gagal memetakan akun ke manpower (diabaikan):', e);
 					}
-				} catch (e) {
-					console.warn('[Auth] Gagal memetakan akun ke manpower (diabaikan):', e);
+				} else {
+					const targetUid = user.uid;
+					const targetEmail = user.email;
+					const targetKaryawanId = karyawanId;
+					void waitForAttendancePriority().then(async () => {
+						if (auth.currentUser?.uid !== targetUid) return;
+						try {
+							const mp = await resolveManpowerForAccount(targetEmail, targetKaryawanId);
+							if (!mp || auth.currentUser?.uid !== targetUid) return;
+							const leaderProjects = (await getProyekDipimpin(mp.id)).map((p) => p.id);
+							if (auth.currentUser?.uid !== targetUid) return;
+							authStore.update((s) =>
+								s.user?.uid === targetUid
+									? {
+											...s,
+											manpowerId: mp.id,
+											manpowerNama: mp.nama,
+											manpowerLeaderProjectIds: leaderProjects
+										}
+									: s
+							);
+						} catch (e) {
+							console.warn('[Auth] Gagal memetakan akun ke manpower di latar belakang (diabaikan):', e);
+						}
+					});
 				}
 
 				// Diagnosa mismatch: cek apakah roleId user ada di daftar posisi Directus (abaikan role bawaan sistem)

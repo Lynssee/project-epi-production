@@ -6,6 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { authStore } from '$lib/stores/auth';
 	import { getPaktaSaya, PAKTA_REFRESH_EVENT, type PaktaSaya, type PaktaSayaItem } from '$lib/services/ess/pakta';
+	import { isAttendancePriorityPending, waitForAttendancePriority } from '$lib/utils/essPriority';
 	import { IconShieldCheck } from '@tabler/icons-svelte';
 
 	let data = $state<PaktaSaya | null>(null);
@@ -21,16 +22,24 @@
 	}
 
 	onMount(() => {
+		let active = true;
 		const unsub = authStore.subscribe((a) => {
 			if (!a.checked || !a.karyawanId) return;
 			const k = String(a.karyawanId);
 			if (loadedFor === k) return;
 			loadedFor = k;
-			void load();
+			if (isAttendancePriorityPending()) {
+				void waitForAttendancePriority().then(() => {
+					if (active) void load();
+				});
+			} else {
+				void load();
+			}
 		});
 		const onRefresh = () => void load(true);
 		window.addEventListener(PAKTA_REFRESH_EVENT, onRefresh);
 		return () => {
+			active = false;
 			unsub();
 			window.removeEventListener(PAKTA_REFRESH_EVENT, onRefresh);
 		};

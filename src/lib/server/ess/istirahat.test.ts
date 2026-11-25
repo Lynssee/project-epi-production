@@ -11,6 +11,7 @@ const {
 	getJadwalPulangNormal,
 	listJedaHariIni,
 	rollupIstirahat,
+	seedKaryawanJadwalMeta,
 	clearIstirahatCache
 } = await import('./istirahat');
 
@@ -175,6 +176,32 @@ describe('istirahat caching & separated Directus relations', () => {
 		const pulang11 = await getJadwalPulangNormal(11);
 		expect(pulang11).toBe('17:00');
 		expect(mockDirectusJson).toHaveBeenCalledTimes(3);
+	});
+
+	it('skips GET /items/karyawan/{id} when knownJadwalId is passed or seeded from authenticateEss', async () => {
+		mockDirectusJson.mockImplementation(async (path: string) => {
+			if (path.startsWith('/items/karyawan/')) {
+				throw new Error(`Should NOT fetch karyawan again: ${path}`);
+			}
+			if (path.startsWith('/items/jadwal_kerja/shift-pagi')) {
+				return {
+					data: {
+						jam_istirahat_mulai: '12:00',
+						jam_istirahat_selesai: '13:00',
+						jam_keluar_normal: '17:00:00'
+					}
+				};
+			}
+			throw new Error(`Unexpected path: ${path}`);
+		});
+
+		seedKaryawanJadwalMeta(20, { jadwalId: 'shift-pagi', polaKerja: null });
+		const jendela = await getJendelaIstirahat(20, 'shift-pagi');
+		const pulang = await getJadwalPulangNormal(20);
+
+		expect(jendela).toEqual({ mulai: '12:00', selesai: '13:00' });
+		expect(pulang).toBe('17:00');
+		expect(mockDirectusJson).toHaveBeenCalledTimes(1);
 	});
 });
 

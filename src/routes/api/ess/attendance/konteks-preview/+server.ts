@@ -21,7 +21,7 @@ export const POST: RequestHandler = async (event) => {
 		throw error(400, 'Lokasi GPS tidak valid.');
 	}
 
-	const polaKerja = await resolveKaryawanPolaKerja(karyawan.id);
+	const polaKerja = await resolveKaryawanPolaKerja(karyawan.id, { polaKerja: karyawan.pola_kerja, divisi: karyawan.divisi });
 	if (polaKerja !== 'mobile') {
 		// Chip konteks hanya relevan utk pola kerja mobile — pola lain tidak perlu pratinjau ini.
 		return json({ konteksLokasi: null, konteksSumber: null });

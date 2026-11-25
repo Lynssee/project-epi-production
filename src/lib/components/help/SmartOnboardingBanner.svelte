@@ -13,6 +13,7 @@
   import { goto } from '$app/navigation';
   import { authStore } from '$lib/stores/auth';
   import { fetchTutorialForMe } from '$lib/services/tutorialApi';
+  import { isAttendancePriorityPending, waitForAttendancePriority } from '$lib/utils/essPriority';
 
   let show = $state(false);
   let jumlahWajib = $state(0);
@@ -36,6 +37,7 @@
     const email = $authStore.user?.email;
     if (!browser || !email) return;
     if (localStorage.getItem(dismissKey(email))) return;
+    if (isAttendancePriorityPending()) await waitForAttendancePriority();
 
     const res = await fetchTutorialForMe();
     if (!res.success || !res.data) return;

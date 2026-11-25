@@ -71,10 +71,45 @@ export interface TodayStatus {
 	};
 }
 
+const ID_TOKEN_TIMEOUT_MS = 10_000;
+const STATUS_TIMEOUT_MS = 15_000;
+const PUNCH_TIMEOUT_MS = 45_000;
+const TODAY_STATUS_CACHE_TTL_MS = 20_000;
+
+export class AttendanceRequestError extends Error {
+	status?: number;
+	code?: 'ATTENDANCE_TIMEOUT' | 'HTTP_ERROR';
+	constructor(message: string, opts?: { status?: number; code?: 'ATTENDANCE_TIMEOUT' | 'HTTP_ERROR' }) {
+		super(message);
+		this.name = 'AttendanceRequestError';
+		this.status = opts?.status;
+		this.code = opts?.code;
+	}
+}
+
 async function getIdToken(): Promise<string> {
 	const user = auth.currentUser;
 	if (!user) throw new Error('Sesi tidak ditemukan. Silakan login ulang.');
-	return user.getIdToken();
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			user.getIdToken(),
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(
+					() =>
+						reject(
+							new AttendanceRequestError(
+								'Gagal memperbarui sesi login (koneksi lambat). Silakan coba lagi.',
+								{ code: 'ATTENDANCE_TIMEOUT' }
+							)
+						),
+					ID_TOKEN_TIMEOUT_MS
+				);
+			})
+		]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
 }
 
 async function parseErrorMessage(res: Response): Promise<string> {
@@ -88,20 +123,6 @@ async function parseErrorMessage(res: Response): Promise<string> {
 	if (res.status === 403) return 'Akun Anda belum tertaut ke data karyawan. Silakan hubungi HRD.';
 	if (res.status >= 500) return 'Layanan absensi sedang mengalami gangguan. Silakan coba beberapa saat lagi.';
 	return `Gagal memuat data (${res.status})`;
-}
-
-const STATUS_TIMEOUT_MS = 15_000;
-const PUNCH_TIMEOUT_MS = 45_000;
-
-export class AttendanceRequestError extends Error {
-	status?: number;
-	code?: 'ATTENDANCE_TIMEOUT' | 'HTTP_ERROR';
-	constructor(message: string, opts?: { status?: number; code?: 'ATTENDANCE_TIMEOUT' | 'HTTP_ERROR' }) {
-		super(message);
-		this.name = 'AttendanceRequestError';
-		this.status = opts?.status;
-		this.code = opts?.code;
-	}
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
@@ -126,9 +147,23 @@ async function fetchWithRetry(url: string, init: RequestInit, maxRetries = 1): P
 	let lastError: any = null;
 	for (let attempt = 0; attempt <= maxRetries; attempt++) {
 		try {
-			return await fetchWithTimeout(url, init, STATUS_TIMEOUT_MS);
+			const res = await fetchWithTimeout(url, init, STATUS_TIMEOUT_MS);
+			// Retry cepat 1x hanya untuk gateway error sementara (502/503/504), bukan saat sudah timeout 15s.
+			if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < maxRetries) {
+				await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+				continue;
+			}
+			return res;
 		} catch (err: any) {
 			lastError = err;
+			// Jangan retry bila sudah kena ATTENDANCE_TIMEOUT (15s) agar tidak menggandakan antrean server
+			// dan membuat user menunggu 31 detik di jam sibuk.
+			if (err instanceof AttendanceRequestError && err.code === 'ATTENDANCE_TIMEOUT') {
+				throw new AttendanceRequestError(
+					'Respon server terlalu lama (lebih dari 15 detik). Silakan coba lagi atau langsung buka halaman Absen.',
+					{ code: 'ATTENDANCE_TIMEOUT' }
+				);
+			}
 			if (attempt < maxRetries) {
 				await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
 				continue;
@@ -142,13 +177,40 @@ async function fetchWithRetry(url: string, init: RequestInit, maxRetries = 1): P
 	throw lastError || new Error('Gagal menghubungi server absensi.');
 }
 
-export async function getTodayStatus(): Promise<TodayStatus> {
-	const idToken = await getIdToken();
-	const res = await fetchWithRetry('/api/ess/attendance/status', {
-		headers: { Authorization: `Bearer ${idToken}` }
+let todayStatusCache: { uid: string; at: number; data: TodayStatus } | null = null;
+let todayStatusInflight: { uid: string; promise: Promise<TodayStatus> } | null = null;
+
+/** Kosongkan cache klien status absensi (dipanggil otomatis setelah clock-in/out/break berhasil). */
+export function clearTodayStatusClientCache(): void {
+	todayStatusCache = null;
+	todayStatusInflight = null;
+}
+
+export async function getTodayStatus(opts?: { force?: boolean }): Promise<TodayStatus> {
+	const uid = auth.currentUser?.uid || '';
+	const now = Date.now();
+	if (!opts?.force && uid && todayStatusCache && todayStatusCache.uid === uid && now - todayStatusCache.at < TODAY_STATUS_CACHE_TTL_MS) {
+		return todayStatusCache.data;
+	}
+	if (!opts?.force && uid && todayStatusInflight && todayStatusInflight.uid === uid) {
+		return todayStatusInflight.promise;
+	}
+
+	const pending = (async (): Promise<TodayStatus> => {
+		const idToken = await getIdToken();
+		const res = await fetchWithRetry('/api/ess/attendance/status', {
+			headers: { Authorization: `Bearer ${idToken}` }
+		});
+		if (!res.ok) throw new Error(await parseErrorMessage(res));
+		const data: TodayStatus = await res.json();
+		if (uid) todayStatusCache = { uid, at: Date.now(), data };
+		return data;
+	})().finally(() => {
+		if (todayStatusInflight?.promise === pending) todayStatusInflight = null;
 	});
-	if (!res.ok) throw new Error(await parseErrorMessage(res));
-	return res.json();
+
+	if (uid && !opts?.force) todayStatusInflight = { uid, promise: pending };
+	return pending;
 }
 
 export interface RiwayatAbsensiResult {
@@ -188,7 +250,9 @@ async function submitPunch(endpoint: string, params: PunchParams): Promise<any> 
 	const idToken = await getIdToken();
 	params.onStage?.('photo');
 	const gps = { lat: params.lat, lng: params.lng, accuracy: params.accuracy ?? 0 };
-	const watermarked = params.skipWatermark ? params.photoFile : await watermarkPhoto(params.photoFile, gps);
+	const watermarked = params.skipWatermark
+		? params.photoFile
+		: await watermarkPhoto(params.photoFile, gps, undefined, { ringan: true });
 	const compressed = await compressPhoto(watermarked);
 
 	const formData = new FormData();
@@ -212,6 +276,7 @@ async function submitPunch(endpoint: string, params: PunchParams): Promise<any> 
 	if (!res.ok) {
 		throw new AttendanceRequestError(await parseErrorMessage(res), { status: res.status, code: 'HTTP_ERROR' });
 	}
+	clearTodayStatusClientCache();
 	return res.json();
 }
 
@@ -263,7 +328,9 @@ async function submitBreakPunch(endpoint: string, params: BreakPunchParams): Pro
 	if (params.photoFile) {
 		params.onStage?.('photo');
 		const gps = { lat: params.lat, lng: params.lng, accuracy: params.accuracy ?? 0 };
-		const watermarked = params.skipWatermark ? params.photoFile : await watermarkPhoto(params.photoFile, gps);
+		const watermarked = params.skipWatermark
+			? params.photoFile
+			: await watermarkPhoto(params.photoFile, gps, undefined, { ringan: true });
 		const compressed = await compressPhoto(watermarked);
 		formData.append('foto', compressed, compressed.name || 'selfie.jpg');
 	}
@@ -281,6 +348,7 @@ async function submitBreakPunch(endpoint: string, params: BreakPunchParams): Pro
 	if (!res.ok) {
 		throw new AttendanceRequestError(await parseErrorMessage(res), { status: res.status, code: 'HTTP_ERROR' });
 	}
+	clearTodayStatusClientCache();
 	return res.json();
 }
 

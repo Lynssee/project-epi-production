@@ -8,15 +8,27 @@ import {
 	getJendelaIstirahat,
 	listJedaHariIni,
 	listJedaHariIniRaw,
+	seedKaryawanJadwalMeta,
 	type AbsensiIstirahatLogRow
 } from '$lib/server/ess/istirahat';
+
+const STATUS_DIRECTUS_TIMEOUT_MS = 12_000;
 
 export const GET: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
 	const tanggal = todayJakarta();
+	const requestOpts = { signal: event.request.signal, timeoutMs: STATUS_DIRECTUS_TIMEOUT_MS };
+
+	// Seed cache jadwal/pola kerja karyawan dari hasil authenticateEss (0 query karyawan/{id} tambahan).
+	if (karyawan.jadwal_kerja_id !== undefined || karyawan.pola_kerja !== undefined) {
+		seedKaryawanJadwalMeta(karyawan.id, {
+			jadwalId: karyawan.jadwal_kerja_id,
+			polaKerja: karyawan.pola_kerja
+		});
+	}
 
 	const [record, lokasiOptions, istirahatConfig] = await Promise.all([
-		findTodayRecord(karyawan.id, tanggal),
+		findTodayRecord(karyawan.id, tanggal, requestOpts),
 		listActiveLokasi(),
 		loadIstirahatConfig()
 	]);
@@ -28,8 +40,8 @@ export const GET: RequestHandler = async (event) => {
 	let jedaHariIni: Awaited<ReturnType<typeof listJedaHariIni>> = [];
 	if (istirahatConfig.aktif) {
 		const [jendela, rawJeda] = await Promise.all([
-			getJendelaIstirahat(karyawan.id),
-			record ? listJedaHariIniRaw(record.id) : Promise.resolve([])
+			getJendelaIstirahat(karyawan.id, karyawan.jadwal_kerja_id),
+			record ? listJedaHariIniRaw(record.id, requestOpts) : Promise.resolve([])
 		]);
 		jendelaIstirahat = jendela;
 		// rawJeda diurutkan ascending tanggal_dibuat; jedaTerbuka terbaru ada di belakang.

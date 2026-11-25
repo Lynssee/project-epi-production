@@ -7,6 +7,7 @@
 	import { authStore } from '$lib/stores/auth';
 	import { getProjectScope, getProjectsForCurrentUser } from '$lib/services/projectScope';
 	import { fetchGateSnapshot, type GateSnapshot } from '$lib/services/gateSnapshot';
+	import { isAttendancePriorityPending, waitForAttendancePriority } from '$lib/utils/essPriority';
 
 	let snap = $state<GateSnapshot | null>(null);
 	let names = $state<Record<string, string>>({});
@@ -27,6 +28,7 @@
 	}
 
 	onMount(() => {
+		let alive = true;
 		const onVisible = () => {
 			if (document.visibilityState === 'visible' && snap) load();
 		};
@@ -34,12 +36,21 @@
 		const stop = authStore.subscribe((s) => {
 			if (s.checked && s.user && !started) {
 				started = true;
-				const run = () => load();
+				const run = () => {
+					if (isAttendancePriorityPending()) {
+						void waitForAttendancePriority().then(() => {
+							if (alive) load();
+						});
+					} else {
+						load();
+					}
+				};
 				if ('requestIdleCallback' in window) requestIdleCallback(run);
 				else setTimeout(run, 1500);
 			}
 		});
 		return () => {
+			alive = false;
 			document.removeEventListener('visibilitychange', onVisible);
 			stop();
 		};

@@ -260,37 +260,98 @@ function unwrapId(value: any): number | null {
 	return typeof value === 'object' ? (value.id ?? null) : value;
 }
 
+const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+interface PublishedCatalogCache {
+	at: number;
+	programs: TrainingProgramRecord[];
+	divisiByProgram: Map<number, number[]>;
+}
+let _catalogCache: PublishedCatalogCache | null = null;
+let _catalogInflight: Promise<PublishedCatalogCache> | null = null;
+
+/** Untuk tes / invalidasi saat admin menambah atau mengubah katalog kursus. */
+export function clearTrainingCatalogCache(): void {
+	_catalogCache = null;
+	_catalogInflight = null;
+}
+
+/**
+ * Muat seluruh program published + relasi M2M `training_program_divisi` secara TERPISAH
+ * (Aturan Directus: tanpa nested dot-relation `divisi_target.divisi_id`) dan cache 5 menit.
+ */
+async function loadPublishedCatalog(): Promise<PublishedCatalogCache> {
+	const now = Date.now();
+	if (_catalogCache && now - _catalogCache.at < CATALOG_CACHE_TTL_MS) {
+		return _catalogCache;
+	}
+	if (_catalogInflight) return _catalogInflight;
+
+	const pending = (async (): Promise<PublishedCatalogCache> => {
+		const programQuery = new URLSearchParams({
+			fields: PROGRAM_FIELDS,
+			'filter[status][_eq]': 'published',
+			sort: 'judul',
+			limit: '200'
+		});
+		const junctionQuery = new URLSearchParams({
+			fields: 'training_program_id,divisi_id',
+			limit: '-1'
+		});
+
+		const [programRes, junctionRes] = await Promise.all([
+			directusServerJson<{ data: TrainingProgramRecord[] }>(`/items/training_program?${programQuery.toString()}`),
+			directusServerJson<{ data: Array<{ training_program_id: number | { id: number }; divisi_id: number | { id: number } }> }>(
+				`/items/training_program_divisi?${junctionQuery.toString()}`
+			).catch((err) => {
+				console.warn('[training] gagal baca training_program_divisi (fallback department_target):', err instanceof Error ? err.message : err);
+				return { data: [] };
+			})
+		]);
+
+		const divisiByProgram = new Map<number, number[]>();
+		for (const row of junctionRes?.data || []) {
+			const pid = unwrapId(row.training_program_id);
+			const did = unwrapId(row.divisi_id);
+			if (pid == null || did == null) continue;
+			const list = divisiByProgram.get(pid);
+			if (list) list.push(did);
+			else divisiByProgram.set(pid, [did]);
+		}
+
+		const entry: PublishedCatalogCache = {
+			at: Date.now(),
+			programs: programRes?.data || [],
+			divisiByProgram
+		};
+		_catalogCache = entry;
+		return entry;
+	})().finally(() => {
+		if (_catalogInflight === pending) _catalogInflight = null;
+	});
+
+	_catalogInflight = pending;
+	return pending;
+}
+
 /**
  * Katalog kursus published yang relevan untuk divisi karyawan (kosong = semua divisi).
  *
- * Fase 4.2: filter utama sekarang relasi sebenarnya divisi_target (M2M ke hrd_divisi) via
- * divisiId, bukan lagi pencocokan substring department_target (_icontains) yang rawan
- * meleset — lihat audit "IT"/"IT & MEDIA"/"GENERAL MANAGER, IT" di dokumen perencanaan.
- * Untuk program yang BELUM diberi divisi_target (daftar kosong), atau karyawan yang
- * divisi_id-nya belum terpetakan (data lama ambigu, lihat scripts/lms-fase4-divisi-schema.mjs),
- * fallback ke department_target lama supaya tidak ada regresi akses katalog.
+ * Fase 4.2: filter utama memakai relasi M2M `training_program_divisi` (di-fetch terpisah
+ * dari `training_program` & di-cache 5 menit). Untuk program yang belum diberi target divisi,
+ * fallback ke `department_target` lama supaya tidak ada regresi akses katalog.
  */
 export async function listCatalogForKaryawan(divisi: string | null, divisiId: number | null = null): Promise<TrainingProgramRecord[]> {
-	const query = new URLSearchParams({
-		fields: `${PROGRAM_FIELDS},divisi_target.divisi_id`,
-		'filter[status][_eq]': 'published',
-		sort: 'judul',
-		limit: '200'
-	});
-	const result = await directusServerJson<{ data: any[] }>(`/items/training_program?${query.toString()}`);
-	const rows = result?.data || [];
+	const { programs, divisiByProgram } = await loadPublishedCatalog();
 
-	return rows
-		.filter((p) => {
-			const targets: number[] = (p.divisi_target || []).map((t: any) => unwrapId(t.divisi_id)).filter((id: number | null): id is number => id != null);
-			if (targets.length > 0) {
-				return divisiId != null && targets.includes(divisiId);
-			}
-			if (!p.department_target) return true;
-			if (!divisi) return false;
-			return p.department_target.toLowerCase().includes(divisi.toLowerCase());
-		})
-		.map(({ divisi_target, ...program }) => program as TrainingProgramRecord);
+	return programs.filter((p) => {
+		const targets = divisiByProgram.get(Number(p.id)) || [];
+		if (targets.length > 0) {
+			return divisiId != null && targets.includes(divisiId);
+		}
+		if (!p.department_target) return true;
+		if (!divisi) return false;
+		return p.department_target.toLowerCase().includes(divisi.toLowerCase());
+	});
 }
 
 export async function findProgramById(programId: number): Promise<TrainingProgramRecord | null> {
@@ -330,6 +391,31 @@ export async function listMyEnrollments(karyawanId: number): Promise<TrainingEnr
 	});
 	const result = await directusServerJson<{ data: TrainingEnrollmentRecord[] }>(`/items/training_enrollment?${query.toString()}`);
 	return (result?.data || []).map((e) => ({ ...e, program_id: unwrapId(e.program_id) as number, karyawan_id: unwrapId(e.karyawan_id) as number }));
+}
+
+/** Cari enrollment milik karyawan untuk sekumpulan program dalam 1 query (hindari N+1). */
+export async function listMyEnrollmentsForPrograms(
+	karyawanId: number,
+	programIds: number[]
+): Promise<Map<number, TrainingEnrollmentRecord>> {
+	const uniqueIds = [...new Set(programIds.map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+	if (uniqueIds.length === 0) return new Map();
+	const query = new URLSearchParams({
+		'filter[karyawan_id][_eq]': String(karyawanId),
+		'filter[program_id][_in]': uniqueIds.join(','),
+		fields: ENROLLMENT_FIELDS,
+		limit: String(Math.max(50, uniqueIds.length * 2))
+	});
+	const result = await directusServerJson<{ data: TrainingEnrollmentRecord[] }>(`/items/training_enrollment?${query.toString()}`);
+	const map = new Map<number, TrainingEnrollmentRecord>();
+	for (const row of result?.data || []) {
+		const pid = unwrapId(row.program_id) as number;
+		const kid = unwrapId(row.karyawan_id) as number;
+		if (!map.has(pid)) {
+			map.set(pid, { ...row, program_id: pid, karyawan_id: kid });
+		}
+	}
+	return map;
 }
 
 /** Cari enrollment milik karyawan tertentu untuk satu program — dipakai untuk cek kepemilikan. */
@@ -448,16 +534,12 @@ export async function autoEnrollWajib(karyawanId: number, program: TrainingProgr
 	return result?.data as TrainingEnrollmentRecord;
 }
 
-/** Program onboarding yang berlaku untuk semua karyawan (department_target kosong = semua divisi). */
+/** Program onboarding yang berlaku untuk semua karyawan (turunan katalog published cache 5 menit). */
 export async function listOnboardingPrograms(): Promise<TrainingProgramRecord[]> {
-	const query = new URLSearchParams({
-		fields: PROGRAM_FIELDS,
-		'filter[status][_eq]': 'published',
-		'filter[is_onboarding][_eq]': 'true',
-		sort: 'urutan_tampil'
-	});
-	const result = await directusServerJson<{ data: TrainingProgramRecord[] }>(`/items/training_program?${query.toString()}`);
-	return result?.data || [];
+	const { programs } = await loadPublishedCatalog();
+	return programs
+		.filter((p) => Boolean(p.is_onboarding))
+		.sort((a, b) => (a.urutan_tampil ?? Number.MAX_SAFE_INTEGER) - (b.urutan_tampil ?? Number.MAX_SAFE_INTEGER));
 }
 
 const READ_GATE_CACHE_TTL_MS = 300_000;

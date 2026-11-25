@@ -2,15 +2,21 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { authenticateEss } from '$lib/server/ess/attendanceGuard';
-import { listOnboardingPrograms, findMyEnrollmentForProgram } from '$lib/server/ess/training';
+import { listOnboardingPrograms, listMyEnrollmentsForPrograms } from '$lib/server/ess/training';
 
 export const GET: RequestHandler = async (event) => {
 	const { karyawan } = await authenticateEss(event);
 
 	const programs = await listOnboardingPrograms();
-	const enrollments = await Promise.all(programs.map((p) => findMyEnrollmentForProgram(karyawan.id, p.id)));
+	const enrollmentMap = await listMyEnrollmentsForPrograms(
+		karyawan.id,
+		programs.map((p) => p.id)
+	);
 
-	const programList = programs.map((program, i) => ({ program, enrollment: enrollments[i] }));
+	const programList = programs.map((program) => ({
+		program,
+		enrollment: enrollmentMap.get(program.id) ?? null
+	}));
 	const belumLulus = programList.filter(({ enrollment }) => enrollment?.status !== 'Lulus');
 	const tenggatTerdekat = belumLulus
 		.map(({ enrollment }) => enrollment?.tenggat)

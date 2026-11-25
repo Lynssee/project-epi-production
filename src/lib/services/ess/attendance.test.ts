@@ -7,6 +7,7 @@ const mockGetIdToken = vi.fn();
 vi.mock('$lib/firebase', () => ({
 	auth: {
 		currentUser: {
+			uid: 'u-1',
 			getIdToken: (...args: unknown[]) => mockGetIdToken(...args)
 		}
 	}
@@ -20,7 +21,7 @@ vi.mock('$lib/utils/photoCompress', () => ({
 	compressPhoto: (...args: unknown[]) => mockCompressPhoto(...args)
 }));
 
-const { clockIn, clockOut, AttendanceRequestError } = await import('./attendance');
+const { clockIn, clockOut, getTodayStatus, clearTodayStatusClientCache, AttendanceRequestError } = await import('./attendance');
 
 function makeFoto(name = 'selfie.jpg') {
 	return new File([new Uint8Array([1, 2, 3])], name, { type: 'image/jpeg' });
@@ -30,6 +31,7 @@ describe('ess/attendance client service (Phase 3)', () => {
 	const originalFetch = globalThis.fetch;
 
 	beforeEach(() => {
+		clearTodayStatusClientCache();
 		mockWatermarkPhoto.mockReset();
 		mockCompressPhoto.mockReset();
 		mockGetIdToken.mockReset();
@@ -76,7 +78,43 @@ describe('ess/attendance client service (Phase 3)', () => {
 		});
 
 		expect(mockWatermarkPhoto).toHaveBeenCalledTimes(1);
+		expect(mockWatermarkPhoto.mock.calls[0][3]).toEqual({ ringan: true });
 		expect(mockCompressPhoto).toHaveBeenCalledTimes(1);
+	});
+
+	it('caches & coalesces getTodayStatus for 20s and invalidates on punch or force', async () => {
+		const fetchMock = vi.fn().mockImplementation(async () =>
+			new Response(JSON.stringify({ record: null, lokasiOptions: [], tanggal: '2026-11-25', istirahat: { aktif: false, kategoriAktif: [], konfig: null, jendela: null, jedaTerbuka: null, jedaHariIni: [] } }), { status: 200 })
+		);
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const [s1, s2] = await Promise.all([getTodayStatus(), getTodayStatus()]);
+		expect(s1.tanggal).toBe('2026-11-25');
+		expect(s2.tanggal).toBe('2026-11-25');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		// Hit cache 20s -> 0 fetch tambahan
+		await getTodayStatus();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		// force: true -> fetch segar
+		await getTodayStatus({ force: true });
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+
+		// clockIn berhasil -> invalidasi cache status
+		await clockIn({ lat: -6.2, lng: 106.8, photoFile: makeFoto(), skipWatermark: true });
+		await getTodayStatus();
+		expect(fetchMock).toHaveBeenCalledTimes(4); // 2 status + 1 clockIn + 1 status segar
+	});
+
+	it('does NOT double-retry getTodayStatus on client timeout (prevents 31s hang)', async () => {
+		const abortErr = new Error('The operation was aborted.');
+		abortErr.name = 'AbortError';
+		const fetchMock = vi.fn().mockRejectedValue(abortErr);
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		await expect(getTodayStatus()).rejects.toMatchObject({ code: 'ATTENDANCE_TIMEOUT' });
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
 	it('throws AttendanceRequestError with status on 502/504 gateway errors', async () => {

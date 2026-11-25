@@ -20,6 +20,7 @@
 		type PaktaStamp
 	} from '$lib/services/ess/pakta';
 	import { PAKTA_KATEGORI_KENDALA, bolehCentang, alasanBelumBolehCentang } from '$lib/utils/paktaPolicy';
+	import { isAttendancePriorityPending, waitForAttendancePriority } from '$lib/utils/essPriority';
 	import { IconShieldCheck, IconLock, IconExternalLink, IconAlertTriangle, IconCircleCheck } from '@tabler/icons-svelte';
 
 	let { children } = $props();
@@ -86,6 +87,18 @@
 		if (!karyawanId || loadedKey === k) return;
 		loadedKey = k;
 		reviewOpen = false;
+		// /ess/absen adalah escape path pakta — tidak perlu memanggil API saat karyawan hendak absen.
+		if (pathname === '/ess/absen' || pathname.startsWith('/ess/absen/')) return;
+		if (isAttendancePriorityPending()) {
+			const targetPath = pathname;
+			let cancelled = false;
+			void waitForAttendancePriority(3000).then(() => {
+				if (!cancelled && page.url.pathname === targetPath) void load(targetPath);
+			});
+			return () => {
+				cancelled = true;
+			};
+		}
 		void load(pathname);
 	});
 

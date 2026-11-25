@@ -45,14 +45,18 @@ async function authHeader(): Promise<Record<string, string>> {
 }
 
 const cache = new Map<string, { at: number; value: PaktaStatus }>();
+const statusInflight = new Map<string, Promise<PaktaStatus>>();
 const DISABLED_TTL_MS = 300_000;
 let disabledUntil = 0; // fitur mati di server → jangan tanya lagi tiap navigasi (setara TTL cache setelan server)
 const NONAKTIF: PaktaStatus = { enabled: false, decision: { show: false, presentation: 'none', blocked: false, canProceedWithNote: false }, items: [] };
 
 let sayaCache: { at: number; value: PaktaSaya } | null = null; // tipe PaktaSaya dideklarasikan di bawah (hoisted)
+let sayaInflight: Promise<PaktaSaya> | null = null;
 export function invalidatePaktaCache(): void {
 	sayaCache = null;
+	sayaInflight = null;
 	cache.clear();
+	statusInflight.clear();
 	disabledUntil = 0;
 }
 
@@ -60,12 +64,22 @@ export async function getPaktaStatus(path: string, opts: { force?: boolean } = {
 	if (!opts.force && Date.now() < disabledUntil) return NONAKTIF;
 	const hit = cache.get(path);
 	if (!opts.force && hit && Date.now() - hit.at < CLIENT_TTL_MS) return hit.value;
-	const res = await fetch(`/api/ess/pakta-aktif?path=${encodeURIComponent(path)}`, { headers: await authHeader() });
-	if (!res.ok) throw new Error(`Gagal (${res.status})`);
-	const value = (await res.json()) as PaktaStatus;
-	if (value?.enabled === false) disabledUntil = Date.now() + DISABLED_TTL_MS;
-	cache.set(path, { at: Date.now(), value });
-	return value;
+	if (!opts.force) {
+		const running = statusInflight.get(path);
+		if (running) return running;
+	}
+	const pending = (async (): Promise<PaktaStatus> => {
+		const res = await fetch(`/api/ess/pakta-aktif?path=${encodeURIComponent(path)}`, { headers: await authHeader() });
+		if (!res.ok) throw new Error(`Gagal (${res.status})`);
+		const value = (await res.json()) as PaktaStatus;
+		if (value?.enabled === false) disabledUntil = Date.now() + DISABLED_TTL_MS;
+		cache.set(path, { at: Date.now(), value });
+		return value;
+	})().finally(() => {
+		if (statusInflight.get(path) === pending) statusInflight.delete(path);
+	});
+	statusInflight.set(path, pending);
+	return pending;
 }
 
 /** Setuju = tanda tangan otomatis: server mencatat konfirmasi baca (versi dari server) dan membalas kode bukti. */
@@ -135,14 +149,21 @@ export interface PaktaSaya {
 const SAYA_TTL_MS = 120_000;
 
 
-/** Daftar "Pakta & Aturan Saya" untuk dropdown header. Di-cache 2 menit; dibuang saat ada persetujuan/kendala baru. */
+/** Daftar "Pakta & Aturan Saya" untuk dropdown header. Di-cache 2 menit + in-flight coalescing (sidebar & topbar berbagi 1 fetch). */
 export async function getPaktaSaya(opts: { force?: boolean } = {}): Promise<PaktaSaya> {
 	if (!opts.force && sayaCache && Date.now() - sayaCache.at < SAYA_TTL_MS) return sayaCache.value;
 	if (!opts.force && Date.now() < disabledUntil) return { enabled: false, count: 0, prosedur: [], gate: [] };
-	const res = await fetch('/api/ess/pakta-saya', { headers: await authHeader() });
-	if (!res.ok) throw new Error(`Gagal (${res.status})`);
-	const value = (await res.json()) as PaktaSaya;
-	if (value?.enabled === false) disabledUntil = Date.now() + DISABLED_TTL_MS;
-	sayaCache = { at: Date.now(), value };
-	return value;
+	if (!opts.force && sayaInflight) return sayaInflight;
+	const pending = (async (): Promise<PaktaSaya> => {
+		const res = await fetch('/api/ess/pakta-saya', { headers: await authHeader() });
+		if (!res.ok) throw new Error(`Gagal (${res.status})`);
+		const value = (await res.json()) as PaktaSaya;
+		if (value?.enabled === false) disabledUntil = Date.now() + DISABLED_TTL_MS;
+		sayaCache = { at: Date.now(), value };
+		return value;
+	})().finally(() => {
+		if (sayaInflight === pending) sayaInflight = null;
+	});
+	sayaInflight = pending;
+	return pending;
 }

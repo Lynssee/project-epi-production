@@ -15,6 +15,7 @@
 		type QuizGateClientStatus
 	} from '$lib/services/ess/quizGate';
 	import { isEscapePath } from '$lib/utils/quizPeriodic';
+	import { isAttendancePriorityPending, waitForAttendancePriority } from '$lib/utils/essPriority';
 	import { IconLock, IconClipboardCheck, IconCalendarEvent } from '@tabler/icons-svelte';
 
 	let { children } = $props();
@@ -43,16 +44,24 @@
 	}
 
 	onMount(() => {
+		let alive = true;
 		const unsub = authStore.subscribe((a) => {
 			if (!a.checked || !a.karyawanId) return;
 			const key = String(a.karyawanId);
 			if (loadedFor === key) return;
 			loadedFor = key;
-			void load();
+			if (isAttendancePriorityPending()) {
+				void waitForAttendancePriority(3000).then(() => {
+					if (alive) void load();
+				});
+			} else {
+				void load();
+			}
 		});
 		const onRefresh = () => void load();
 		window.addEventListener(QUIZ_GATE_REFRESH_EVENT, onRefresh);
 		return () => {
+			alive = false;
 			unsub();
 			window.removeEventListener(QUIZ_GATE_REFRESH_EVENT, onRefresh);
 		};

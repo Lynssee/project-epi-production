@@ -27,6 +27,8 @@ describe('authenticateEss (localId → firebase_uid + cache)', () => {
 					divisi_id: 2,
 					posisi: 'Staff',
 					jabatan_id: 5,
+					jadwal_kerja_id: 'shift-pagi',
+					pola_kerja: 'mobile',
 					status: 'On',
 					firebase_uid: 'fb-uid-371'
 				}
@@ -38,9 +40,11 @@ describe('authenticateEss (localId → firebase_uid + cache)', () => {
 		const r2 = await authenticateEss(event);
 
 		expect(r1.karyawan.id).toBe(371);
+		expect(r1.karyawan.jadwal_kerja_id).toBe('shift-pagi');
+		expect(r1.karyawan.pola_kerja).toBe('mobile');
 		expect(r2.karyawan.id).toBe(371);
 		expect(directusServerJsonMock).toHaveBeenCalledTimes(1);
-		expect(directusServerJsonMock.mock.calls[0][0]).toContain('filter[firebase_uid][_eq]=fb-uid-371');
+		expect(directusServerJsonMock.mock.calls[0][0]).toContain('filter[_or][0][firebase_uid][_eq]=fb-uid-371');
 	});
 
 	it('melempar 403 dengan pesan jelas jika akun belum tertaut karyawan', async () => {

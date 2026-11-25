@@ -79,14 +79,21 @@ export function isEmptyTime(value: string | null | undefined): boolean {
 	return !value || value === '-';
 }
 
-export async function findTodayRecord(karyawanId: number, tanggal: string): Promise<AbsensiHarianRecord | null> {
+export async function findTodayRecord(
+	karyawanId: number,
+	tanggal: string,
+	opts?: { signal?: AbortSignal; timeoutMs?: number }
+): Promise<AbsensiHarianRecord | null> {
 	const query = new URLSearchParams({
 		'filter[karyawan_id][_eq]': String(karyawanId),
 		'filter[tanggal][_eq]': tanggal,
 		fields: RECORD_FIELDS,
 		limit: '1'
 	});
-	const result = await directusServerJson<{ data: AbsensiHarianRecord[] }>(`/items/absensi_harian?${query.toString()}`);
+	const result = await directusServerJson<{ data: AbsensiHarianRecord[] }>(
+		`/items/absensi_harian?${query.toString()}`,
+		opts ? { signal: opts.signal, timeoutMs: opts.timeoutMs } : undefined
+	);
 	return result?.data?.[0] || null;
 }
 

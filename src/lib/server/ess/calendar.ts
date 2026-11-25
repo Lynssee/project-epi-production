@@ -61,23 +61,52 @@ async function listLemburEvents(karyawanId: number, from: string, to: string): P
 	}));
 }
 
+function unwrapId(v: any): string | null {
+	if (v == null) return null;
+	const raw = typeof v === 'object' ? v.id : v;
+	return raw == null ? null : String(raw);
+}
+
 async function listShiftEvents(karyawanId: number, from: string, to: string): Promise<CalendarEvent[]> {
 	const filter = { _and: [{ karyawan_id: { _eq: karyawanId } }, { tanggal: { _between: [from, to] } }] };
 	const query = new URLSearchParams({
 		filter: JSON.stringify(filter),
-		fields: 'id,tanggal,status,jadwal_kerja_id.id,jadwal_kerja_id.nama_jadwal',
+		fields: 'id,tanggal,status,jadwal_kerja_id',
 		limit: '100'
 	});
 	const result = await directusServerJson<{ data: any[] }>(`/items/shift_roster?${query.toString()}`);
-	return (result?.data || []).map((r) => ({
-		id: `shift-${r.id}`,
-		title: `Shift: ${r.jadwal_kerja_id?.nama_jadwal || '-'}`,
-		start: r.tanggal,
-		end: null,
-		allDay: true,
-		source: 'shift' as const,
-		color: '#6366F1'
-	}));
+	const rows = result?.data || [];
+	if (rows.length === 0) return [];
+
+	// Fetch nama_jadwal secara terpisah (aturan Directus: separated relation fetch).
+	const jadwalIds = [...new Set(rows.map((r) => unwrapId(r.jadwal_kerja_id)).filter((id): id is string => Boolean(id)))];
+	const namaById = new Map<string, string>();
+	if (jadwalIds.length > 0) {
+		const jQuery = new URLSearchParams({
+			'filter[id][_in]': jadwalIds.join(','),
+			fields: 'id,nama_jadwal',
+			limit: '-1'
+		});
+		const jRes = await directusServerJson<{ data: Array<{ id: string; nama_jadwal: string }> }>(
+			`/items/jadwal_kerja?${jQuery.toString()}`
+		).catch(() => null);
+		for (const j of jRes?.data || []) {
+			if (j?.id != null) namaById.set(String(j.id), j.nama_jadwal || '-');
+		}
+	}
+
+	return rows.map((r) => {
+		const jid = unwrapId(r.jadwal_kerja_id);
+		return {
+			id: `shift-${r.id}`,
+			title: `Shift: ${(jid && namaById.get(jid)) || '-'}`,
+			start: r.tanggal,
+			end: null,
+			allDay: true,
+			source: 'shift' as const,
+			color: '#6366F1'
+		};
+	});
 }
 
 async function listTrainingEvents(karyawanId: number, from: string, to: string): Promise<CalendarEvent[]> {
@@ -89,17 +118,40 @@ async function listTrainingEvents(karyawanId: number, from: string, to: string):
 			{ status: { _in: ['Enrolled', 'Ongoing', 'Remedial'] } }
 		]
 	};
-	const query = new URLSearchParams({ filter: JSON.stringify(filter), fields: 'id,tenggat,program_id.judul', limit: '100' });
+	const query = new URLSearchParams({ filter: JSON.stringify(filter), fields: 'id,tenggat,program_id', limit: '100' });
 	const result = await directusServerJson<{ data: any[] }>(`/items/training_enrollment?${query.toString()}`);
-	return (result?.data || []).map((r) => ({
-		id: `training-${r.id}`,
-		title: `Tenggat: ${r.program_id?.judul || 'Pelatihan'}`,
-		start: r.tenggat,
-		end: null,
-		allDay: true,
-		source: 'training' as const,
-		color: '#EC4899'
-	}));
+	const rows = result?.data || [];
+	if (rows.length === 0) return [];
+
+	// Fetch judul training_program secara terpisah (aturan Directus: separated relation fetch).
+	const programIds = [...new Set(rows.map((r) => unwrapId(r.program_id)).filter((id): id is string => Boolean(id)))];
+	const judulById = new Map<string, string>();
+	if (programIds.length > 0) {
+		const pQuery = new URLSearchParams({
+			'filter[id][_in]': programIds.join(','),
+			fields: 'id,judul',
+			limit: '-1'
+		});
+		const pRes = await directusServerJson<{ data: Array<{ id: number; judul: string }> }>(
+			`/items/training_program?${pQuery.toString()}`
+		).catch(() => null);
+		for (const p of pRes?.data || []) {
+			if (p?.id != null) judulById.set(String(p.id), p.judul || 'Pelatihan');
+		}
+	}
+
+	return rows.map((r) => {
+		const pid = unwrapId(r.program_id);
+		return {
+			id: `training-${r.id}`,
+			title: `Tenggat: ${(pid && judulById.get(pid)) || 'Pelatihan'}`,
+			start: r.tenggat,
+			end: null,
+			allDay: true,
+			source: 'training' as const,
+			color: '#EC4899'
+		};
+	});
 }
 
 async function listReminderEvents(karyawanId: number, from: string, to: string): Promise<CalendarEvent[]> {

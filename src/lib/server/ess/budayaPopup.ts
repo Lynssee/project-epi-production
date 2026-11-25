@@ -99,7 +99,10 @@ async function popupCandidates(karyawan: Karyawan, ymd: string, settings: Settin
 		if (normalizeList(row.target_pola_kerja).length) {
 			if (pola === null) {
 				try {
-					pola = await resolveKaryawanPolaKerja(karyawan.id);
+					pola = await resolveKaryawanPolaKerja(karyawan.id, {
+						polaKerja: (karyawan as any)?.pola_kerja,
+						divisi: karyawan?.divisi
+					});
 				} catch (e) {
 					console.warn('[budayaPopup] pola kerja tidak terbaca (konten berbatas pola dilewati):', (e as Error)?.message);
 					pola = '';

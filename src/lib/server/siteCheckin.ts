@@ -195,10 +195,34 @@ async function getMasterCustomerBasic(customerId: number): Promise<{ id: number;
 	}
 }
 
-/** Ambil singleton konfigurasi Site Check-in (kill-switch, radius default, dll). */
+const SITE_CHECKIN_SETTINGS_TTL_MS = 5 * 60 * 1000;
+let siteCheckinSettingsCache: { at: number; value: SiteCheckinSettings } | null = null;
+let siteCheckinSettingsInflight: Promise<SiteCheckinSettings> | null = null;
+
+/** Untuk tes / invalidasi saat admin mengubah site_checkin_settings. */
+export function clearSiteCheckinSettingsCache(): void {
+	siteCheckinSettingsCache = null;
+	siteCheckinSettingsInflight = null;
+}
+
+/** Ambil singleton konfigurasi Site Check-in (kill-switch, radius default, dll) — di-cache 5 menit + coalescing. */
 export async function getSiteCheckinSettings(): Promise<SiteCheckinSettings> {
-	const result = await directusServerJson<{ data: SiteCheckinSettings }>('/items/site_checkin_settings');
-	return result.data;
+	const now = Date.now();
+	if (siteCheckinSettingsCache && now - siteCheckinSettingsCache.at < SITE_CHECKIN_SETTINGS_TTL_MS) {
+		return siteCheckinSettingsCache.value;
+	}
+	if (siteCheckinSettingsInflight) return siteCheckinSettingsInflight;
+
+	const pending = (async (): Promise<SiteCheckinSettings> => {
+		const result = await directusServerJson<{ data: SiteCheckinSettings }>('/items/site_checkin_settings');
+		siteCheckinSettingsCache = { at: Date.now(), value: result.data };
+		return result.data;
+	})().finally(() => {
+		if (siteCheckinSettingsInflight === pending) siteCheckinSettingsInflight = null;
+	});
+
+	siteCheckinSettingsInflight = pending;
+	return pending;
 }
 
 async function getProject(projectId: number): Promise<ProjectGeo | null> {

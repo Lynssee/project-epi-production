@@ -8,6 +8,7 @@
 	import { auth } from '$lib/firebase';
 	import { page } from '$app/state';
 	import { getActiveCheckin, getSiteCheckinSettings, type SiteCheckinRecord } from '$lib/services/siteCheckin';
+	import { isAttendancePriorityPending, waitForAttendancePriority } from '$lib/utils/essPriority';
 	import CheckoutDialog from '$lib/components/site-checkin/CheckoutDialog.svelte';
 	import { IconMapPin, IconLogout, IconAlarm } from '@tabler/icons-svelte';
 
@@ -83,10 +84,19 @@
 	}
 
 	onMount(() => {
+		let alive = true;
 		const unsubAuth = onAuthStateChanged(auth, (user) => {
 			if (user) {
-				load();
-				loadSettings();
+				if (isAttendancePriorityPending()) {
+					void waitForAttendancePriority().then(() => {
+						if (!alive || !auth.currentUser) return;
+						load();
+						loadSettings();
+					});
+				} else {
+					load();
+					loadSettings();
+				}
 			} else {
 				activeCheckin = null;
 				settingsLoaded = false;
@@ -98,6 +108,7 @@
 			if (activeCheckin) elapsedLabel = formatElapsed(activeCheckin.check_in_at);
 		}, 30000);
 		return () => {
+			alive = false;
 			clearInterval(intervalId);
 			unsubAuth();
 			window.removeEventListener('site-checkin:changed', handleChanged);

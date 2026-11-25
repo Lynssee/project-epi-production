@@ -37,9 +37,9 @@ export const POST: RequestHandler = async (event) => {
 	const responseBody = await withAttendanceLock(attendanceLockKey('break_out', karyawan.id, tanggal), async () => {
 		const [istirahatConfig, polaKerja, absensiRecord, jendela] = await Promise.all([
 			loadIstirahatConfig(),
-			resolveKaryawanPolaKerja(karyawan.id),
+			resolveKaryawanPolaKerja(karyawan.id, { polaKerja: karyawan.pola_kerja, divisi: karyawan.divisi }),
 			findTodayRecord(karyawan.id, tanggal),
-			getJendelaIstirahat(karyawan.id)
+			getJendelaIstirahat(karyawan.id, karyawan.jadwal_kerja_id)
 		]);
 
 		const { aktif, konfig, kategoriAktif } = istirahatConfig;

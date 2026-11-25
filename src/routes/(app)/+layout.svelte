@@ -10,6 +10,7 @@
 	import { getPengumumanList } from '$lib/services/ess/pengumuman';
 	import { getKursusList } from '$lib/services/ess/training';
 	import { getNotifikasiList } from '$lib/services/notifikasiApi';
+	import { waitForAttendancePriority } from '$lib/utils/essPriority';
 	import GuidedTour from '$lib/components/shared/GuidedTour.svelte';
 	import QuizGateHost from '$lib/components/ess/QuizGateHost.svelte';
 	import CulturePopupHost from '$lib/components/ess/CulturePopupHost.svelte';
@@ -276,50 +277,86 @@
 
 	$effect(() => {
 		if (!canAccessEss) return;
+		let cancelled = false;
 		const fetchPengumuman = () => {
-			getPengumumanList()
-				.then((res) => (unreadPengumuman = res.unreadCount))
-				.catch(() => {});
+			void waitForAttendancePriority().then(() => {
+				if (cancelled) return;
+				getPengumumanList()
+					.then((res) => {
+						if (!cancelled) unreadPengumuman = res.unreadCount;
+					})
+					.catch(() => {});
+			});
 		};
-		// Ditunda ke idle time agar tidak bersaing dengan render pertama (rencana v2, Jalur B).
+		// Ditunda ke idle time + setelah prioritas status absensi (jam sibuk /ess).
 		if ('requestIdleCallback' in window) {
 			const idleId = requestIdleCallback(fetchPengumuman);
-			return () => cancelIdleCallback(idleId);
+			return () => {
+				cancelled = true;
+				cancelIdleCallback(idleId);
+			};
 		}
 		const timeoutId = setTimeout(fetchPengumuman, 1);
-		return () => clearTimeout(timeoutId);
+		return () => {
+			cancelled = true;
+			clearTimeout(timeoutId);
+		};
 	});
 
 	$effect(() => {
 		if (!canAccessEss) return;
+		let cancelled = false;
 		const fetchNotifikasi = () => {
-			getNotifikasiList({ read: false, page: 1 })
-				.then((res) => (unreadNotifikasi = res.unreadCount))
-				.catch(() => {});
+			void waitForAttendancePriority().then(() => {
+				if (cancelled) return;
+				getNotifikasiList({ read: false, page: 1 })
+					.then((res) => {
+						if (!cancelled) unreadNotifikasi = res.unreadCount;
+					})
+					.catch(() => {});
+			});
 		};
 		if ('requestIdleCallback' in window) {
 			const idleId = requestIdleCallback(fetchNotifikasi);
-			return () => cancelIdleCallback(idleId);
+			return () => {
+				cancelled = true;
+				cancelIdleCallback(idleId);
+			};
 		}
 		const timeoutId = setTimeout(fetchNotifikasi, 1);
-		return () => clearTimeout(timeoutId);
+		return () => {
+			cancelled = true;
+			clearTimeout(timeoutId);
+		};
 	});
 
 	$effect(() => {
 		if (!canAccessEss) return;
+		let cancelled = false;
 		const fetchPendingTraining = () => {
-			getKursusList()
-				.then((res) => {
-					pendingTraining = res.kursus.filter((k) => k.program.wajib && k.enrollment?.status !== 'Lulus').length;
-				})
-				.catch(() => {});
+			void waitForAttendancePriority().then(() => {
+				if (cancelled) return;
+				getKursusList()
+					.then((res) => {
+						if (!cancelled) {
+							pendingTraining = res.kursus.filter((k) => k.program.wajib && k.enrollment?.status !== 'Lulus').length;
+						}
+					})
+					.catch(() => {});
+			});
 		};
 		if ('requestIdleCallback' in window) {
 			const idleId = requestIdleCallback(fetchPendingTraining);
-			return () => cancelIdleCallback(idleId);
+			return () => {
+				cancelled = true;
+				cancelIdleCallback(idleId);
+			};
 		}
 		const timeoutId = setTimeout(fetchPendingTraining, 1);
-		return () => clearTimeout(timeoutId);
+		return () => {
+			cancelled = true;
+			clearTimeout(timeoutId);
+		};
 	});
 
 	interface MenuItem {

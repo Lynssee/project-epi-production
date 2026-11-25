@@ -6,6 +6,7 @@
 	import { rolesStore, getRoleLabel } from '$lib/stores/roles';
 	import { hasPermission } from '$lib/constants/permissions';
 	import { getTodayStatus, type AbsensiHarianRecord, type TodayStatus } from '$lib/services/ess/attendance';
+	import { beginAttendancePriority, markAttendanceReady } from '$lib/utils/essPriority';
 	import { getPengumumanList } from '$lib/services/ess/pengumuman';
 	import BudayaBanner from '$lib/components/ess/BudayaBanner.svelte';
 	import TargetMerahBanner from '$lib/components/ess/TargetMerahBanner.svelte';
@@ -66,6 +67,8 @@
 
 	// Status Absensi Hari Ini
 	let loading = $state(true);
+	let showSlowShortcut = $state(false);
+	let slowShortcutTimer: ReturnType<typeof setTimeout> | null = null;
 	let errorMsg = $state('');
 	let record = $state<AbsensiHarianRecord | null>(null);
 	let tanggal = $state('');
@@ -101,6 +104,7 @@
 
 	onDestroy(() => {
 		if (clockInterval) clearInterval(clockInterval);
+		if (slowShortcutTimer) clearTimeout(slowShortcutTimer);
 	});
 
 	function pad2(n: number) {
@@ -157,29 +161,41 @@
 	});
 
 	// Load Data Absensi Utama
-	async function loadAttendance() {
+	async function loadAttendance(force = false) {
 		loading = true;
+		showSlowShortcut = false;
 		errorMsg = '';
+		if (slowShortcutTimer) clearTimeout(slowShortcutTimer);
+		slowShortcutTimer = setTimeout(() => {
+			if (loading) showSlowShortcut = true;
+		}, 6_000);
 		try {
-			const status = await getTodayStatus();
+			const status = await getTodayStatus({ force });
 			record = status.record;
 			tanggal = status.tanggal;
 			istirahat = status.istirahat;
 		} catch (err: any) {
 			errorMsg = err?.message || 'Gagal memuat status absensi.';
 		} finally {
+			if (slowShortcutTimer) {
+				clearTimeout(slowShortcutTimer);
+				slowShortcutTimer = null;
+			}
+			showSlowShortcut = false;
 			loading = false;
 		}
 	}
 
-	// Prioritaskan status absensi dulu; tunda 9 fetch sekunder + widget atas ke idle time
-	// (dibatalkan otomatis bila karyawan langsung mengetuk Absen Masuk/Pulang dan meninggalkan /ess).
+	// Prioritaskan status absensi dulu; tunda 9 fetch sekunder + widget atas + komponen global
+	// sampai loadAttendance() benar-benar selesai (tanpa fallbackTimer 800ms yang dulu membanjiri
+	// Directus saat jam sibuk). Dibatalkan otomatis bila karyawan langsung mengetuk Absen Masuk/Pulang.
 	onMount(() => {
 		let destroyed = false;
 		let secondaryStarted = false;
-		let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 		let idleId: number | null = null;
 		let deferTimer: ReturnType<typeof setTimeout> | null = null;
+
+		beginAttendancePriority();
 
 		function runSecondaryFetches() {
 			if (destroyed || secondaryStarted) return;
@@ -257,11 +273,8 @@
 		}
 
 		function scheduleSecondary() {
+			markAttendanceReady();
 			if (destroyed || secondaryStarted) return;
-			if (fallbackTimer) {
-				clearTimeout(fallbackTimer);
-				fallbackTimer = null;
-			}
 			if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
 				idleId = window.requestIdleCallback(runSecondaryFetches, { timeout: 400 });
 			} else {
@@ -270,11 +283,10 @@
 		}
 
 		void loadAttendance().finally(scheduleSecondary);
-		fallbackTimer = setTimeout(scheduleSecondary, 800);
 
 		return () => {
 			destroyed = true;
-			if (fallbackTimer) clearTimeout(fallbackTimer);
+			markAttendanceReady();
 			if (deferTimer) clearTimeout(deferTimer);
 			if (idleId !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
 				window.cancelIdleCallback(idleId);
@@ -603,7 +615,30 @@
 				</div>
 
 				{#if loading}
-					<div class="relative z-10 my-auto"><CircularProgressGauge size={50} strokeWidth={4} label="Memeriksa status absensi..." /></div>
+					<div class="relative z-10 my-auto flex flex-col items-center">
+						<CircularProgressGauge
+							size={50}
+							strokeWidth={4}
+							label="Memeriksa status absensi..."
+							timeoutSeconds={15}
+							onRetry={() => loadAttendance(true)}
+						/>
+						{#if showSlowShortcut}
+							<div class="mt-1 pb-2 flex flex-col items-center gap-1.5 text-center">
+								<p class="text-[11px]" style="color: var(--sys-label3)">
+									Server sedang padat? Anda bisa langsung menuju halaman absen.
+								</p>
+								<button
+									type="button"
+									class="px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer"
+									style="background: var(--sys-fill); border-color: var(--sys-sep); color: var(--sys-label)"
+									onclick={() => goto('/ess/absen')}
+								>
+									Langsung ke Halaman Absen →
+								</button>
+							</div>
+						{/if}
+					</div>
 				{:else if errorMsg}
 					<div class="relative z-10 flex flex-col items-center justify-center py-6 my-auto text-center">
 						<div class="w-12 h-12 rounded-full bg-amber-500/15 flex items-center justify-center mb-3 text-amber-600 dark:text-amber-400">
@@ -615,7 +650,7 @@
 							<button
 								class="px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm transition-all"
 								style="background: var(--sys-tint)"
-								onclick={loadAttendance}
+								onclick={() => loadAttendance(true)}
 							>
 								Coba Lagi
 							</button>

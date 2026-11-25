@@ -211,6 +211,24 @@ export async function loadIstirahatConfig(): Promise<IstirahatConfig> {
 	return entry.config;
 }
 
+/** Isi cache jadwal/pola kerja karyawan dari hasil authenticateEss agar menghindari GET karyawan/{id} ulang. */
+export function seedKaryawanJadwalMeta(
+	karyawanId: number,
+	meta: { jadwalId?: string | null; polaKerja?: string | null }
+): void {
+	if (meta.jadwalId === undefined && meta.polaKerja === undefined) return;
+	const key = String(karyawanId);
+	const prev = karyawanJadwalCache.get(key)?.meta;
+	pruneMapIfNeeded(karyawanJadwalCache, MAX_JADWAL_CACHE);
+	karyawanJadwalCache.set(key, {
+		at: Date.now(),
+		meta: {
+			jadwalId: meta.jadwalId !== undefined ? (meta.jadwalId || null) : (prev?.jadwalId ?? null),
+			polaKerja: meta.polaKerja !== undefined ? (meta.polaKerja || null) : (prev?.polaKerja ?? null)
+		}
+	});
+}
+
 async function getKaryawanJadwalMeta(karyawanId: number): Promise<KaryawanJadwalMeta> {
 	const key = String(karyawanId);
 	const now = Date.now();
@@ -299,8 +317,11 @@ export async function getKaryawanJadwalDisiplin(karyawanId: number): Promise<{
 }
 
 /** Jendela istirahat shift karyawan (jam_istirahat_mulai/selesai dari jadwal_kerja, di-cache 5 menit). */
-export async function getJendelaIstirahat(karyawanId: number): Promise<{ mulai: string | null; selesai: string | null }> {
-	const jadwalId = await getKaryawanJadwalId(karyawanId);
+export async function getJendelaIstirahat(
+	karyawanId: number,
+	knownJadwalId?: string | null
+): Promise<{ mulai: string | null; selesai: string | null }> {
+	const jadwalId = knownJadwalId !== undefined ? knownJadwalId : await getKaryawanJadwalId(karyawanId);
 	if (!jadwalId) return { mulai: null, selesai: null };
 	const detail = await getJadwalKerjaDetail(jadwalId);
 	return {
@@ -352,7 +373,10 @@ export interface JedaHariIniRow {
 }
 
 /** Seluruh baris mentah absensi_istirahat_log hari ini (flat fields tanpa nested relation). */
-export async function listJedaHariIniRaw(absensiHarianId: string): Promise<AbsensiIstirahatLogRow[]> {
+export async function listJedaHariIniRaw(
+	absensiHarianId: string,
+	opts?: { signal?: AbortSignal; timeoutMs?: number }
+): Promise<AbsensiIstirahatLogRow[]> {
 	const query = new URLSearchParams({
 		'filter[absensi_harian_id][_eq]': absensiHarianId,
 		fields: LOG_FIELDS,
@@ -360,7 +384,8 @@ export async function listJedaHariIniRaw(absensiHarianId: string): Promise<Absen
 		limit: '-1'
 	});
 	const result = await directusServerJson<{ data: AbsensiIstirahatLogRow[] }>(
-		`/items/absensi_istirahat_log?${query.toString()}`
+		`/items/absensi_istirahat_log?${query.toString()}`,
+		opts ? { signal: opts.signal, timeoutMs: opts.timeoutMs } : undefined
 	);
 	return result?.data || [];
 }

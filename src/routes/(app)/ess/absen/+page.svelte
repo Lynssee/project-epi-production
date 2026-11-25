@@ -22,6 +22,7 @@
 	import LivenessCamera from '$lib/components/ess/LivenessCamera.svelte';
 	import { vibrateTap } from '$lib/utils/haptic';
 	import { watermarkPhoto } from '$lib/utils/photoWatermark';
+	import { markAttendanceReady } from '$lib/utils/essPriority';
 	import {
 		enqueueAttendanceSubmission,
 		registerAttendanceAutoFlush,
@@ -281,6 +282,7 @@
 
 	onDestroy(() => {
 		if (tickTimer) clearInterval(tickTimer);
+		markAttendanceReady();
 	});
 
 	// Retry antrian offline HARUS menelan 409 "sudah absen..." sebagai sukses — itu
@@ -357,7 +359,7 @@
 
 	async function checkRecordedAfterAmbiguousError(): Promise<boolean> {
 		try {
-			const status = await getTodayStatus();
+			const status = await getTodayStatus({ force: true });
 			if (mode === 'in') return isFilledTime(status.record?.jam_masuk);
 			if (mode === 'out') return isFilledTime(status.record?.jam_keluar);
 			if (mode === 'break-out') return Boolean(status.istirahat?.jedaTerbuka);
@@ -383,7 +385,8 @@
 				finalPhoto = await watermarkPhoto(
 					photoFile,
 					{ lat: position.lat, lng: position.lng, accuracy: position.accuracy },
-					photoCapturedAt || new Date().toISOString()
+					photoCapturedAt || new Date().toISOString(),
+					{ ringan: true }
 				);
 			}
 			const onStage = (stage: 'photo' | 'upload') => {
@@ -458,7 +461,8 @@
 							? await watermarkPhoto(
 									photoFile,
 									{ lat: position.lat, lng: position.lng, accuracy: position.accuracy },
-									photoCapturedAt || new Date().toISOString()
+									photoCapturedAt || new Date().toISOString(),
+									{ ringan: true }
 								)
 							: null);
 					await enqueueAttendanceSubmission({
